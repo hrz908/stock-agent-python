@@ -2,7 +2,7 @@
 # ===== StockA 生产部署脚本（Ubuntu 22.04/24.04，国内服务器）=====
 #
 # 用法（全程 sudo）：
-#   sudo bash scripts/deploy.sh install-docker   # 首次：装 Docker + nginx + 防火墙
+#   sudo bash scripts/deploy.sh install-docker   # 首次：装 Docker + nginx + 防火墙 + swap
 #   sudo bash scripts/deploy.sh deploy           # 首次部署（生成 .env/证书，构建启动）
 #   sudo bash scripts/deploy.sh update           # 日常更新（git pull + 重建）
 #   sudo bash scripts/deploy.sh restart          # 重启全部服务
@@ -10,6 +10,9 @@
 #   sudo bash scripts/deploy.sh ps               # 看容器状态
 #   sudo bash scripts/deploy.sh env-check        # 对比 .env 与模板的键差异（只读）
 #   sudo bash scripts/deploy.sh env-append       # 把模板里新增的键补进 .env（会先备份）
+#   sudo bash scripts/deploy.sh nginx-install    # 用仓库配置覆盖线上 nginx（改过域名却想同步时）
+#
+# 备份与探活是独立脚本：scripts/backup.sh、scripts/watchdog.sh（各自有 install-cron）。
 #
 # 前置条件：已 git clone 本仓库到 /opt/stock-agent（见 deploy/README.prod.md 第 1 步）。
 
@@ -20,6 +23,7 @@ BRANCH="main"
 DEPLOY_DIR="/opt/stock-agent"
 COMPOSE_FILE="docker-compose.prod.yml"
 SSL_DIR="/etc/nginx/ssl"
+NGINX_CONF="/etc/nginx/conf.d/stock-agent.conf"
 
 log()  { echo -e "\033[32m[deploy]\033[0m $*"; }
 warn() { echo -e "\033[33m[deploy]\033[0m $*"; }
@@ -36,6 +40,28 @@ require_repo() {
 require_docker() {
     command -v docker >/dev/null 2>&1 || die "未检测到 docker，先执行：sudo bash scripts/deploy.sh install-docker"
     docker info >/dev/null 2>&1 || die "docker 未运行：systemctl start docker"
+}
+
+# ---------------------------------------------------------------- swap
+# 4 vCPU / 3GB 内存同时跑 postgres + redis + Go + Python：没有任何余量，
+# 一次 embedding 或大查询抖动就 OOM 杀进程，表现为「容器莫名重启」而没有日志。
+# 4G swap 只做兜底，swappiness 调低，避免热数据被换出反而变慢。
+ensure_swap() {
+    if [ "$(swapon --show --noheadings 2>/dev/null | wc -l)" -gt 0 ]; then
+        log "swap 已启用，跳过"
+        return 0
+    fi
+    log "创建 4G swap ..."
+    if ! fallocate -l 4G /swapfile 2>/dev/null; then
+        dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
+    fi
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+    swapon /swapfile
+    grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    sysctl -w vm.swappiness=10 >/dev/null 2>&1 || true
+    grep -q '^vm.swappiness' /etc/sysctl.conf || echo 'vm.swappiness=10' >> /etc/sysctl.conf
+    log "swap 就绪：4G"
 }
 
 # ---------------------------------------------------------------- install-docker
@@ -80,6 +106,8 @@ EOF
         log "nginx 已存在，跳过安装"
     fi
 
+    ensure_swap
+
     log "配置防火墙 ufw（仅放行 SSH/80/443）..."
     if ufw status 2>/dev/null | grep -q "Status: active"; then
         ufw allow OpenSSH
@@ -119,6 +147,39 @@ gen_self_signed_cert() {
     log "证书公网 IP: $ip"
 }
 
+# 线上 nginx 配置常被手工改（换域名、换证书路径、加限流）。无条件 cp 会把改动
+# 静默打回 server_name _ + 自签证书，症状是「域名切好了，跑一次 deploy 又变回去」。
+# 因此：已存在且不同就保留线上版本，只提示差异；要覆盖必须显式 --force。
+install_nginx_conf() {
+    local force="${1:-}"
+    local src="$DEPLOY_DIR/deploy/nginx.prod.conf"
+    if [ -f "$NGINX_CONF" ] && [ "$force" != "--force" ]; then
+        if cmp -s "$src" "$NGINX_CONF"; then
+            log "nginx 配置与仓库一致"
+        else
+            warn "线上 nginx 配置与仓库不一致，保留线上版本（手工改过域名/证书就会这样）"
+            warn "查看差异：diff -u $src $NGINX_CONF"
+            warn "确认用仓库版本覆盖：sudo bash scripts/deploy.sh nginx-install --force"
+        fi
+    else
+        if [ -f "$NGINX_CONF" ]; then
+            cp -a "$NGINX_CONF" "${NGINX_CONF}.bak.$(date +%Y%m%d%H%M%S)"
+            warn "已备份旧配置：${NGINX_CONF}.bak.*"
+        fi
+        cp "$src" "$NGINX_CONF"
+        log "已安装 nginx 配置"
+    fi
+    rm -f /etc/nginx/sites-enabled/default
+    nginx -t
+    systemctl reload nginx || systemctl start nginx
+}
+
+cmd_nginx_install() {
+    require_root nginx-install
+    require_repo
+    install_nginx_conf --force
+}
+
 cmd_deploy() {
     require_root deploy
     require_repo
@@ -144,10 +205,7 @@ cmd_deploy() {
     gen_self_signed_cert
 
     log "安装 nginx 配置..."
-    cp "$DEPLOY_DIR/deploy/nginx.prod.conf" /etc/nginx/conf.d/stock-agent.conf
-    rm -f /etc/nginx/sites-enabled/default
-    nginx -t
-    systemctl reload nginx || systemctl start nginx
+    install_nginx_conf
 
     log "构建并启动全部服务（首次约 5-15 分钟，主要在拉镜像和 pip 装依赖）..."
     cd "$DEPLOY_DIR/deploy"
@@ -162,6 +220,7 @@ cmd_deploy() {
     [ "$ok" = "1" ] || die "健康检查未通过，请查看日志：sudo bash scripts/deploy.sh logs server"
 
     log "部署完成。验证：curl -k https://$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo '<服务器IP>')/healthz"
+    log "运维收尾（首次各一次）：sudo bash scripts/backup.sh install-cron；sudo bash scripts/watchdog.sh install-cron"
     log "下一步（小程序联调）：改 stock-agent-miniapp/config.js 的 develop 段为 https://<服务器IP>，详见 deploy/README.prod.md"
 }
 
@@ -292,8 +351,9 @@ case "${1:-}" in
     ps)             shift; cmd_ps "$@" ;;
     env-check)      shift; cmd_env_check "$@" ;;
     env-append)     shift; cmd_env_append "$@" ;;
+    nginx-install)  shift; cmd_nginx_install "$@" ;;
     *)
-        echo "用法: sudo bash scripts/deploy.sh {install-docker|deploy|update|restart|logs [服务]|ps|env-check|env-append}"
+        echo "用法: sudo bash scripts/deploy.sh {install-docker|deploy|update|restart|logs [服务]|ps|env-check|env-append|nginx-install}"
         exit 1
         ;;
 esac

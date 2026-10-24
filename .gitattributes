@@ -1,0 +1,5 @@
+# shell 脚本必须是 LF：CRLF 在 Linux 上会变成 bad interpreter: /usr/bin/env bash^M
+*.sh text eol=lf
+# 生产编排与 SQL 迁移同理，避免在 Windows 上编辑后带 CRLF 进去
+*.yml text eol=lf
+*.sql text eol=lf

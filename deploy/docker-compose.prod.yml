@@ -14,11 +14,20 @@
 #
 # .env 变量说明见 .env.production.example。
 
+# 日志限额：docker 默认 json-file 无上限，agent/ashare 常驻，40GB 盘会被慢慢吃满。
+# 单文件 50MB × 3 份，单服务封顶 150MB；排查历史改用备份/外部日志。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: stock-agent-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -38,6 +47,7 @@ services:
     image: redis:7-alpine
     container_name: stock-agent-redis
     restart: unless-stopped
+    logging: *default-logging
     # maxmemory 是硬约束：embedding 缓存全量攒会涨到 GB 级，且与限流/会话共用同一实例。
     # 不设上限时 noeviction 写满会连登录一起崩；allkeys-lru 淘汰最久未用的，缓存命中
     # 掉了只是重算几分钱。
@@ -59,6 +69,7 @@ services:
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     container_name: stock-agent-server
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     environment:
       # env_file 已注入全部密钥，这里只放「随部署环境变化」的连接项。
@@ -90,6 +101,7 @@ services:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     container_name: stock-agent-python
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     environment:
       DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable"
@@ -113,6 +125,7 @@ services:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     container_name: stock-agent-ingest
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     environment:
       DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable"
@@ -145,6 +158,7 @@ services:
         INSTALL_EMBED: ${ASHARE_INSTALL_EMBED:-1}
     container_name: stock-agent-ashare
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     environment:
       DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable"
