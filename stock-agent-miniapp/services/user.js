@@ -40,8 +40,12 @@ export function getProfile() {
   return get('/api/v1/user/profile');
 }
 
+// 回写资料：后端只认站内相对路径（/uploads/avatars/xxx.png），
+// 页面手里的是 absoluteUrl 拼好的完整地址，这里统一还原，免得收到 400「头像地址不合法」
 export function updateProfile(data) {
-  return put('/api/v1/user/profile', data);
+  const body = Object.assign({}, data);
+  if (body.avatar) body.avatar = relativeUrl(body.avatar);
+  return put('/api/v1/user/profile', body);
 }
 
 // 头像上传必须用 wx.uploadFile（multipart），wx.request 发不了本地文件。
@@ -83,4 +87,11 @@ export function absoluteUrl(path) {
   if (!path) return '';
   if (/^https?:\/\//i.test(path)) return path;
   return apiBase + path;
+}
+
+// absoluteUrl 的逆操作：站内地址去掉基地址前缀，其它（外链/本地临时路径）原样返回
+export function relativeUrl(url) {
+  if (!url) return '';
+  if (url.indexOf(apiBase) === 0) return url.slice(apiBase.length);
+  return url;
 }
