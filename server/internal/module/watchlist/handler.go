@@ -220,6 +220,32 @@ func AddWatchlist(c *gin.Context) {
 
 /* ===================== 手动刷新 ===================== */
 
+// refreshParams 取刷新的过滤 / 排序参数：query 优先，缺失时读 JSON body，
+// 都没有就退回列表接口的默认值
+func refreshParams(c *gin.Context) (string, string) {
+	filter := c.Query("filter")
+	order := c.Query("order")
+	if filter == "" || order == "" {
+		var body struct {
+			Filter string `json:"filter"`
+			Order  string `json:"order"`
+		}
+		// body 为空或不是 JSON 时会报错，按「没传」处理
+		if err := c.ShouldBindJSON(&body); err == nil {
+			if filter == "" {
+				filter = body.Filter
+			}
+			if order == "" {
+				order = body.Order
+			}
+		}
+	}
+	if filter == "" {
+		filter = "all"
+	}
+	return filter, order
+}
+
 // RefreshWatchlist POST /api/v1/watchlist/refresh
 // 执行顺序：查列表 → 并发拉行情（上限 limit）→ pipeline 批量写缓存
 //
@@ -263,10 +289,12 @@ func RefreshWatchlist(c *gin.Context) {
 		}
 	}
 
-	filter := c.DefaultQuery("filter", "all")
+	// filter/order 同时接受 query 与 JSON body：列表接口是 GET 用 query，
+	// 刷新是 POST，小程序把参数放在 body 里，只读 query 会静默丢掉过滤条件
+	filter, order := refreshParams(c)
 	// 组装与列表接口共用一套：行情优先级 fresh > stale > 无行情
 	items, totalProfit, totalCostValue := assembleItems(rows, fresh, staleMap, filter)
-	sortItems(items, filter, c.DefaultQuery("order", ""))
+	sortItems(items, filter, order)
 
 	// 行情更新完成，异步广播给关心方（提醒检查等），不拖慢本接口响应
 	hook.EmitQuoteUpdatedAsync(userID, ctx)
