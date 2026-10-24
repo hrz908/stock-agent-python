@@ -177,10 +177,12 @@ func setDefaults() {
 	d("quote_api", "")
 	d("wechat_appid", "")
 	d("wechat_secret", "")
-	// 企业微信自建应用凭据：默认可用，生产建议用环境变量覆盖（secret 敏感，勿入公开仓库）
-	d("wecom_corp_id", "wwb79b9d374733e09e")
-	d("wecom_secret", "2XyncvexPia7u-EIUr3xGerRrbluXw-oRmvdTW23NaA")
-	d("wecom_agent_id", 1000002)
+	// 企业微信自建应用凭据：不设默认值，必须来自 .env。
+	// 曾把真实 corp_id/secret/agent_id 写在这里，而仓库是公开的——按已泄露处理。
+	// 三项缺任意一项，wecom.Enabled() 为 false，只是不推送，不影响站内提醒。
+	d("wecom_corp_id", "")
+	d("wecom_secret", "")
+	d("wecom_agent_id", 0)
 	d("wecom_webhook", "")
 	d("upload_dir", "./uploads")
 	d("env", "dev")
