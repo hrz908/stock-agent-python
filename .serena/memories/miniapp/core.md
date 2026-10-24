@@ -3,7 +3,7 @@
 原生小程序，**无第三方 UI 库**：navbar / tabs / empty / popup / toast / icon 与 8 张金融卡全部自研。设计 token 集中在 `styles/token.wxss`。
 
 ## 页面要点
-- `pages/chat`：自绘输入栏胶囊 + 语音转文字；K 线卡片限 10 行；流式滚动去抖；**发送看门狗 45s**（无 token 则复位 sending 并提示，避免「点了发送没反应」）；输入栏手势用 touchstart 标记而非 catch（catch 会让子元素点击全失效）
+- `pages/chat`：自绘输入栏胶囊 + 语音转文字（**微信同声传译插件 WechatSI**，`services/asr.js` 薄封装，app.json 需声明 plugins）；K 线卡片限 10 行；流式滚动去抖；**发送看门狗 45s**（无 token 则复位 sending 并提示，避免「点了发送没反应」）；输入栏手势用 touchstart 标记而非 catch（catch 会让子元素点击全失效）
 - `pages/settings`：昵称输入焦点铁律 —— `nicknameFocus` 必须镜像真实焦点，收键盘统一用 `wx.hideKeyboard()`；`type=nickname` 仅在「取微信昵称」期间存在；输入框加 `hold-keyboard`
 
 ## 构建

@@ -150,21 +150,11 @@ function createChatPage(opts) {
 
   const modules = {
     '../../services/agent': { default: agent },
+    // 语音识别的替身：本套用例不触发录音，只保证模块导入时能取到三个动作
     '../../services/asr': {
-      transcribe: () => Promise.resolve(''),
-      // 流式识别的替身：本套用例不触发录音，只保证模块导入时能取到构造器
-      AsrStream: class {
-        open() {
-          return Promise.resolve();
-        }
-        push() {}
-        finish() {}
-        cancel() {}
-        close() {}
-        broken() {
-          return false;
-        }
-      }
+      startRecognize: noop,
+      stopRecognize: noop,
+      abortRecognize: noop
     },
     '../../services/sessions': {
       listSessions: () => {
@@ -188,7 +178,9 @@ function createChatPage(opts) {
       }
     },
     // 只返回结构够用的最小形态：本套用例不校验 markdown 渲染
-    '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] }
+    '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] },
+    // 环境开关：用例里按开发版跑（isDev 为真才保留「K线测试」抽屉项）
+    '../../config': { isDev: true, apiBase: 'https://test.local', wsBase: 'wss://test.local' }
   };
 
   const source = toCommonJS(fs.readFileSync(CHAT_JS, 'utf8'));

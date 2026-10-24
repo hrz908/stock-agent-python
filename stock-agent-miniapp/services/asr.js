@@ -1,232 +1,149 @@
-import { apiBase, wsBase } from '../config';
-import { getToken, ensureLogin } from '../utils/request';
-
-// 语音转文字：把本地录音文件上传到网关，由网关转发上游 ASR，返回识别文本。
+// 语音转文字走「微信同声传译」插件（WechatSI），识别在插件侧完成，不再经过自家网关。
 //
-// 必须走 wx.uploadFile（multipart）：wx.request 发不了本地临时文件，
-// 而 utils/request.js 里固定了 Content-Type: application/json，也用不上。
-// 响应体的 data 是字符串，要自己 JSON.parse（与 services/user.js 上传头像一致）。
-export function transcribe(filePath) {
-  return ensureLogin(false).then(
-    () =>
-      new Promise((resolve, reject) => {
-        wx.uploadFile({
-          url: apiBase + '/api/v1/asr/transcribe',
-          filePath: filePath,
-          name: 'file',
-          header: { Authorization: 'Bearer ' + (getToken() || '') },
-          timeout: 30000,
-          success: (res) => {
-            let body = {};
-            try {
-              body = JSON.parse(res.data || '{}');
-            } catch (e) {
-              body = {};
-            }
-            if (res.statusCode === 200 && body.code === 0 && body.data) {
-              const text = (body.data.text || '').trim();
-              // 空文本当失败处理：发出一条空消息比不识别更让人困惑
-              if (text) resolve(text);
-              else reject(new Error('empty'));
-              return;
-            }
-            reject(new Error(body.message || '识别失败'));
-          },
-          fail: (err) => reject(new Error((err && err.errMsg) || '识别失败'))
-        });
-      })
-  );
-}
+// 前提有两步：小程序后台添加插件、app.json 的 plugins 里声明 provider（wx069ba97219f66d99）。
+// 管理器是插件级单例，回调只能属性赋值（manager.onStop = fn），
+// 而对话页允许压栈多个实例，所以这里统一接一次回调再分发给「当前会话」，
+// 页面只拿 start / stop / abort 三个动作。
+const PLUGIN_ID = 'WechatSI';
+// 停录后等插件回调的兜底时限：插件异常时不回 onStop，
+// 不清会话会让之后每次录音都卡在排队里（表现为按住完全没反应）
+const STALE_RESET_MS = 2000;
 
-// 实时语音识别：按住说话时把录音分片边录边传给网关，边说边出字。
-//
-// 协议（与 server/internal/asr/stream.go 约定）：
-//   地址：{wsBase}/api/v1/ws/asr?token=<jwt>（WebSocket 握手带不了自定义头，走 query 鉴权）
-//   上行：二进制帧 = mp3 分片；文本 {"type":"end"} 结束、{"type":"cancel"} 取消
-//   下行：{"type":"partial","text":...} 中间结果、
-//         {"type":"final","text":...} 终稿、
-//         {"type":"error","message":...} 异常
-//
-// 分片来自 RecorderManager.onFrameRecorded，回调可能早于 WebSocket 建立，
-// 所以先入队、连上后一次性补发；连不上或中途断开则标记 broken，
-// 由页面在松手后退回整段上传识别（transcribe），功能不会因此不可用。
-const STREAM_OPEN_TIMEOUT = 8000;
-const STREAM_MAX_QUEUE = 600;
+let manager = null;
+let current = null; // 正在进行的识别会话
+let pending = null; // 上一条还没收尾时排队的新会话
+let resetTimer = 0;
 
-export class AsrStream {
-  constructor(handlers) {
-    const h = handlers || {};
-    this._onPartial = h.onPartial || function () {};
-    this._onFinal = h.onFinal || function () {};
-    this._onError = h.onError || function () {};
+function noop() {}
 
-    this._task = null;
-    this._opened = false;
-    this._broken = false;
-    this._closed = false;
-    this._ending = false;
-    this._queue = [];
-    this._openPromise = null;
-  }
-
-  // 建立连接；返回 Promise，失败时 reject（同时触发 onError），页面可忽略。
-  open() {
-    if (this._openPromise) return this._openPromise;
-
-    this._openPromise = ensureLogin(false).then(
-      () =>
-        new Promise((resolve, reject) => {
-          const token = getToken() || '';
-          const url = wsBase + '/api/v1/ws/asr?token=' + encodeURIComponent(token);
-          const task = wx.connectSocket({ url });
-          this._task = task;
-
-          let timer = setTimeout(() => {
-            timer = 0;
-            this._fail('连接实时识别服务超时', reject);
-          }, STREAM_OPEN_TIMEOUT);
-
-          task.onOpen(() => {
-            if (timer) clearTimeout(timer);
-            timer = 0;
-            if (this._closed) {
-              this._shut(task);
-              return;
-            }
-            this._opened = true;
-            this._flushQueue();
-            resolve();
-          });
-
-          task.onMessage((res) => this._handle(res && res.data));
-
-          task.onError(() => {
-            if (timer) clearTimeout(timer);
-            timer = 0;
-            this._fail('实时识别连接异常', reject);
-          });
-
-          task.onClose(() => {
-            if (timer) clearTimeout(timer);
-            timer = 0;
-            // 正常收尾（收到 final 或主动 cancel）不算异常
-            if (!this._closed) this._fail('实时识别连接中断', reject);
-          });
-        })
-    );
-
-    // 调用方通常只关心 onError 回调，这里吞掉 rejection 避免未处理告警
-    this._openPromise.catch(function () {});
-    return this._openPromise;
-  }
-
-  // 推入一帧录音（ArrayBuffer）。连接未就绪时排队，避免开头几个字丢失。
-  push(frameBuffer) {
-    if (this._closed || this._broken || !frameBuffer) return;
-    if (!this._opened) {
-      if (this._queue.length < STREAM_MAX_QUEUE) this._queue.push(frameBuffer);
-      return;
-    }
-    this._sendBinary(frameBuffer);
-  }
-
-  // 松手：告诉服务端音频结束，等 final 回来。
-  finish() {
-    if (this._closed || this._broken || this._ending) return;
-    this._ending = true;
-    if (!this._opened) return; // 连接建好后 _flushQueue 会补发 end
-    this._sendText('{"type":"end"}');
-  }
-
-  // 取消（上滑放弃）：直接断开，不等结果。
-  cancel() {
-    if (this._closed) return;
-    if (this._opened && !this._broken) this._sendText('{"type":"cancel"}');
-    this.close();
-  }
-
-  close() {
-    if (this._closed) return;
-    this._closed = true;
-    this._queue = [];
-    if (this._task) this._shut(this._task);
-    this._task = null;
-  }
-
-  // 连接是否已失效（页面据此决定要不要回退整段识别）
-  broken() {
-    return this._broken;
-  }
-
-  _shut(task) {
-    try {
-      task.close({});
-    } catch (e) {
-      // 已关闭 / 尚未连上时 close 可能抛错，忽略即可
-    }
-  }
-
-  _flushQueue() {
-    const queue = this._queue;
-    this._queue = [];
-    queue.forEach((buf) => this._sendBinary(buf));
-    if (this._ending) this._sendText('{"type":"end"}');
-  }
-
-  _sendBinary(buf) {
-    if (!this._task || this._closed || this._broken) return;
-    try {
-      this._task.send({ data: buf });
-    } catch (e) {
-      this._fail('发送录音失败');
-    }
-  }
-
-  _sendText(text) {
-    if (!this._task || this._closed || this._broken) return;
-    try {
-      this._task.send({ data: text });
-    } catch (e) {
-      this._fail('发送录音失败');
-    }
-  }
-
-  _handle(raw) {
-    if (typeof raw !== 'string' || this._broken) return;
-    let msg = null;
-    try {
-      msg = JSON.parse(raw);
-    } catch (e) {
-      return;
-    }
-    if (!msg) return;
-
-    if (msg.type === 'partial') {
-      this._onPartial(String(msg.text || ''));
-      return;
-    }
-    if (msg.type === 'final') {
-      this.close();
-      this._onFinal(String(msg.text || ''));
-      return;
-    }
-    if (msg.type === 'error') {
-      this._fail(msg.message || '识别失败');
-    }
-  }
-
-  // 失败只通知一次；已收过部分结果也不影响最终回退（回退用整段录音更准）
-  _fail(message, reject) {
-    if (this._broken || this._closed) {
-      if (reject) reject(new Error(message));
-      return;
-    }
-    this._broken = true;
-    this._queue = [];
-    if (reject) reject(new Error(message));
-    this._onError(message);
-    this.close();
+function safeStop() {
+  try {
+    manager.stop();
+  } catch (e) {
+    // 没在录时 stop 会抛错，忽略即可
   }
 }
 
-export default { transcribe, AsrStream };
+function clearReset() {
+  if (resetTimer) clearTimeout(resetTimer);
+  resetTimer = 0;
+}
+
+function scheduleReset() {
+  clearReset();
+  resetTimer = setTimeout(() => {
+    resetTimer = 0;
+    const s = current;
+    const p = pending;
+    current = null;
+    pending = null;
+    // 取消过的不通知（页面已复位）；排队中的会话也要给个失败回调，否则视图停在录音态
+    if (s && !s.aborted) s.onError('识别超时');
+    if (p) p.handlers.onError('识别超时');
+  }, STALE_RESET_MS);
+}
+
+// 上一条收尾后再启动排队的会话：插件同一时间只允许一次识别任务
+function flushPending() {
+  const p = pending;
+  pending = null;
+  if (!p) return;
+  startNow(p.handlers, p.options);
+}
+
+function ensureManager() {
+  if (manager) return manager;
+  const plugin = requirePlugin(PLUGIN_ID);
+  manager = plugin.getRecordRecognitionManager();
+
+  // 插件会无条件回调 onStart，没绑定的话等于塞了个 undefined 进去
+  manager.onStart = noop;
+
+  manager.onRecognize = (res) => {
+    const s = current;
+    if (!s || s.aborted) return;
+    s.onPartial(String((res && res.result) || ''));
+  };
+
+  manager.onStop = (res) => {
+    clearReset();
+    const s = current;
+    current = null;
+    // 取消过的不再回终稿：调用方已经复位视图，迟到的文本会串进下一次输入
+    if (s && !s.aborted) {
+      s.onFinal({
+        text: String((res && res.result) || ''),
+        duration: (res && res.duration) || Date.now() - s.startedAt
+      });
+    }
+    flushPending();
+  };
+
+  manager.onError = (res) => {
+    clearReset();
+    const s = current;
+    current = null;
+    if (s && !s.aborted) s.onError((res && (res.msg || res.errMsg)) || '识别失败');
+    flushPending();
+  };
+
+  return manager;
+}
+
+function startNow(handlers, options) {
+  const session = {
+    onPartial: handlers.onPartial || noop,
+    onFinal: handlers.onFinal || noop,
+    onError: handlers.onError || noop,
+    aborted: false,
+    startedAt: Date.now()
+  };
+  current = session;
+  try {
+    // duration 上限 60000，到点插件自动停并回调 onStop，与手动松手同一条收尾链路
+    manager.start({ duration: options.duration || 60000, lang: options.lang || 'zh_CN' });
+  } catch (e) {
+    current = null;
+    session.onError('语音识别不可用');
+  }
+}
+
+// 开始识别：handlers = { onPartial(text), onFinal({text, duration}), onError(msg) }
+export function startRecognize(handlers, options) {
+  const h = handlers || {};
+  const o = options || {};
+  try {
+    ensureManager();
+  } catch (e) {
+    // 插件没声明 / 未在后台添加时 requirePlugin 会抛错，转成一次失败回调
+    if (h.onError) h.onError('语音识别不可用');
+    return;
+  }
+
+  // 上一条还在收尾（取消、刚松手）：排队等它的 onStop，否则旧终稿会串到新一次录音里
+  if (current) {
+    current.aborted = true;
+    pending = { handlers: h, options: o };
+    safeStop();
+    scheduleReset();
+    return;
+  }
+  startNow(h, o);
+}
+
+// 松手：停止录音，等插件回调 onStop 给终稿
+export function stopRecognize() {
+  if (!current || current.aborted) return;
+  safeStop();
+  scheduleReset();
+}
+
+// 取消（上滑放弃）：丢弃本次结果，不等终稿
+export function abortRecognize() {
+  if (!current) return;
+  current.aborted = true;
+  safeStop();
+  scheduleReset();
+}
+
+export default { startRecognize, stopRecognize, abortRecognize };

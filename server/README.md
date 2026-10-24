@@ -57,7 +57,7 @@ curl -s http://127.0.0.1:8080/healthz
 | `ASR_BASE_URL` | `https://api.siliconflow.cn/v1` | 语音转文字上游（OpenAI 兼容的 `/audio/transcriptions`） |
 | `ASR_API_KEY` | 回退 `OPENAI_API_KEY` | 上游密钥；两者都为空时 `/api/v1/asr/transcribe` 直接报「未配置」 |
 | `ASR_MODEL` | `FunAudioLLM/SenseVoiceSmall` | 上游 ASR 模型 |
-| `TENCENT_ASR_APP_ID` / `TENCENT_ASR_SECRET_ID` / `TENCENT_ASR_SECRET_KEY` | 空 | 腾讯云实时语音识别凭据；三项全配才启用 `/api/v1/ws/asr` 流式识别，否则该路由返回 503，小程序自动回退整段上传识别 |
+| `TENCENT_ASR_APP_ID` / `TENCENT_ASR_SECRET_ID` / `TENCENT_ASR_SECRET_KEY` | 空 | 腾讯云实时语音识别凭据；三项全配才启用 `/api/v1/ws/asr` 流式识别，否则该路由返回 503。小程序语音已改用微信同声传译插件，这两条 ASR 路由目前没有前端调用方 |
 | `TENCENT_ASR_ENGINE` | `16k_zh` | 实时识别引擎（电话场景可用 `8k_zh`） |
 | `TENCENT_ASR_MAX_CONNS` | `64` | 进程内同时存活的实时识别连接上限 |
 

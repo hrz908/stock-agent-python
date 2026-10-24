@@ -6,7 +6,7 @@
 // @swc/runtime/_interop_require_wildcard（本项目不存在），chat.js 加载即抛错、页面方法全丢
 //（表现为 WXML 正常渲染但点击全部无效）。session_id 走 agentSocket.freshSessionId()。
 import agentSocket from '../../services/agent';
-import { transcribe, AsrStream } from '../../services/asr';
+import { startRecognize, stopRecognize, abortRecognize } from '../../services/asr';
 import {
   listSessions,
   createSession,
@@ -14,6 +14,7 @@ import {
   deleteSession
 } from '../../services/sessions';
 import { parseMarkdown } from '../../utils/markdown';
+import { isDev } from '../../config';
 
 // 侧边抽屉导航项（分组卡片 + 行间分隔线）
 // 不列「主页」：抽屉本来就只在主页存在，这一项点了没地方去。
@@ -22,8 +23,9 @@ const MENUS = [
   { key: 'watchlist', label: '自选股', sep: false },
   { key: 'alerts', label: '提醒', sep: true },
   { key: 'settings', label: '我的', sep: true },
-  // 卡片画廊（静态测试页，不接后端）：从抽屉进可随时查看八张金融卡样式
-  { key: 'kline', label: 'K线测试', sep: true }
+  // 卡片画廊是假数据页，只给开发版：体验版/正式版留着「K线测试」入口
+  // 等于把测试内容交付给用户，审核也会被判为内容不完整
+  ...(isDev ? [{ key: 'kline', label: 'K线测试', sep: true }] : [])
 ];
 
 // 抽屉导航项 → 子页面路由，key 与 MENUS 一一对应
@@ -486,17 +488,11 @@ function cardSlotMsg(kind) {
 }
 
 // ===== 语音输入 =====
-// 录音时长的两条边界：短于下限当作误触、不识别；触及上限自动结束
+// 录音时长的两条边界：短于下限当作误触、不识别；触及上限插件自动结束
 const REC_MIN_MS = 1000;
 const REC_MAX_MS = 60000;
 // 手指上滑超过这个距离（px）后松开，算「取消发送」
 const CANCEL_DISTANCE = 60;
-// 实时识别的分片大小（KB）：mp3 48kbps 下约 0.67 秒一帧，
-// 既能让中间结果跟得上说话，也不会把 WebSocket 压成高频小包
-const REC_FRAME_KB = 4;
-// 松手后等流式终稿的时限：腾讯云收到 end 通常几百毫秒内返回 final，
-// 超时还没到就直接回退整段录音上传识别，避免「识别中」一直转圈
-const VOICE_FINAL_WAIT_MS = 4000;
 // 中间结果的视图刷新间隔：识别回调远快于渲染需要，合批后只落最后一次
 const VOICE_TEXT_FLUSH_MS = 100;
 
@@ -572,8 +568,6 @@ Page({
     this._drawerClosed = true;
     // 本页挂在 agent 单例上的监听（event -> callback），onUnload 按引用精确摘除
     this._agentHandlers = {};
-
-    this.initVoice();
 
     let statusBarHeight = 44;
     let safeBottom = 0;
@@ -966,20 +960,11 @@ Page({
     if (this._measureTimer) clearTimeout(this._measureTimer);
     if (this._streamTimer) clearTimeout(this._streamTimer);
     this._clearSendWatchdog();
-    // 录音：走的时候停干净，否则后台还在录
-    if (this._recording && this._recorder) this._recorder.stop();
-    // 实时识别：断开 WebSocket、清掉中间结果的合批 / 终稿等待定时器
-    if (this._asr) {
-      this._asr.cancel();
-      this._asr = null;
-    }
+    // 语音：走的时候停干净，否则插件还在后台录音
+    if (this._recording) abortRecognize();
     if (this._voiceTextTimer) {
       clearTimeout(this._voiceTextTimer);
       this._voiceTextTimer = 0;
-    }
-    if (this._voiceTimer) {
-      clearTimeout(this._voiceTimer);
-      this._voiceTimer = 0;
     }
   },
 
@@ -1138,101 +1123,46 @@ Page({
 
   /* ===== 语音输入 ===== */
 
-  // 录音器是单例，建一次复用。
-  // 挂在 this 上而不是 data 里：data 会参与视图 diff，塞这种对象只会白白加重开销
-  initVoice() {
-    this._recorder = wx.getRecorderManager();
+  // 松手 / 到时长上限 / 取消的统一收尾：插件在 stop 后回调 onStop 带回终稿，
+  // 这里先复位视图，再决定是填输入框还是丢弃
+  onVoiceStop(res) {
+    if (this._unloaded) return;
+    const canceled = this._recordCanceled;
+    const text = (res && res.text) || '';
+    const ms = (res && res.duration) || Date.now() - (this._recordStartAt || 0);
 
-    // 录音分片（mp3）边录边发给实时识别；连接未就绪时由 AsrStream 排队补发
-    if (this._recorder.onFrameRecorded) {
-      this._recorder.onFrameRecorded((res) => {
-        if (this._unloaded) return;
-        if (this._asr && res && res.frameBuffer) this._asr.push(res.frameBuffer);
-      });
-    }
+    this._recording = false;
+    this._fingerDown = false;
+    this._recordCanceled = false;
+    this.setData({ recording: false, recordCanceling: false, recordTip: '按住说话' });
 
-    this._recorder.onStop((res) => {
-      // 页面已销毁：不再碰视图，直接放弃这次结果
-      if (this._unloaded) return;
-      const path = (res && res.tempFilePath) || '';
-      const ms = (res && res.duration) || 0;
-      // 是否取消要在状态复位之前读出来：onRecordEnd 里已经把结果放进 _recordCanceled
-      const canceled = this._recordCanceled;
-      const asr = this._asr;
-
-      this._recording = false;
-      this._fingerDown = false;
-      this.setData({ recording: false, recordCanceling: false, recordTip: '按住说话' });
-
-      if (canceled || !path) {
-        if (asr) asr.cancel();
-        this.clearVoiceText();
-        return;
-      }
-      if (ms < REC_MIN_MS) {
-        if (asr) asr.cancel();
-        this.clearVoiceText();
-        this.toast('说话时间太短', 1200);
-        return;
-      }
-      this.finishVoice(path, asr);
-    });
-
-    this._recorder.onError(() => {
-      if (this._unloaded) return;
-      this._recording = false;
-      this._fingerDown = false;
-      if (this._asr) {
-        this._asr.cancel();
-        this._asr = null;
-      }
-      this.setData({ recording: false, recordCanceling: false, recordTip: '按住说话' });
+    if (canceled) {
       this.clearVoiceText();
-      this.toast('录音失败，请重试');
-    });
+      return;
+    }
+    // 太短且一个字都没识别出来：当误触，不往输入框里塞空内容
+    if (!text.trim() && ms < REC_MIN_MS) {
+      this.clearVoiceText();
+      this.toast('说话时间太短', 1200);
+      return;
+    }
+    this.applyVoiceText(text);
   },
 
-  // 松手后的收尾：流式终稿已到就直接填；没到就等 final（限时），
-  // 超时或流式已失效则回退整段录音上传识别，功能始终可用
-  finishVoice(path, asr) {
-    this._voiceSettled = false;
-    this._voicePath = path;
-    this._asr = null;
-    this.setData({ statusText: '语音识别中...' });
+  onVoiceError(message) {
+    if (this._unloaded) return;
+    const canceled = this._recordCanceled;
 
-    if (!asr) {
-      this.speechToInput(path);
-      return;
-    }
-
-    // 终稿在松手前就到了（短句）：直接用，不必再等。
-    // 注意用 null 判断而不是真值：空终稿（没听清）也要立刻收尾，不能白等超时
-    if (this._voiceFinal !== null) {
-      const text = this._voiceFinal;
-      this._voiceFinal = null;
-      asr.close();
-      this.applyVoiceText(text);
-      return;
-    }
-
-    // 连接已失效：不必等超时，直接整段识别
-    if (asr.broken()) {
-      asr.cancel();
-      this.speechToInput(path);
-      return;
-    }
-
-    this._voiceTimer = setTimeout(() => {
-      this._voiceTimer = 0;
-      if (this._voiceSettled) return;
-      asr.cancel();
-      this.speechToInput(path);
-    }, VOICE_FINAL_WAIT_MS);
-
-    asr.finish();
+    this._recording = false;
+    this._fingerDown = false;
+    this._recordCanceled = false;
+    this.setData({ recording: false, recordCanceling: false, recordTip: '按住说话' });
+    this.clearVoiceText();
+    if (canceled) return;
+    this.toast(message || '没听清，请再说一次');
   },
 
-  // 实时识别的中间结果：只更新浮层，不碰输入框（等终稿再填）
+  // 中间结果：只更新浮层，不碰输入框（等终稿再填）
   onVoicePartial(text) {
     if (this._unloaded) return;
     this._voicePartial = String(text || '');
@@ -1244,59 +1174,24 @@ Page({
     }, VOICE_TEXT_FLUSH_MS);
   },
 
-  // 实时识别的终稿：松手前到达就缓存，松手后直接落进输入框
-  onVoiceFinal(text) {
-    if (this._unloaded) return;
-    const value = String(text || '');
-    if (this._voiceSettled) return;
-    if (this._asr) {
-      // 还在录音：先缓存，等 onStop 走 finishVoice
-      this._voiceFinal = value;
-      return;
-    }
-    this.applyVoiceText(value);
-  },
-
-  onVoiceStreamError() {
-    // 录音进行中不打断用户：分片已停发，松手后 finishVoice 会按 broken() 直接回退。
-    // 松手后等终稿期间断流则立刻回退，不必空等超时
-    if (this._recording || this._voiceSettled) return;
-    const path = this._voicePath;
-    if (!path) return;
-    if (this._voiceTimer) {
-      clearTimeout(this._voiceTimer);
-      this._voiceTimer = 0;
-    }
-    this.speechToInput(path);
-  },
-
   // 把识别结果填入输入框，等用户确认（可编辑）后手动发送
   applyVoiceText(text) {
     if (this._unloaded) return;
     const value = String(text || '').trim();
 
-    this._voiceSettled = true;
-    if (this._voiceTimer) {
-      clearTimeout(this._voiceTimer);
-      this._voiceTimer = 0;
-    }
     if (this._voiceTextTimer) {
       clearTimeout(this._voiceTextTimer);
       this._voiceTextTimer = 0;
     }
-    this._asr = null;
-    this._voicePath = '';
-    this._voiceFinal = null;
     this._voicePartial = '';
 
     if (!value) {
-      if (this.data.statusText === '语音识别中...') this.setData({ statusText: '' });
       this.clearVoiceText();
       this.toast('没听清，请再说一次');
       return;
     }
 
-    this.setData({ statusText: '', voiceText: '', voiceMode: false, input: value, inputFocus: true });
+    this.setData({ voiceText: '', voiceMode: false, input: value, inputFocus: true });
     // 手动填 input 绕过了 onInput，胶囊高度变化要自己补一次测量
     this.scheduleMeasureSender();
   },
@@ -1308,34 +1203,6 @@ Page({
     }
     this._voicePartial = '';
     if (this.data.voiceText) this.setData({ voiceText: '' });
-  },
-
-  // 整段上传识别：流式不可用时的兜底，链路与原先一致
-  speechToInput(path) {
-    // 进入兜底即视为这次语音已收尾：防止迟到的流式 final 再覆盖结果
-    this._voiceSettled = true;
-    this._voicePath = '';
-    if (this._voiceTimer) {
-      clearTimeout(this._voiceTimer);
-      this._voiceTimer = 0;
-    }
-    this.setData({ statusText: '语音识别中...' });
-
-    transcribe(path)
-      .then((text) => {
-        if (this._unloaded) return;
-        this.applyVoiceText(text);
-      })
-      .catch((err) => {
-        if (this._unloaded) return;
-        this._voiceSettled = true;
-        // 只清掉自己的状态，别把识别期间冒出来的工具状态一起抹掉
-        if (this.data.statusText === '语音识别中...') this.setData({ statusText: '' });
-        this.clearVoiceText();
-        // asr.js 用 'empty' 表示识别不出内容，换成用户能看懂的话
-        const msg = err && err.message;
-        this.toast(!msg || msg === 'empty' ? '没听清，请再说一次' : msg);
-      });
   },
 
   onRecordStart(e) {
@@ -1379,31 +1246,20 @@ Page({
   startRecord() {
     this._recording = true;
     this._recordCanceled = false;
-    this._voiceFinal = null;
+    this._recordStartAt = Date.now();
     this._voicePartial = '';
-    this._voiceSettled = false;
 
     this.setData({ recording: true, recordCanceling: false, recordTip: '松开 转文字', voiceText: '' });
 
-    // 先连流式通道再开录：分片回调早于连接建立时由 AsrStream 排队补发
-    this._asr = new AsrStream({
-      onPartial: (text) => this.onVoicePartial(text),
-      onFinal: (text) => this.onVoiceFinal(text),
-      onError: () => this.onVoiceStreamError()
-    });
-    this._asr.open().catch(() => {});
-
-    // frameSize 让录音器按帧回调 onFrameRecorded（官方仅 mp3 支持）；
-    // 固定 16k / 单声道 / 48kbps，与腾讯云实时识别的音频属性一致。
-    // duration 到点录音器自动停，同样走 onStop 这条收尾链路
-    this._recorder.start({
-      format: 'mp3',
-      duration: REC_MAX_MS,
-      frameSize: REC_FRAME_KB,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      encodeBitRate: 48000
-    });
+    // 识别全程在插件侧完成：中间结果进浮层，松手后 onStop 带终稿回来
+    startRecognize(
+      {
+        onPartial: (text) => this.onVoicePartial(text),
+        onFinal: (res) => this.onVoiceStop(res),
+        onError: (message) => this.onVoiceError(message)
+      },
+      { duration: REC_MAX_MS }
+    );
   },
 
   // 上滑取消：越过阈值才算，免得手指轻微抖动就触发
@@ -1424,10 +1280,18 @@ Page({
     // 这里只标记，让 authorize 的回调据此放弃开录
     this._fingerDown = false;
     if (!this._recording) return;
-    this._recordCanceled = !!this.data.recordCanceling;
-    // stop 是异步的，录音结果在 onStop 里收，这里不立刻收尾；
-    // 上滑取消时 onStop 会读 _recordCanceled，丢弃这次录音
-    this._recorder.stop();
+
+    if (this.data.recordCanceling) {
+      // 上滑取消：立刻复位视图，识别结果由 asr 侧丢弃，不必等终稿
+      this._recordCanceled = true;
+      this._recording = false;
+      this.setData({ recording: false, recordCanceling: false, recordTip: '按住说话' });
+      this.clearVoiceText();
+      abortRecognize();
+      return;
+    }
+    // 正常松手：插件停止录音后回调 onStop，终稿在 onVoiceStop 里落输入框
+    stopRecognize();
   },
 
   // 滚到底：改用数值 scroll-top 定位，不再走 scroll-into-view。
@@ -1475,12 +1339,17 @@ Page({
     this.loadSessions(); // 每次打开抽屉刷新历史列表
   },
 
-  // 点行情卡 -> 卡片画廊（pages/test，静态八卡样式页）。
+  // 点行情卡 -> 个股详情。目前只有开发版能进（卡片画廊是假数据页），
+  // 体验版/正式版给一句提示而不是跳假数据：真实详情页做完后把 isDev 判断去掉即可。
   // 卡片内没有可点的子元素，bindtap 绑在组件根上即可整卡响应；
   // 没有 code（理论上不会出现）时不跳
   onQuoteCardTap(e) {
     const ds = (e && e.currentTarget && e.currentTarget.dataset) || {};
     if (!ds.code) return;
+    if (!isDev) {
+      this.toast('个股详情正在开发中');
+      return;
+    }
     wx.navigateTo({
       url: '/pages/test/index?code=' + encodeURIComponent(ds.code) +
         (ds.name ? '&name=' + encodeURIComponent(ds.name) : '')
