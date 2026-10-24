@@ -12,7 +12,7 @@ import { get, post, del } from '../utils/request';
 
 const API = '/api/v1';
 
-// 会话列表：按最近活跃倒序，返回 [{ session_id, title, updated_at }]
+// 会话列表：按最近活跃倒序，返回 { sessions: [{ session_id, title, updated_at }] }
 export function listSessions() {
   return get(`${API}/agent/sessions`);
 }
@@ -23,7 +23,7 @@ export function createSession(sessionId, title) {
 }
 
 // 某会话的纯文本消息（历史列表点选后恢复上下文）；
-// 返回 [{ role: 'user' | 'assistant', content }]，结构化卡片不持久化
+// 返回 { messages: [{ role: 'user' | 'assistant', content }] }，结构化卡片不持久化
 export function sessionMessages(sessionId) {
   return get(`${API}/agent/sessions/${encodeURIComponent(sessionId)}/messages`);
 }
