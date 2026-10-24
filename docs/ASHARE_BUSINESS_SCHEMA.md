@@ -98,13 +98,15 @@ market VARCHAR(2) GENERATED ALWAYS AS (
 
 ### 4.2 `stock_industry`
 
-`PRIMARY KEY (code, std)`，`std` 区分东财 `em` / 申万 `sw`；`l1/l2/l3` 分行存，不拼成 `"食品饮料-白酒"`（指南 §3 自己反对拼串，§2.1 却又拼了行业串）。
+`PRIMARY KEY (code, std)`，`std` 区分数据源：东财 `em`、申万 `sw`、新浪 `sina`（后者只用于概念）；`l1/l2/l3` 分行存，不拼成 `"食品饮料-白酒"`（指南 §3 自己反对拼串，§2.1 却又拼了行业串）。
+
+主备源：东财 push2 会整段拒绝国内云主机 IP（`RemoteDisconnected`，换域名无用），那时 `ashare` 自动退申万（一级行业名入库，成分按三级行业查）。两套词表不共存——换源成功后删掉另一源的行，同一只股票只保留一条现役行业；`std` 就是把这件事记下来的地方。同花顺不在候选里：akshare 只有它的板块清单与行情，没有成分股接口。
 
 索引 `(std, l1, l2)` 服务「某行业全部股票」和同业对比。
 
 ### 4.3 `stock_concept`
 
-`PRIMARY KEY (concept, code)`：主键首列给「概念 → 成分股」（高频），另建 `(code)` 索引给「这只股票有哪些概念」（`v_stock_profile` 用）。`board_code` 存东财板块代码，便于按板块整块刷新。
+`PRIMARY KEY (concept, code)`：主键首列给「概念 → 成分股」（高频），另建 `(code)` 索引给「这只股票有哪些概念」（`v_stock_profile` 用）。`board_code` 存板块代码（东财是数字代码，新浪用 `gn_*` label），`source` 记数据源（`em` / `sina`），便于按板块整块刷新。
 
 ### 4.4 `v_stock_profile`
 
@@ -190,17 +192,17 @@ market VARCHAR(2) GENERATED ALWAYS AS (
 上线待做：
 
 1. 已有库手工跑迁移（空数据卷由 initdb 自动执行）：
-   `python -m ashare.cli init-db --file 008_stock_master.sql --file 009_stock_finance_indicator.sql`
+   `python -m ashare.cli init-db --file 008_stock_master.sql --file 009_stock_finance_indicator.sql --file 010_stock_profile_any_source.sql`
 2. 首次同步：先 `--only basic`，再全量；概念全量约 4~5 分钟。之后每天 basic、每周 industry/concept。
 3. 跑下面的验收 SQL。
 4. 观察两周：确认同业候选质量、搜索兜底命中率，再决定是否把财务指标读取切到 009。
 
 ```sql
--- 行业覆盖率：上市股里没有行业的不应超过 1%
+-- 行业覆盖率：上市股里没有行业的不应超过 1%（不绑 std，换源后照样能查）
 SELECT count(*) FILTER (WHERE b.status = 'listed')        AS listed,
        count(*) FILTER (WHERE i.code IS NULL)             AS no_industry
 FROM stock_basic b
-LEFT JOIN stock_industry i ON i.code = b.code AND i.std = 'em';
+LEFT JOIN stock_industry i ON i.code = b.code;
 
 -- 交易所/板块分布：market/board 是生成列，未知前缀进不来，这里应始终无 NULL
 SELECT market, board, count(*) FROM stock_basic GROUP BY 1, 2 ORDER BY 3 DESC;
@@ -216,7 +218,7 @@ LIMIT 20;
 
 ## 11. 待决策
 
-1. 申万行业要不要补：当前只同步东财 `std='em'`；两套词表差异大，补之前先确认 RAG 行业过滤用哪一套，别把两套混进一个 `l1`。
+1. 申万行业要不要补：当前是东财 `std='em'` 主源 + 新浪 `std='sina'` 兜底；两套词表差异大，补申万之前先确认 RAG 行业过滤用哪一套，别把两套混进一个 `l1`。
 2. 财务指标由 `ashare` 常驻进程维护，还是独立 cron（前者能复用限速与运行审计）。
 3. `universe.json` 是否彻底下线，全部改查库（会影响 `em-news` 这类按股票采集的源）。
 4. 数据库只读角色何时引入：现在用「只读连接池 + 会话级 `default_transaction_read_only`」兜住误写；等 text2sql 真正立项再建 `stock_ro`，并新增 `DATABASE_URL_RO`，**不要**直接改 `DATABASE_URL`（会连 checkpoint 一起断掉）。

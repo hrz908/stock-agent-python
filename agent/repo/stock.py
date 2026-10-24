@@ -5,19 +5,30 @@
 """
 from db import fetch_all
 
+# 行业按「东财优先、否则最新一条」取：行业主源是东财（std='em'），
+# 东财被封时 ashare 会退新浪（std='sina'），写死 em 会让同业工具整片空掉
+_INDUSTRY_LATERAL = """
+LATERAL (
+  SELECT l1 FROM stock_industry
+  WHERE code = b.code
+  ORDER BY (std = 'em') DESC, updated_at DESC
+  LIMIT 1
+) i ON TRUE
+"""
+
 # 本股 + 行业：找不到股票或没有行业时后续查询自然返回空，不用异常表达「没数据」
-_ME_SQL = """
+_ME_SQL = f"""
 SELECT b.code, b.name, b.market, COALESCE(i.l1, '') AS industry_l1
 FROM stock_basic b
-LEFT JOIN stock_industry i ON i.code = b.code AND i.std = 'em'
+LEFT JOIN {_INDUSTRY_LATERAL}
 WHERE b.code = %(code)s
 """
 
 # 同行业候选：默认排除 ST（同业对比里放 ST 股会误导），按代码序保证结果稳定
-_PEERS_SQL = """
+_PEERS_SQL = f"""
 SELECT b.code, b.name, b.market
 FROM stock_basic b
-JOIN stock_industry i ON i.code = b.code AND i.std = 'em'
+JOIN {_INDUSTRY_LATERAL}
 WHERE i.l1 = %(industry)s
   AND b.code <> %(code)s
   AND b.status = 'listed'
@@ -28,7 +39,7 @@ LIMIT %(limit)s
 
 
 async def industry_peers(code: str, limit: int = 6, include_st: bool = False) -> dict:
-    """同行业候选（东财一级行业）。
+    """同行业候选（一级行业；东财优先，东财不可用时为新浪分类）。
 
     返回 {"code","name","market","industry","peers":[{code,name,market}]}；
     股票不在表里、或它还没有行业时 peers 为空——这是数据状态，不是错误。

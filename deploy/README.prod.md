@@ -149,10 +149,11 @@ ssl_certificate_key /etc/nginx/ssl/stock-agent.key;
 cd /opt/stock-agent/deploy
 docker compose -f docker-compose.prod.yml --profile ashare run --rm ashare \
   python -m ashare.cli init-db
-# 2.1) 主数据表：008 清单/行业/概念，009 财务指标宽表（P1，可后置）
+# 2.1) 主数据表：008 清单/行业/概念，009 财务指标宽表（P1，可后置），010 profile 视图
 docker compose -f docker-compose.prod.yml --profile ashare run --rm ashare \
-  python -m ashare.cli init-db --file 008_stock_master.sql --file 009_stock_finance_indicator.sql
-# 3) 首次灌主数据：先清单，再行业/概念（全量约 4~5 分钟）
+  python -m ashare.cli init-db --file 008_stock_master.sql \
+    --file 009_stock_finance_indicator.sql --file 010_stock_profile_any_source.sql
+# 3) 首次灌主数据：先清单，再行业/概念（东财可用时约 4~5 分钟；退新浪兜底时约 3 分钟）
 docker compose -f docker-compose.prod.yml --profile ashare run --rm ashare \
   python -m ashare.cli sync-master --only basic
 docker compose -f docker-compose.prod.yml --profile ashare run --rm ashare \
