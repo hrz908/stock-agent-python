@@ -5,6 +5,26 @@
 """
 from db import fetch_all
 
+# 单次返回的候选上限：工具层也有一份，两边各自收紧，放宽时不会只改一处就失控
+_MAX_PEERS = 20
+_DEFAULT_LIMIT = 6
+
+
+def _clean_code(code) -> str:
+    """只放行 6 位裸码：格式转换是调用方的事，写错了就该立刻回空，不去表里猜。"""
+    c = str(code or "").strip()
+    return c if len(c) == 6 and c.isdigit() else ""
+
+
+def _clamp_limit(limit) -> int:
+    """limit 收敛到 [1, _MAX_PEERS]；None / 非数字一律回落默认值，不把异常抛给工具层。"""
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        n = _DEFAULT_LIMIT
+    return max(1, min(n, _MAX_PEERS))
+
+
 # 行业按「东财优先、否则最新一条」取：行业主源是东财（std='em'），
 # 东财被封时 ashare 会退新浪（std='sina'），写死 em 会让同业工具整片空掉
 _INDUSTRY_LATERAL = """
@@ -53,11 +73,17 @@ async def industry_peers(code: str, limit: int = 6, include_st: bool = False) ->
 
     返回 {"code","name","market","industry","industry_detail","peers":[{code,name,market}]}；
     industry 是一级行业，industry_detail 是「食品饮料-饮料-白酒」这样的完整路径；
-    股票不在表里、或它还没有行业时 peers 为空——这是数据状态，不是错误。
+    股票不在表里、或它还没有行业时 peers 为空——这是数据状态，不是错误；
+    入参不是 6 位裸码时同样返回空结构且不查库——那是调用方的 bug，不该伪装成「没数据」。
     """
-    rows = await fetch_all(_ME_SQL, {"code": code})
+    me_code = _clean_code(code)
+    if not me_code:
+        return {"code": "", "name": "", "market": "", "industry": "",
+                "industry_detail": "", "peers": []}
+
+    rows = await fetch_all(_ME_SQL, {"code": me_code})
     if not rows:
-        return {"code": code, "name": "", "market": "", "industry": "",
+        return {"code": me_code, "name": "", "market": "", "industry": "",
                 "industry_detail": "", "peers": []}
 
     me = rows[0]
@@ -70,9 +96,10 @@ async def industry_peers(code: str, limit: int = 6, include_st: bool = False) ->
             "l1": l1,
             "l2": l2,
             "l3": l3,
-            "code": code,
-            "include_st": include_st,
-            "limit": max(1, min(int(limit), 20)),
+            "code": me_code,
+            # 只认布尔真值：字符串 "false" 经 bool() 会变 True，psycopg 也不收字符串
+            "include_st": include_st is True,
+            "limit": _clamp_limit(limit),
         })
         peers = [{"code": r["code"], "name": r["name"], "market": r["market"]} for r in fresh]
 

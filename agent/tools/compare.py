@@ -20,14 +20,23 @@ from tools.market import digits
 _MAX_PEERS = 2
 
 
-def _split_peers(peers: str) -> list:
-    """"000858,600809" -> ["000858", "600809"]，去空去重、截到上限。"""
-    out = []
+def _split_peers(peers: str, exclude: str = "") -> list:
+    """"000858,600809" -> ["000858", "600809"]：归一成 6 位裸码、去重、排除本股。
+
+    网关只认「6 位」或「前缀+6 位」，"000858.SZ" 这类点号写法会被直接拒掉；
+    同一只股票的 "600519" / "SH600519" / "600519.SH" 也必须在进对比卡前收敛成一只，
+    否则前端那张固定三列的卡里会出现重复的同一家公司。
+    """
+    me = digits(exclude)
+    out: list[str] = []
     for p in (peers or "").replace("，", ",").split(","):
-        p = p.strip()
-        if p and p not in out:
-            out.append(p)
-    return out[:_MAX_PEERS]
+        c = digits(p)
+        if not c or c == me or c in out:
+            continue
+        out.append(c)
+        if len(out) >= _MAX_PEERS:
+            break
+    return out
 
 
 async def _fetch_one(code: str) -> dict:
@@ -70,8 +79,9 @@ async def get_peer_compare(code: str, peers: str = "") -> dict:
     最新价、涨跌幅、市盈率 PE(TTM)、市净率 PB、总市值。
 
     Args:
-        code: 本股代码，如 "600519"。
+        code: 本股代码，如 "600519" 或 "SH600519"。
         peers: 同行代码，逗号分隔（如 "000858,600809"），最多 2 家；
+               只认其中的代码部分，与本股重复的会被丢掉；
                只有名称不知道代码时先调 symbol_search；
                想挑规模相近的同行时先调 get_industry_peers 再传进来——
                留空会自动按同行业补两家，但那只是兜底，不一定是最合适的比较对象。
@@ -79,12 +89,17 @@ async def get_peer_compare(code: str, peers: str = "") -> dict:
     Returns:
         {"ok": True, "data": {items: [{name, price, changePct, pe, pb, totalMv}...],
         ts_code, peers_source}}；
-        成功（items 首位是本股）；单只失败时该项带 error，不影响其余标的。
+        成功（items 首位是本股）；单只失败时该项带 error，不影响其余标的；
+        本股代码本身非法时 {"ok": False, "error": ...}，不发行情请求。
     """
-    codes = [code] + _split_peers(peers)
-    source = "explicit" if len(codes) > 1 else "industry"
-    if len(codes) == 1:
-        codes += await _auto_peers(code)
+    me = digits(code)
+    if not me:
+        return {"ok": False, "error": "股票代码无效"}
+    peers_list = _split_peers(peers, me)
+    codes = [me, *peers_list]
+    source = "explicit" if peers_list else "industry"
+    if not peers_list:
+        codes += await _auto_peers(me)
     if len(codes) == 1:
         source = "none"
 
@@ -94,5 +109,5 @@ async def get_peer_compare(code: str, peers: str = "") -> dict:
         return {"ok": False, "error": "行情快照全部获取失败，无法对比"}
     return {
         "ok": True,
-        "data": {"items": items, "ts_code": to_ts_code(code), "peers_source": source},
+        "data": {"items": items, "ts_code": to_ts_code(me), "peers_source": source},
     }

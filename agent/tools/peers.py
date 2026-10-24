@@ -12,8 +12,18 @@ from langchain_core.tools import tool
 from tools import call_tool_safe
 from tools.market import digits
 
-# 一次最多给多少候选：够模型挑 2 家，又不至于把上下文铺满
+# 一次最多给多少候选：够模型挑 2 家，又不至于把上下文铺满（仓储侧同样收紧到 20）
 _MAX_PEERS = 20
+_DEFAULT_TOP_N = 6
+
+
+def _top_n(v) -> int:
+    """top_n 收敛到 [1, _MAX_PEERS]；0 / None / 非数字都别变成异常抛到工具外面。"""
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        n = _DEFAULT_TOP_N
+    return max(1, min(n, _MAX_PEERS))
 
 
 @tool
@@ -37,6 +47,6 @@ async def get_industry_peers(code: str, top_n: int = 6) -> dict:
             return {"ok": False, "error": "股票代码无效"}
         from repo.stock import industry_peers
 
-        return await industry_peers(c, limit=max(1, min(int(top_n or 6), _MAX_PEERS)))
+        return await industry_peers(c, limit=_top_n(top_n))
 
     return await call_tool_safe(_do, timeout=5.0)
