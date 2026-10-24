@@ -11,7 +11,7 @@ const FILTERS = [
 // label 只用作弹窗里的提示文案，prefix 参与展示代码拼接
 const EXCHANGES = [
   { label: '沪市', prefix: 'SH', codes: ['600', '601', '603', '605', '688', '689'] },
-  { label: '深市', prefix: 'SZ', codes: ['000', '001', '002', '003', '300', '301'] },
+  { label: '深市', prefix: 'SZ', codes: ['000', '001', '002', '003', '300', '301', '302'] },
   { label: '北交所', prefix: 'BJ', codes: ['43', '83', '87', '88', '920'] }
 ];
 

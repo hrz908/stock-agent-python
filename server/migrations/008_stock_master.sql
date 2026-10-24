@@ -8,6 +8,9 @@
 -- 两边口径已经分叉；写成一个 CASE 之后新增代码前缀只改一处。未知前缀取不到值，
 -- 由 NOT NULL 直接拒绝入库——宁可报错，也不要悄悄落到错的交易所（B 股 900/200 就属于这类）。
 --
+-- 前缀表在本文件、server/internal/domain/stockcode/code.go、小程序 watchlist.js 各有一份，
+-- 上游开新号段（如创业板 302）必须同步三处，漏一处就是入库失败或前端搜不到。
+--
 -- 估值类字段（total_mv / pe / pb / 股息率）不进本表：它们是每日变动的行情快照，
 -- 网关已有 Redis 30s 缓存 + 腾讯实时源，落库即过时。
 
@@ -18,13 +21,13 @@ CREATE TABLE IF NOT EXISTS stock_basic (
   market      VARCHAR(2) GENERATED ALWAYS AS (
                 CASE
                   WHEN left(code, 3) IN ('600', '601', '603', '605', '688', '689') THEN 'SH'
-                  WHEN left(code, 3) IN ('000', '001', '002', '003', '300', '301') THEN 'SZ'
+                  WHEN left(code, 3) IN ('000', '001', '002', '003', '300', '301', '302') THEN 'SZ'
                   WHEN left(code, 3) = '920' OR left(code, 2) IN ('43', '83', '87', '88') THEN 'BJ'
                 END) STORED NOT NULL,
   board       VARCHAR(8) GENERATED ALWAYS AS (
                 CASE
                   WHEN left(code, 3) IN ('688', '689') THEN 'star'
-                  WHEN left(code, 3) IN ('300', '301') THEN 'gem'
+                  WHEN left(code, 3) IN ('300', '301', '302') THEN 'gem'
                   WHEN left(code, 3) = '920' OR left(code, 2) IN ('43', '83', '87', '88') THEN 'bse'
                   WHEN left(code, 3) IN ('600', '601', '603', '605', '000', '001', '002', '003') THEN 'main'
                 END) STORED NOT NULL,
