@@ -1,5 +1,6 @@
 import * as api from '../../services/watchlist';
 import * as stockApi from '../../services/stock';
+import { isDev } from '../../config';
 
 const FILTERS = [
   { key: 'all', label: '全部' },
@@ -317,7 +318,9 @@ Page({
     this.setData({ swipeIndex: -1, swipeDx: 0, swipeOpen: open ? s.index : -1 });
   },
 
-  // 点主行：先把打开状态的行收回去；没收起的动作（纯点击）则进卡片画廊。
+  // 点主行：先把打开状态的行收回去；没收起的动作（纯点击）则进个股详情。
+  // 详情页目前只有开发版可进（卡片画廊是假数据），正式版给提示，
+  // 免得把「卡片样式测试」和茅台假数据当成真实行情交付出去。
   // 横向滑动判定在 onRowTouchMove 里做，滑动锁定时触摸已交还列表、tap 不触发，
   // 因此滑完抬手不会误跳
   onRowMainTap(e) {
@@ -327,6 +330,10 @@ Page({
     }
     const ds = (e && e.currentTarget && e.currentTarget.dataset) || {};
     if (!ds.code) return;
+    if (!isDev) {
+      this.toast('个股详情正在开发中');
+      return;
+    }
     wx.navigateTo({
       url: '/pages/test/index?code=' + encodeURIComponent(ds.code) +
         (ds.name ? '&name=' + encodeURIComponent(ds.name) : '')
