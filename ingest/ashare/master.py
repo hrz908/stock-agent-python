@@ -24,6 +24,7 @@ import psycopg
 import psycopg.errors
 
 from ashare import config
+from ashare.net import HttpClient
 from ashare.universe import load_universe
 from ashare.util import cell, parse_datetime
 
@@ -234,10 +235,95 @@ def sync_basic(store) -> dict:
     return {"codes": len(codes), "with_list_date": len(dates), "delisted": delisted}
 
 
+# 东财 datacenter 的「公司概况」带 EM2016（东财三级行业）与 INDUSTRYCSRC1（证监会行业）。
+# 整表 5 页、约 2 秒、覆盖全市场，请求数比按板块循环少一个数量级；
+# push2 被封不影响这里（不同子域）。分页必须带 sortColumns，否则翻页会重复/漏行。
+_DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+_INDUSTRY_PAGE_SIZE = 5000
+_INDUSTRY_MAX_PAGES = 50
+
+
+def _split_em_industry(text: str) -> tuple[str, str | None, str | None]:
+    """'食品饮料-饮料-白酒' -> (l1, l2, l3)；层级缺失就留空，不猜。"""
+    parts = [p.strip() for p in (text or "").split("-") if p.strip()]
+    if not parts:
+        return "", None, None
+    l1 = parts[0]
+    l2 = parts[1] if len(parts) > 1 else None
+    # 三级行业名里可能自带 '-'（如「ATM设备-其他」），剩余部分整体归 l3
+    l3 = "-".join(parts[2:]) if len(parts) > 2 else None
+    return l1, l2, l3
+
+
+def _industry_bulk_em(client=None) -> list[tuple[str, str, str | None, str | None]]:
+    """东财行业整表 -> [(code, l1, l2, l3)]；同一代码重复出现时以后页为准。"""
+    client = client or HttpClient(qps=config.EASTMONEY_QPS)
+    rows: dict[str, tuple[str, str, str | None, str | None]] = {}
+    page, pages = 1, 1
+    while page <= min(pages, _INDUSTRY_MAX_PAGES):
+        payload = client.get_json(_DATACENTER_URL, params={
+            "reportName": "RPT_F10_BASIC_ORGINFO",
+            "columns": "SECURITY_CODE,EM2016",
+            "pageSize": str(_INDUSTRY_PAGE_SIZE),
+            "pageNumber": str(page),
+            "sortColumns": "SECURITY_CODE",
+            "sortTypes": "1",
+        })
+        result = (payload or {}).get("result") or {}
+        pages = int(result.get("pages") or 1)
+        for item in result.get("data") or []:
+            code = str(item.get("SECURITY_CODE") or "")
+            if not _valid_code(code):
+                continue
+            l1, l2, l3 = _split_em_industry(str(item.get("EM2016") or ""))
+            if l1:
+                rows[code] = (code, l1, l2, l3)
+        page += 1
+    return list(rows.values())
+
+
 def sync_industry(store, limit: int = 0) -> dict:
-    """行业（一级）：一只股票一行，l2/l3 留空；std 记数据源。"""
-    ak = _ak()
+    """行业：东财整表优先（l1/l2/l3 齐全），失败才退按板块循环、再退新浪。
+
+    limit 只对逐板块那条路有意义（限前 N 个板块）；整表只有 5 个请求，不裁。
+    """
     run_start = datetime.now(UTC)
+
+    rows: list[tuple] = []
+    try:
+        rows = _industry_bulk_em()
+    except Exception as exc:  # noqa: BLE001 - 整表失败不影响逐板块那条路
+        logger.warning("东财行业整表拉取失败（%s），改用板块接口", exc)
+
+    if rows:
+        # 整表 2.4 万行里含退市/未上市代码，stock_industry 有外键，必须先按清单过滤
+        known = _known_codes(store)
+        dropped = len(rows) - sum(1 for r in rows if r[0] in known)
+        rows = [r for r in rows if r[0] in known]
+        if dropped:
+            logger.info("整表里有 %d 个代码不在 stock_basic，已忽略", dropped)
+        deleted = _replace_industry_bulk(store, rows, run_start)
+        stats: dict = {"provider": "em", "via": "datacenter", "boards": 0,
+                       "rows": len(rows), "failed": 0, "deleted": deleted}
+        logger.info("行业同步完成：源 东财整表，行 %d，清理旧行 %d", len(rows), deleted)
+    else:
+        stats = _sync_industry_by_board(store, run_start, limit)
+
+    listed, covered = _industry_coverage(store)
+    stats["listed"], stats["covered"] = listed, covered
+    if listed and covered / listed < 0.9:
+        # 兜底源覆盖更窄是已知代价，但要让人一眼看到，别以为同步失败
+        logger.warning("行业覆盖率仅 %.0f%%：当前源 %s，东财恢复后重跑可回到全覆盖",
+                       covered * 100.0 / listed,
+                       _PROVIDER_CN.get(stats["provider"], stats["provider"]))
+    else:
+        logger.info("行业覆盖率 %d/%d", covered, listed)
+    return stats
+
+
+def _sync_industry_by_board(store, run_start, limit: int = 0) -> dict:
+    """按板块循环（东财 push2 → 新浪兜底）；只有整表接口不可用时才走到这里。"""
+    ak = _ak()
     boards, provider = _board_list(ak, "industry")
     if limit > 0:
         boards = boards[:limit]
@@ -258,16 +344,32 @@ def sync_industry(store, limit: int = 0) -> dict:
             logger.info("行业进度 %d/%d", index, len(boards))
 
     deleted = _replace_industry(store, rows, run_start, failed, provider)
-    listed, covered = _industry_coverage(store)
-    logger.info("行业同步完成：源 %s，板块 %d，成分 %d，失败 %d，清理旧行 %d，覆盖率 %d/%d",
-                _PROVIDER_CN.get(provider, provider), len(boards), len(rows), failed, deleted,
-                covered, listed)
-    if listed and covered / listed < 0.9:
-        # 兜底源覆盖更窄是已知代价，但要让人一眼看到，别以为同步失败
-        logger.warning("行业覆盖率仅 %.0f%%：当前是兜底源 %s，东财恢复后重跑可回到全覆盖",
-                       covered * 100.0 / listed, _PROVIDER_CN.get(provider, provider))
-    return {"provider": provider, "boards": len(boards), "rows": len(rows), "failed": failed,
-            "deleted": deleted, "listed": listed, "covered": covered}
+    logger.info("行业同步完成：源 %s，板块 %d，成分 %d，失败 %d，清理旧行 %d",
+                _PROVIDER_CN.get(provider, provider), len(boards), len(rows), failed, deleted)
+    return {"provider": provider, "via": "board", "boards": len(boards), "rows": len(rows),
+            "failed": failed, "deleted": deleted}
+
+
+def _replace_industry_bulk(store, rows: list[tuple], run_start) -> int:
+    """整表写入：l2/l3 一起更新（板块接口没有层级，所以那里仍是 NULL）。"""
+    with store.conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO stock_industry (code, std, l1, l2, l3, updated_at)
+            VALUES (%s, 'em', %s, %s, %s, now())
+            ON CONFLICT (code, std) DO UPDATE
+               SET l1 = EXCLUDED.l1, l2 = EXCLUDED.l2, l3 = EXCLUDED.l3,
+                   updated_at = now()
+            """,
+            rows,
+        )
+        cur.execute(
+            "DELETE FROM stock_industry WHERE updated_at < %s OR std <> 'em'",
+            (run_start,),
+        )
+        deleted = cur.rowcount or 0
+    store.conn.commit()
+    return deleted
 
 
 def _industry_coverage(store) -> tuple[int, int]:
