@@ -52,18 +52,22 @@ def patch_fetch(rows_by_call):
 def test_industry_peers():
     print("\n[1] industry_peers：两段查询与结果映射")
     calls = patch_fetch([
-        [{"code": "600519", "name": "贵州茅台", "market": "SH", "industry_l1": "酿酒行业"}],
+        [{"code": "600519", "name": "贵州茅台", "market": "SH", "industry_l1": "食品饮料",
+          "industry_l2": "饮料", "industry_l3": "白酒"}],
         [{"code": "000858", "name": "五粮液", "market": "SZ"}],
     ])
     data = asyncio.run(industry_peers("600519", limit=3))
 
     check("返回本股信息", data["name"] == "贵州茅台" and data["market"] == "SH")
-    check("返回行业名", data["industry"] == "酿酒行业")
+    check("返回一级行业名", data["industry"] == "食品饮料")
+    check("返回完整行业路径", data["industry_detail"] == "食品饮料-饮料-白酒",
+          data["industry_detail"])
     check("peers 只保留 code/name/market",
           data["peers"] == [{"code": "000858", "name": "五粮液", "market": "SZ"}],
           str(data["peers"]))
-    check("行业与上限下推到 SQL",
-          calls[1].get("industry") == "酿酒行业" and calls[1].get("limit") == 3, str(calls[1]))
+    check("行业三级与上限下推到 SQL",
+          calls[1].get("l1") == "食品饮料" and calls[1].get("l2") == "饮料"
+          and calls[1].get("l3") == "白酒" and calls[1].get("limit") == 3, str(calls[1]))
 
     print("\n[2] industry_peers：空结果口径")
     calls = patch_fetch([[]])

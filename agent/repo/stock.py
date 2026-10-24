@@ -9,7 +9,7 @@ from db import fetch_all
 # 东财被封时 ashare 会退新浪（std='sina'），写死 em 会让同业工具整片空掉
 _INDUSTRY_LATERAL = """
 LATERAL (
-  SELECT l1 FROM stock_industry
+  SELECT l1, l2, l3 FROM stock_industry
   WHERE code = b.code
   ORDER BY (std = 'em') DESC, updated_at DESC
   LIMIT 1
@@ -18,42 +18,58 @@ LATERAL (
 
 # 本股 + 行业：找不到股票或没有行业时后续查询自然返回空，不用异常表达「没数据」
 _ME_SQL = f"""
-SELECT b.code, b.name, b.market, COALESCE(i.l1, '') AS industry_l1
+SELECT b.code, b.name, b.market,
+       COALESCE(i.l1, '') AS industry_l1,
+       COALESCE(i.l2, '') AS industry_l2,
+       COALESCE(i.l3, '') AS industry_l3
 FROM stock_basic b
 LEFT JOIN {_INDUSTRY_LATERAL}
 WHERE b.code = %(code)s
 """
 
-# 同行业候选：默认排除 ST（同业对比里放 ST 股会误导），按代码序保证结果稳定
+# 同行业候选：默认排除 ST（同业对比里放 ST 股会误导）。
+# 分层排序是关键：只按一级分组时「食品饮料」里会混进黑芝麻、广弘控股，
+# 白酒的同行要先被 白酒(l3) > 饮料(l2) > 食品饮料(l1) 顶上来，所以 tier 第一顺位。
 _PEERS_SQL = f"""
-SELECT b.code, b.name, b.market
+SELECT b.code, b.name, b.market,
+       CASE
+         WHEN %(l3)s <> '' AND i.l3 = %(l3)s THEN 1
+         WHEN %(l2)s <> '' AND i.l2 = %(l2)s THEN 2
+         ELSE 3
+       END AS tier
 FROM stock_basic b
 JOIN {_INDUSTRY_LATERAL}
-WHERE i.l1 = %(industry)s
+WHERE i.l1 = %(l1)s
   AND b.code <> %(code)s
   AND b.status = 'listed'
   AND (%(include_st)s OR NOT b.is_st)
-ORDER BY b.is_st, b.code
+ORDER BY tier, b.is_st, b.code
 LIMIT %(limit)s
 """
 
 
 async def industry_peers(code: str, limit: int = 6, include_st: bool = False) -> dict:
-    """同行业候选（一级行业；东财优先，东财不可用时为新浪分类）。
+    """同行业候选（同 l1 内按 l3 > l2 > l1 分层，像白酒的同行排在饮料前面）。
 
-    返回 {"code","name","market","industry","peers":[{code,name,market}]}；
+    返回 {"code","name","market","industry","industry_detail","peers":[{code,name,market}]}；
+    industry 是一级行业，industry_detail 是「食品饮料-饮料-白酒」这样的完整路径；
     股票不在表里、或它还没有行业时 peers 为空——这是数据状态，不是错误。
     """
     rows = await fetch_all(_ME_SQL, {"code": code})
     if not rows:
-        return {"code": code, "name": "", "market": "", "industry": "", "peers": []}
+        return {"code": code, "name": "", "market": "", "industry": "",
+                "industry_detail": "", "peers": []}
 
     me = rows[0]
-    industry = me.get("industry_l1") or ""
+    l1 = me.get("industry_l1") or ""
+    l2 = me.get("industry_l2") or ""
+    l3 = me.get("industry_l3") or ""
     peers: list[dict] = []
-    if industry:
+    if l1:
         fresh = await fetch_all(_PEERS_SQL, {
-            "industry": industry,
+            "l1": l1,
+            "l2": l2,
+            "l3": l3,
             "code": code,
             "include_st": include_st,
             "limit": max(1, min(int(limit), 20)),
@@ -64,6 +80,7 @@ async def industry_peers(code: str, limit: int = 6, include_st: bool = False) ->
         "code": me["code"],
         "name": me["name"],
         "market": me["market"],
-        "industry": industry,
+        "industry": l1,
+        "industry_detail": "-".join(p for p in (l1, l2, l3) if p),
         "peers": peers,
     }

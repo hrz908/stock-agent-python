@@ -26,8 +26,9 @@ async def get_industry_peers(code: str, top_n: int = 6) -> dict:
         top_n: 返回候选数，默认 6，最多 20。
 
     Returns:
-        {"ok": True, "data": {code, name, market, industry,
+        {"ok": True, "data": {code, name, market, industry, industry_detail,
         peers: [{code, name, market}]}}；
+        peers 在同一级行业内按「同三级 > 同二级 > 同大类」排序（白酒的同行优先于饮料）；
         主数据未同步或数据库不可用时 {"ok": False, "error": ...}，不影响其余工具。
     """
     async def _do() -> dict:
