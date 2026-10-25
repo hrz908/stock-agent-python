@@ -379,6 +379,11 @@ Page({
       });
   },
 
+  // 隐私说明：静态页，只做跳转
+  onOpenPrivacy() {
+    wx.navigateTo({ url: '/pages/privacy/privacy' });
+  },
+
   /* ===== 退出登录 ===== */
 
   onLogout() {

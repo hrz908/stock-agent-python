@@ -133,8 +133,6 @@
         </view>
         <!-- 合规兜底：所有回答底部固定挂载免责声明（金融产品红线） -->
         <view class="disclaimer">以上内容由 AI 基于公开数据整理，仅供信息参考，不构成任何投资建议。市场有风险，决策需谨慎。</view>
-        <!-- 底部锚点：0 高度，仅作为列表内容的稳定结尾 -->
-        <view id="chat-bottom" class="chat-anchor"></view>
       </view>
     </scroll-view>
   </view>

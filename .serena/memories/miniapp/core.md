@@ -14,7 +14,8 @@
 
 ## 验证
 - 微信开发者工具可 CLI 调用：`& "C:\Program Files (x86)\Tencent\微信web开发者工具\wechatide.cmd" -c CodeBuddy <tool> --project <项目绝对路径>`，已登录；可 `open_project_window` / `simulator_open_page` / `simulator_screenshot` / `get_simulator_console`（参数 `--command "grep -in -e error"`）/ `build_npm`。
-- `npm test` 跑两套：`tests/newchat`（对话页交互，自建 vm 桩）+ `tests/unit`（format / markdown / SSE 分帧）。
+- `npm test` 跑两套：`tests/newchat`（对话页交互，自建 vm 桩，卡片模块用真实实现）+ `tests/unit`（format / markdown / SSE 分帧 / cards 映射）。
+- `npm run lint`：ESLint 10 扁平配置（只开 no-undef 一类硬错误，风格规则一概不开）；`eslint.config.js` 已在 packOptions.ignore 里，不进包。
 
 ## 相关
 `mem:core`、`mem:conventions`

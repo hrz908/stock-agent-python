@@ -174,6 +174,106 @@ test('agent：null 数据不会让页面侧取字段时抛错', () => {
   assert.ok(got[0] && typeof got[0] === 'object');
 });
 
+/* ===================== pages/chat/cards 映射 ===================== */
+const cards = loadModule(path.join(ROOT, 'pages', 'chat', 'cards.js'), {
+  '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] }
+});
+
+test('cards.quoteCard：字符串数字转 number，成交额万元→元', () => {
+  const msg = cards.quoteCard({
+    name: '贵州茅台',
+    code: 'SH600519',
+    status: 'trading',
+    price: '1523.66',
+    change: '-23.44',
+    change_percent: '-1.52',
+    amount: '461200',
+    turnover: '0.37',
+    total_mv: '191480000',
+    time: '15:00'
+  });
+  assert.strictEqual(msg.card, 'quote');
+  assert.strictEqual(msg.quote.price, 1523.66);
+  assert.strictEqual(msg.quote.changePct, -1.52);
+  assert.strictEqual(msg.quote.amount, 461200 * 10000, '成交额必须按万元换算成元');
+  assert.strictEqual(msg.quote.status, '交易中');
+  assert.strictEqual(msg.quote.note, '行情时间 15:00');
+  // 没有分时数据时必须显式给空数组，否则组件拿到 undefined
+  assert.strictEqual(Array.isArray(msg.quote.points), true);
+});
+
+test('cards.quoteCard：未知交易状态不外泄英文枚举', () => {
+  const msg = cards.quoteCard({ name: 'X', status: 'halted_forever' });
+  assert.strictEqual(msg.quote.status, '');
+});
+
+test('cards.klineCard：只取最近 15 根，副标题如实标注总数', () => {
+  const rows = [];
+  for (let i = 0; i < 30; i++) {
+    rows.push({ date: 'd' + i, open: '10', high: '11', low: '9', close: String(10 + i / 10), volume: '1000' });
+  }
+  const msg = cards.klineCard(rows, { name: '贵州茅台', code: 'SH600519' });
+  assert.strictEqual(msg.kline.length, 15);
+  assert.strictEqual(msg.kline[14].d, 'd29');
+  assert.ok(msg.klineSub.indexOf('最近 15 个交易日') === 0);
+  assert.ok(msg.klineSub.indexOf('共 30 根') > 0);
+  assert.strictEqual(msg.klineName, '贵州茅台');
+  // 均线与渲染区间等长（不能拿 30 根算 MA 再配 15 根蜡烛）
+  assert.strictEqual(msg.klineMa.ma20.length, 15);
+});
+
+test('cards.klineCard：不足两根时不崩，空数组也能返回结构', () => {
+  const msg = cards.klineCard([], null);
+  assert.strictEqual(msg.kline.length, 0);
+  assert.strictEqual(msg.klinePct, null);
+  assert.strictEqual(msg.klineSupport, null);
+  assert.strictEqual(msg.klineSub.indexOf('最近 0 个交易日'), 0);
+});
+
+test('cards.valuationCard / fundflowCard：数组包一行与直接一行两种载荷都吃', () => {
+  const row = { ts_code: '600519.SH', trade_date: '20261024', pe: '24.18', total_mv: '191480000' };
+  const a = cards.valuationCard([row]);
+  const b = cards.valuationCard(row);
+  assert.strictEqual(a.valuation.peTtm, null);
+  assert.strictEqual(a.valuation.totalCap, 191480000 * 10000);
+  assert.strictEqual(b.valuation.note, '600519.SH · 数据日期 2026-10-24');
+  assert.strictEqual(cards.valuationCard(null), null);
+
+  const flow = cards.fundflowCard({
+    ts_code: '600519.SH',
+    net_mf_amount: '12860',
+    buy_elg_amount: '100',
+    sell_elg_amount: '60',
+    lhb: [{ seat: '机构专用', buy: '100', sell: '20' }, { seat: '', buy: '1' }]
+  });
+  assert.strictEqual(flow.fundflow.mainNet, 12860 * 10000);
+  assert.strictEqual(flow.fundflow.tiers[0].value, 40 * 10000, '四档净额 =（买入-卖出）×10000');
+  assert.strictEqual(flow.fundflow.lhb.length, 1, '无席位的龙虎榜行必须丢掉');
+});
+
+test('cards.compareCard：少于两个标的返回 null（组件按空卡降级）', () => {
+  assert.strictEqual(cards.compareCard({ items: [{ name: 'A' }] }), null);
+  assert.strictEqual(cards.compareCard({ items: [] }), null);
+  const ok = cards.compareCard({ ts_code: 'SH600519', items: [{ name: 'A' }, { name: 'B', error: 'x' }, { name: 'C' }] });
+  assert.strictEqual(ok.compare.items.length, 2, '带 error 的项要剔除');
+});
+
+test('cards.eventCard：没有有效事件时返回 null，不再渲染空时间轴', () => {
+  assert.strictEqual(cards.eventCard({ events: [] }), null);
+  assert.strictEqual(cards.eventCard({ events: [{ date: '2026-10-01' }] }), null);
+  const ok = cards.eventCard({ events: [{ title: '解禁', important: 1 }], range: '近 30 天' });
+  assert.strictEqual(ok.event.events[0].important, true);
+  assert.strictEqual(ok.event.range, '近 30 天');
+});
+
+test('cards.reportCard：报告期标签与缺表容错', () => {
+  const msg = cards.reportCard({ income: { end_date: '20260630', revenue: '100' }, indicator: { or_yoy: '12.5' } });
+  assert.strictEqual(msg.report.periodLabel, '2026 中报');
+  assert.strictEqual(msg.report.revenue.yoy, 12.5);
+  assert.strictEqual(msg.report.cashFlow.value, null);
+  assert.strictEqual(msg.report.beat, '');
+});
+
 /* ===================== 运行 ===================== */
 (async () => {
   let passed = 0;

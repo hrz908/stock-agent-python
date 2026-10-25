@@ -485,11 +485,6 @@
   color: var(--ink-3);
 }
 
-/* scroll-into-view 锚点：0 高度，仅用于把列表滚到底 */
-.chat-anchor {
-  height: 0;
-}
-
 /* ===== 输入栏 ===== */
 /* 绝对定位于页面容器内（等价于 fixed，但会随页面一起参与转场动画） */
 .sender-wrap {

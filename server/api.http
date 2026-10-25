@@ -105,3 +105,9 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {"stock_code":"SH600519","quick_ask_id":"qa_600519_0"}
+
+### 注销账号（危险：硬删用户 + 自选 + 提醒规则 + 头像文件，不可恢复）
+### 只用测试账号执行；小程序侧会先逐条删除 /agent/sessions/:sid
+DELETE {{host}}/api/v1/user/account
+Authorization: Bearer {{token}}
+

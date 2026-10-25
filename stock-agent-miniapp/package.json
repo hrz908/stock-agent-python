@@ -4,6 +4,7 @@
   "description": "",
   "main": "app.js",
   "scripts": {
+    "lint": "eslint .",
     "test": "node tests/newchat/newchat.test.js && node tests/unit/core.test.js",
     "test:unit": "node tests/unit/core.test.js",
     "test:chat": "node tests/newchat/newchat.test.js"
@@ -14,5 +15,8 @@
   "type": "commonjs",
   "dependencies": {
     "marked": "^4.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^10.13.0"
   }
 }

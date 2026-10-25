@@ -175,9 +175,11 @@ display 的边界：**同一屏出现两个 display 数字等于没有 display**
   | `pages/watchlist/watchlist` | 自选股 | 主页抽屉 | 主页（chat） |
   | `pages/alerts/alerts` | 提醒 | 主页抽屉 | 主页（chat） |
   | `pages/settings/settings` | 我的 | 主页抽屉 | 主页（chat） |
-  | `pages/kline/index`（分包） | 股票名 / 卡片画廊 | 主页行情卡 **或** 自选股行 | 上一页（chat 或 watchlist）；栈空时兜底回主页 |
+  | `pages/privacy/privacy` | 隐私说明 | 设置页「隐私说明」 | 上一页（settings）；栈空时兜底回主页 |
+  | `pages/kline/kline` | 各周期 K 线 | 主页抽屉 | 主页（chat） |
+  | `pages/test/index` | 卡片画廊（**仅开发版**） | 主页行情卡 **或** 自选股行 | 上一页；非开发版 `onLoad` 直接 reLaunch 回主页 |
 
-  kline 为二级子页，`navigateBack` 回其上一页符合层级直觉；其 `reLaunch`
+  除主页外都是二级子页，`navigateBack` 回其上一页符合层级直觉；`reLaunch`
   兜底保证极端情况下仍能回到主页，不会出现卡死 / 空白页。
 
 ## 排版八条（结构与居中专章）

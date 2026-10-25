@@ -1,0 +1,63 @@
+<!-- 隐私说明：内容必须与真实数据链路一致（见 services/*、server/internal/module/*）
+     改采集范围、第三方或删除方式时同步改这里，并更新 version -->
+<view class="page">
+  <base-navbar title="隐私说明" left-arrow="{{true}}" bind:back="goBack" />
+
+  <scroll-view class="body" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
+    <view class="inner">
+      <view class="meta">更新日期 {{version}}</view>
+
+      <view class="sec">
+        <view class="h">一、我们收集哪些信息</view>
+        <view class="p">1. 登录标识：你首次打开小程序时，我们会通过微信登录换取一个用户编号（openid 的映射）。它用于区分不同用户，不包含你的手机号或身份证信息。</view>
+        <view class="p">2. 你主动填写的资料：昵称与头像。默认昵称为「微信用户」、头像为空；只有你在「设置 - 编辑资料」中主动修改时才会保存。</view>
+        <view class="p">3. 你创建的业务数据：自选股（含可选的买入单价与持股数量）、提醒规则（股票、触发条件、阈值、检查频率）。</view>
+        <view class="p">4. 你的对话内容：你在对话框输入的问题、语音转写出的文字，以及系统生成的回答。对话按会话保存在服务端，用于多轮上下文连续。</view>
+        <view class="p">5. 语音：仅在你在语音模式下主动说话时采集，用于转写成文字。</view>
+      </view>
+
+      <view class="sec">
+        <view class="h">二、这些信息用来做什么</view>
+        <view class="p">仅用于提供本小程序的功能：登录与身份识别、展示你的自选与盈亏、按你设定的规则检查提醒、生成并保存对话回答。我们不会用于广告投放，也不会出售你的个人信息。</view>
+      </view>
+
+      <view class="sec">
+        <view class="h">三、会与哪些第三方交互</view>
+        <view class="p">1. 微信同声传译插件：语音转文字由微信提供的插件在本地/微信侧完成，我们不上传你的录音文件。</view>
+        <view class="p">2. 行情与资讯数据源：为了取到价格、K 线、资金流向与公告，我们会向数据服务方发送股票代码或搜索词，不发送你的身份信息。</view>
+        <view class="p">3. 大模型服务：你的问题与必要的上下文会发送给模型服务方用于生成回答。请勿在对话中填写身份证号、银行卡号等敏感信息。</view>
+      </view>
+
+      <view class="sec">
+        <view class="h">四、存储与安全</view>
+        <view class="p">业务数据存储在服务端的数据库中；登录凭证保存在你本机的微信小程序缓存里。接口全程使用 HTTPS，并按用户隔离数据：你的自选、提醒与对话只有你自己的登录态可以访问。</view>
+      </view>
+
+      <view class="sec">
+        <view class="h">五、你可以怎么管理这些信息</view>
+        <view class="p">1. 查看与更正：设置页可修改昵称与头像。</view>
+        <view class="p">2. 删除单条对话：对话页左侧抽屉中的历史对话，右侧「×」可删除该会话及其上下文。</view>
+        <view class="p">3. 退出登录：设置页「退出登录」会清除本机保存的登录凭证。</view>
+        <view class="p">4. 注销账号：设置页「注销账号」会删除你的账号、自选股、提醒规则、对话记录与个人资料，且不可恢复。注销后再次打开小程序会生成一个全新的空账号。</view>
+      </view>
+
+      <view class="sec">
+        <view class="h">六、未成年人</view>
+        <view class="p">本小程序面向具备完全民事行为能力的成年人提供信息参考服务，不面向未成年人。若你是未成年人，请在监护人陪同下阅读本说明并决定是否使用。</view>
+      </view>
+
+      <view class="sec">
+        <view class="h">七、内容性质</view>
+        <view class="p">小程序展示的行情、资金、研报与由模型生成的回答，均基于公开数据整理，仅供信息参考，不构成任何投资建议。市场有风险，决策需谨慎。</view>
+      </view>
+
+      <view class="sec">
+        <view class="h">八、联系我们</view>
+        <view class="p" wx:if="{{contact}}">如对本说明有疑问，或需要行使上述权利，可联系：{{contact}}</view>
+        <view class="p p--todo" wx:else>联系方式待补充（上线前必须填写可用邮箱）。</view>
+      </view>
+
+      <view class="tail">本说明的变更会在本页更新「更新日期」，重大变更会在小程序内提示。</view>
+    </view>
+  </scroll-view>
+</view>

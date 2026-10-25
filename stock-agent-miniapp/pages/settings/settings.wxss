@@ -114,6 +114,26 @@
   text-decoration: underline;
 }
 
+/* 次级入口行（隐私说明）：与个人信息卡同一套浮起面，但更轻，
+   不带箭头以外的装饰，避免与「编辑资料」抢注意力 */
+.link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 96rpx;
+  margin-top: var(--sp-3);
+  padding: 0 var(--sp-3);
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+}
+
+.link-row-text {
+  font-size: var(--fs-body);
+  color: var(--ink-2);
+}
+
 /* ===== 编辑资料弹窗 ===== */
 .edit-form {
   display: flex;

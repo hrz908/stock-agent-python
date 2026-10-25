@@ -19,6 +19,13 @@
       <base-icon type="RightOutline" style="font-size:32rpx;color:var(--ink-3);" />
     </view>
 
+    <!-- 隐私说明入口：合规要求「可查阅、可撤回、可删除」，
+         说明页的文案与真实数据链路保持一致（见 pages/privacy） -->
+    <view class="link-row" bindtap="onOpenPrivacy">
+      <text class="link-row-text">隐私说明</text>
+      <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+    </view>
+
     <!-- 消息推送卡片按需求整块移除（偏好设置组随之消失，pushEnabled 相关
          逻辑在 settings.js 同步删掉），页面只留「个人资料 + 退出登录」 -->
   </view>

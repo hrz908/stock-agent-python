@@ -1,0 +1,55 @@
+/* 隐私说明：纯文字长页，靠字号与间距分层级，不加卡片外框。
+   底部留安全区，避免最后一行贴住 iPhone 的横条 */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  position: relative;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+}
+
+.inner {
+  padding: var(--sp-3) var(--sp-4) calc(var(--sp-6) + env(safe-area-inset-bottom));
+}
+
+.meta {
+  font-size: var(--fs-min);
+  color: var(--ink-3);
+}
+
+.sec {
+  margin-top: var(--sp-4);
+}
+
+.h {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.p {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-aux);
+  line-height: 1.8;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+
+/* 待补充项要显眼：这是上线前必须清掉的占位，不能当成普通正文混过去 */
+.p--todo {
+  color: var(--warn);
+}
+
+.tail {
+  margin-top: var(--sp-5);
+  font-size: var(--fs-min);
+  line-height: 1.7;
+  color: var(--ink-3);
+}

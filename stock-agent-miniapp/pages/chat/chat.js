@@ -14,6 +14,19 @@ import {
   deleteSession
 } from '../../services/sessions';
 import { parseMarkdown } from '../../utils/markdown';
+// 消息与卡片映射：纯函数模块，字段口径与 components/finance/* 的 props 一一对应
+import {
+  assistantMsg,
+  userMsg,
+  quoteCard,
+  klineCard,
+  valuationCard,
+  fundflowCard,
+  compareCard,
+  reportCard,
+  researchCard,
+  eventCard
+} from './cards';
 import { list as listQuickAsks, click as reportQuickAskClick } from '../../services/quickAsk';
 import { ensureLogin } from '../../utils/request';
 import { isDev } from '../../config';
@@ -86,9 +99,6 @@ const SWIPE_MIN = 40;
 // 否则正文出到一半服务端静默挂掉时 sending 会一直为 true，用户再也发不出去
 const SEND_TIMEOUT_MS = 45000;
 
-// 对话列表底部锚点：scroll-into-view 滚动到它即可到达列表末尾
-const CHAT_BOTTOM_ID = 'chat-bottom';
-
 // 输入栏胶囊高度（rpx）：按「两行」预估，见 chat.wxss 的 .sender-bar。
 // 首屏按最大高度预留才不会盖住最后一条消息，onReady 实测后会按真实高度修正。
 const SENDER_BAR_RPX = 136;
@@ -110,348 +120,8 @@ const SENDER_GAP_RPX = 5;
 // 各尺寸下观感一致（换算在 onLoad 里做，chatHeight 用的是 px）
 const KEYBOARD_GAP_RPX = 16;
 
-// 消息条目结构（自绘气泡）：
-// - 纯文本消息：content[0].data 是原文，blocks 是解析后的渲染结构
-// - 卡片消息（quote/kline 等）：content 为空数组，卡片本体由
-//   components/finance/* 组件渲染（行情卡、K 线图的版式 markdown 还原不出来）
-function assistantMsg(data) {
-  return {
-    role: 'assistant',
-    status: 'complete',
-    content: [{ type: 'markdown', data }],
-    // markdown 渲染结构：Lexer 切 token 后自绘（见 utils/markdown.js 与 chat.wxml 的 md-* 模板）
-    blocks: parseMarkdown(data)
-  };
-}
-
-function userMsg(data) {
-  return {
-    role: 'user',
-    status: 'complete',
-    content: [{ type: 'text', data }]
-  };
-}
-
-// 结构化卡片消息：八张卡（quote / kline / valuation / fundflow / report /
-// research / event / compare）的本体全部由 components/finance/* 组件渲染，
-// 页面只负责把后端 card / table 事件的字段映射成组件 props（组件内不做业务计算）
-
-// 后端 decimal 字段可能是数字也可能是字符串，统一转 number；空值给 null
-function numOrNull(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = parseFloat(v);
-  return isNaN(n) ? null : n;
-}
-
-// 简单移动平均：与 values 等长，前 n-1 项为 null（数据不足不出点，折线自然断开）
-function movingAverage(values, n) {
-  const out = [];
-  let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
-    sum += v == null ? 0 : v;
-    if (i >= n) {
-      const drop = values[i - n];
-      sum -= drop == null ? 0 : drop;
-    }
-    out.push(i >= n - 1 && v != null ? sum / n : null);
-  }
-  return out;
-}
-
-// K 线卡传给组件的根数。必须与 components/finance/kline-card 的 MAX_BARS 一致：
-// 组件只画 MAX_BARS 根，这里多传只会让副标题「最近 N 个交易日」与实际图不符
-const KLINE_CARD_ROWS = 15;
-
-function quoteCard(q) {
-  // 后端 QuoteDetail：涨跌幅字段是 change_percent（可能为字符串）；
-  // 成交额单位是万元，卡内统一按元换算（utils/format 的亿万换算是元口径）
-  const amount = q.amount == null ? null : parseFloat(q.amount) * 10000;
-  return {
-    role: 'assistant',
-    status: 'complete',
-    card: 'quote',
-    content: [],
-    quote: {
-      name: q.name,
-      code: q.code,
-      status: statusTextOf(q.status),
-      price: numOrNull(q.price),
-      change: numOrNull(q.change),
-      changePct: numOrNull(q.change_percent),
-      open: numOrNull(q.open),
-      high: numOrNull(q.high),
-      low: numOrNull(q.low),
-      amount: isNaN(amount) ? null : amount,
-      turnoverRate: numOrNull(q.turnover),
-      totalCap: numOrNull(q.total_mv),
-      // 分时走势与悬浮标签：数据源没有，显式给空数组——
-      // 组件内按「点数不足 2 个不出迷你走势」降级，不给就会拿到 undefined
-      points: [],
-      tags: [],
-      note: q.time ? '行情时间 ' + q.time : ''
-    }
-  };
-}
-
-// meta 是 table 事件的整个 payload（可能带 code / name：本轮查过行情时后端会补上，
-// K 线卡标题因此不再是空的）
-function klineCard(rows, meta) {
-  // 后端 KlineRow：date / open / high / low / close / volume / change_percent
-  const all = Array.isArray(rows) ? rows : [];
-  const shown = all.slice(-KLINE_CARD_ROWS);
-  const klines = shown.map((r) => ({
-    d: r.date,
-    o: numOrNull(r.open),
-    h: numOrNull(r.high),
-    l: numOrNull(r.low),
-    c: numOrNull(r.close),
-    v: numOrNull(r.volume)
-  }));
-
-  const closes = klines.map((k) => k.c);
-  const ma = {
-    ma5: movingAverage(closes, 5),
-    ma10: movingAverage(closes, 10),
-    ma20: movingAverage(closes, 20)
-  };
-
-  // 区间涨跌幅 / 振幅 / 支撑压力：全部按渲染区间内的真实高低点算，不涉及任何预测
-  const first = klines[0];
-  const last = klines[klines.length - 1];
-  const highs = klines.map((k) => k.h).filter((v) => v != null);
-  const lows = klines.map((k) => k.l).filter((v) => v != null);
-  let periodPct = null;
-  let amplitude = null;
-  if (first && last && first.c) {
-    periodPct = ((last.c - first.c) / first.c) * 100;
-    if (highs.length && lows.length) {
-      amplitude = ((Math.max.apply(null, highs) - Math.min.apply(null, lows)) / first.c) * 100;
-    }
-  }
-
-  return {
-    role: 'assistant',
-    status: 'complete',
-    card: 'kline',
-    content: [],
-    kline: klines,
-    klineMa: ma,
-    klinePct: periodPct,
-    klineAmplitude: amplitude,
-    // 量比需要当日分时成交节奏，日 K 数据源算不出来，不出这个指标（不拿日线近似）
-    klineVolumeRatio: null,
-    // 支撑 / 压力取区间内的最低 / 最高价（区间极值，不是预测位）
-    klineSupport: lows.length ? Math.min.apply(null, lows) : null,
-    klineResistance: highs.length ? Math.max.apply(null, highs) : null,
-    klineName: (meta && meta.name) || '',
-    klineCode: (meta && meta.code) || '',
-    // 副标题按实际渲染的根数走：被截断时如实标出
-    klineSub: '最近 ' + klines.length + ' 个交易日 · 前复权' + (all.length > klines.length ? '（共 ' + all.length + ' 根）' : ''),
-    // 口径类说明按需求全部移除，卡内不再出注释行
-    klineNote: ''
-  };
-}
-
-// ===== 估值 / 资金流向 / 财报速览三张卡 =====
-// 数据源已换成 akshare（东财/新浪），字段名沿用原 Tushare 口径，映射在此完成。
-// 由 agent 的 _emit_structured 以 card 事件下发，
-// 组件（components/finance/*）只做展示。行载荷统一可能是「数组包一行」或「直接一行」
-
-// 报告期标签：end_date "20260630" -> "2026 中报"
-function periodLabelOf(endDate) {
-  const s = String(endDate || '');
-  if (!/^\d{8}$/.test(s)) return '';
-  const map = { '03': '一季报', '06': '中报', '09': '三季报', '12': '年报' };
-  return s.slice(0, 4) + ' ' + (map[s.slice(4, 6)] || '报告期');
-}
-
-// YYYYMMDD -> YYYY-MM-DD（不成型原样返回空串）
-function fmtTsDate(v) {
-  const s = String(v || '');
-  return /^\d{8}$/.test(s) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6) : '';
-}
-
-// 万元 -> 元（估值 / 资金流的金额字段单位是万元，卡内亿万换算是元口径）
-function wanToYuan(v) {
-  const n = numOrNull(v);
-  return n == null ? null : n * 10000;
-}
-
-// 估值卡：daily_basic 行。历史分位 / 行业均值当前数据源没有，传空由卡片降级
-function valuationCard(payload) {
-  const row = Array.isArray(payload) ? payload[0] : payload;
-  if (!row) return null;
-  return {
-    role: 'assistant',
-    status: 'complete',
-    card: 'valuation',
-    content: [],
-    valuation: {
-      peStatic: numOrNull(row.pe),
-      // peTtm 而非 peTTM：微信把 wxml 的 pe-ttm 映射成 peTtm，写全大写会落空
-      peTtm: numOrNull(row.pe_ttm),
-      pb: numOrNull(row.pb),
-      ps: numOrNull(row.ps_ttm),
-      // PEG 需要「PE ÷ 净利增速」，当前数据源不给增速，恒空（卡片显示「--」）
-      peg: numOrNull(row.peg),
-      dividendYield: numOrNull(row.dv_ttm),
-      totalCap: wanToYuan(row.total_mv),
-      note: [row.ts_code, row.trade_date ? '数据日期 ' + fmtTsDate(row.trade_date) : '']
-        .filter(Boolean).join(' · ')
-    }
-  };
-}
-
-// 资金流向卡：moneyflow 行。四档净额 = 买入 - 卖出；net_mf_amount 即主力净流入。
-// 命中龙虎榜时（agent 的 get_top_list）payload 带上 lhb 席位区块：
-// 只取席位/买入/卖出三个量，金额单位万元 -> 统一换算成元
-function fundflowCard(payload) {
-  const row = Array.isArray(payload) ? payload[0] : payload;
-  if (!row) return null;
-  const net = (b, s) => {
-    const nb = numOrNull(b);
-    const ns = numOrNull(s);
-    return nb == null || ns == null ? null : (nb - ns) * 10000;
-  };
-  const lhb = (Array.isArray(row.lhb) ? row.lhb : [])
-    .filter((r) => r && r.seat)
-    .slice(0, 10)
-    .map((r) => ({ seat: r.seat, buy: wanToYuan(r.buy), sell: wanToYuan(r.sell) }));
-  const note = [
-    row.ts_code,
-    row.trade_date ? '数据日期 ' + fmtTsDate(row.trade_date) : '',
-    row.lhb_date ? '龙虎榜 ' + fmtTsDate(row.lhb_date) : ''
-  ].filter(Boolean).join(' · ');
-  return {
-    role: 'assistant',
-    status: 'complete',
-    card: 'fundflow',
-    content: [],
-    fundflow: {
-      mainNet: wanToYuan(row.net_mf_amount),
-      // 占成交额比 / 北向持股 / 连续流入天数 / 近 5 日趋势：对应数据源已下线（
-      // 见 server/README 的降级说明），恒空，卡片不出这几块，不编造数值
-      mainNetPct: null,
-      northPct: null,
-      northChangePct: null,
-      streakDays: null,
-      days5: [],
-      tiers: [
-        { label: '超大单', value: net(row.buy_elg_amount, row.sell_elg_amount) },
-        { label: '大单', value: net(row.buy_lg_amount, row.sell_lg_amount) },
-        { label: '中单', value: net(row.buy_md_amount, row.sell_md_amount) },
-        { label: '小单', value: net(row.buy_sm_amount, row.sell_sm_amount) }
-      ],
-      lhb: lhb,
-      note: note
-    }
-  };
-}
-
-// 同业对比卡：get_peer_compare 载荷 { items, ts_code }。
-// 维度全部为当日快照（价/涨跌幅/PE/PB/总市值），组件内做表格渲染与标优
-function compareCard(payload) {
-  const items = Array.isArray(payload && payload.items) ? payload.items : [];
-  const usable = items.filter((it) => it && it.name && !it.error);
-  if (usable.length < 2) return null; // 对比至少要有两个标的，组件按空卡降级
-  return {
-    role: 'assistant',
-    status: 'complete',
-    card: 'compare',
-    content: [],
-    compare: {
-      items: usable,
-      note: [payload.ts_code, '同业对比 · 当日行情快照'].filter(Boolean).join(' · ')
-    }
-  };
-}
-
-// 财报速览卡：get_financial_report 组合载荷 { indicator, income, cashflow }，
-// 任一子表可能为 null（积分不足时常见）。金额单位元，比率/同比是百分数值
-function reportCard(payload) {
-  const data = payload || {};
-  const ind = data.indicator || {};
-  const inc = data.income || {};
-  const cf = data.cashflow || {};
-  const endDate = inc.end_date || ind.end_date || cf.end_date || '';
-  const date = fmtTsDate(endDate);
-  return {
-    role: 'assistant',
-    status: 'complete',
-    card: 'report',
-    content: [],
-    report: {
-      periodLabel: periodLabelOf(endDate),
-      revenue: { value: numOrNull(inc.revenue), yoy: numOrNull(ind.or_yoy) },
-      netProfit: { value: numOrNull(inc.n_income_attr_p), yoy: numOrNull(ind.netprofit_yoy) },
-      cashFlow: { value: numOrNull(cf.n_cashflow_act), yoy: null },
-      grossMargin: numOrNull(ind.grossprofit_margin),
-      netMargin: numOrNull(ind.netprofit_margin),
-      roe: numOrNull(ind.roe),
-      eps: numOrNull(ind.eps),
-      // 一致预期数据源没有，beat 留空（卡片不出「超预期」标签）
-      beat: '',
-      // 数据日期：与其它卡片同一写法（估值 / 资金流向的「数据日期 YYYY-MM-DD」）
-      note: [inc.ts_code || ind.ts_code || cf.ts_code, date ? '数据日期 ' + date : '']
-        .filter(Boolean).join(' · ')
-    }
-  };
-}
-
-// 研报观点卡：get_research_reports 的单行（机构 / 评级 / 报告名称 / 原文链接）。
-// 东财研报没有目标价与盈利预测调整方向，targetPrice / upside / forecastDir 传 null，
-// 卡片按缺失降级显示「--」（工具层与前端都不编造数值）
-function researchCard(payload) {
-  const row = Array.isArray(payload) ? payload[0] : payload;
-  if (!row) return null;
-  return {
-    role: 'assistant',
-    status: 'complete',
-    card: 'research',
-    content: [],
-    research: {
-      org: row.org || '',
-      rating: row.rating || '',
-      targetPrice: numOrNull(row.target_price),
-      publishDate: row.publish_date || '',
-      reportType: row.report_type || '',
-      summary: row.summary || '',
-      forecastDir: row.forecast_dir || '',
-      upside: numOrNull(row.upside),
-      sourceName: row.source_name || row.org || '',
-      sourceUrl: row.source_url || ''
-    }
-  };
-}
-
-// 公司事件卡：get_stock_news 的当日资讯由后端折成时间轴事件（类型也是后端
-// 按标题关键词归纳的，前端不做二次推断）。整轮合成一张卡
-function eventCard(payload) {
-  const data = payload || {};
-  const events = (Array.isArray(data.events) ? data.events : [])
-    .filter((e) => e && e.title)
-    .map((e) => ({
-      type: e.type || '',
-      date: e.date || '',
-      title: e.title,
-      desc: e.desc || '',
-      important: !!e.important,
-      sourceUrl: e.source_url || e.sourceUrl || ''
-    }));
-  if (!events.length) return null;
-  return {
-    role: 'assistant',
-    status: 'complete',
-    card: 'event',
-    content: [],
-    event: {
-      events: events,
-      range: data.range || '',
-      note: data.note || ''
-    }
-  };
-}
+// 消息结构与八张卡的字段映射全部在 ./cards.js（纯函数，可脱离页面单测）：
+// 这里只负责把 SSE 事件转成 message 塞进列表，不再写字段映射。
 
 // ===== 卡片 =====
 // 一次回复最多出一张卡（后端按问题意图只挑一张），且一律排在正文之后：
@@ -507,20 +177,6 @@ const LOAD_COPY = {
   long: { text: '正在核对数据并组织回答', hint: '这次要查的资料比较多' },
   final: { text: '还在整理，内容比平时多', hint: '内容较长时会慢一些，请再稍等' }
 };
-
-// 交易状态：后端给 trading / closed，转成用户看得懂的中文。
-// 未知值一律不显示：直接把英文枚举抛给用户比空着更糟
-function statusTextOf(s) {
-  const map = {
-    trading: '交易中',
-    closed: '已收盘',
-    suspended: '停牌',
-    limit_up: '涨停',
-    limit_down: '跌停',
-    resume: '复牌'
-  };
-  return map[s] || '';
-}
 
 Page({
   data: {

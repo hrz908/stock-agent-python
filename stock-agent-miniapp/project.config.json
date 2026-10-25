@@ -42,6 +42,14 @@
       {
         "value": "tests",
         "type": "folder"
+      },
+      {
+        "value": "docs",
+        "type": "folder"
+      },
+      {
+        "value": "eslint.config.js",
+        "type": "file"
       }
     ],
     "include": []
