@@ -90,6 +90,13 @@ sudo bash scripts/deploy.sh logs server       # 看某服务日志（server/agen
 sudo bash scripts/deploy.sh logs              # 全部服务日志
 ```
 
+**日常发布不用登服务器**：本地跑 `git release`（等价于 `bash scripts/release.sh`）即可，
+它会 rebase 到 origin → push → ssh 执行上面的 `update` → 校验服务器 HEAD 与本地一致 → 探活 `/healthz`。
+本地工作区不干净、服务器有未提交改动、update 失败都会明确中止；`--dry-run` 只预演不推送。
+服务器地址取自本地 `remote.prod`（`ssh://ubuntu@tearsinrain.top/opt/stock-agent`），`--force` 用于「只改了 `.env` 想重建」。
+alias 与 `remote.prod` 都在 `.git/config`（不入库），换机器跑一次 `bash scripts/install-hooks.sh`（见 `docs/LOCAL_SETUP.md`）；
+PowerShell 里的 `bash` 指向 WSL，别用 `bash scripts/release.sh`，要么 `git release`，要么进 Git Bash。
+
 **备份**（首次部署后立刻装，改表/误删没有别的退路——迁移只在空数据卷执行）：
 
 ```bash

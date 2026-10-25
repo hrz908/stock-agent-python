@@ -11,7 +11,7 @@
 | `ingest/` | Python | 文档入库管线：加载 → 切分 → 向量化 → 写入 pgvector；`ashare/` 为 A股语料采集与主数据同步（股票清单/行业/概念） |
 | `stock-agent-miniapp/` | 微信小程序 | 前端：对话、行情、自选、预警、语音输入 |
 | `deploy/` | Docker Compose + nginx | 生产编排（`docker-compose.prod.yml`）、nginx 反代、`.env.production.example` |
-| `scripts/` | bash | `dev.sh`（本地任务入口）、`deploy.sh`（生产部署）、`backup.sh`（数据库备份/恢复演练）、`watchdog.sh`（探活告警） |
+| `scripts/` | bash | `dev.sh`（本地任务入口）、`deploy.sh`（生产部署）、`release.sh`（本地一条命令发布）、`install-hooks.sh`（新机一次性配置）、`backup.sh`（数据库备份/恢复演练）、`watchdog.sh`（探活告警） |
 | `docs/` | Markdown | 架构与决策文档 |
 
 ## 快速开始（本地）
@@ -23,6 +23,8 @@ bash scripts/dev.sh up
 bash scripts/dev.sh dev
 # 小程序：微信开发者工具导入 stock-agent-miniapp/，npm install 后「构建 npm」
 ```
+
+新电脑先跑 `bash scripts/install-hooks.sh`（钩子 + `remote.prod` + 别名，见 `docs/LOCAL_SETUP.md`）。
 
 详见 `server/README.md`、`deploy/README.prod.md` 与各服务内说明。
 
