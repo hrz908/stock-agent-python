@@ -131,18 +131,30 @@ class Pipeline:
     # ------------------------------------------------------------------ 单条
     def _process(self, raw: RawDoc, *, dry_run: bool = False, trust_body: bool = False) -> tuple[str, int]:
         prepared = self._prepare(raw, dry_run=dry_run, trust_body=trust_body)
-        chunks: list[Chunk] = chunk_document(
-            prepared.body,
-            {
-                "stock_codes": raw.stock_codes,
-                "stock_names": raw.stock_names,
-                "source_type": raw.source_type,
-                "pub_date": to_day(raw.pub_time),
-            },
-            max_chars=config.CHUNK_MAX_CHARS,
-            min_chars=config.CHUNK_MIN_CHARS,
-            overlap=config.CHUNK_OVERLAP_CHARS,
-        )
+        # chunk_document 返回纯文本 TextChunk；这里转成 upsert_document 需要的
+        # Chunk（带 embedding/metadata 槽位），否则嵌入后赋值会 AttributeError。
+        chunks: list[Chunk] = [
+            Chunk(
+                seq=c.seq,
+                content=c.content,
+                section=c.section,
+                token_count=c.token_count,
+                embedding=[],
+                metadata={},
+            )
+            for c in chunk_document(
+                prepared.body,
+                {
+                    "stock_codes": raw.stock_codes,
+                    "stock_names": raw.stock_names,
+                    "source_type": raw.source_type,
+                    "pub_date": to_day(raw.pub_time),
+                },
+                max_chars=config.CHUNK_MAX_CHARS,
+                min_chars=config.CHUNK_MIN_CHARS,
+                overlap=config.CHUNK_OVERLAP_CHARS,
+            )
+        ]
         if not chunks:
             raise SkipDoc("no_chunks")
 
