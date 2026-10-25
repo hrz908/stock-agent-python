@@ -6,7 +6,7 @@
 // 新建分包 + 构建 npm，与当前「主包 ≤2MB、零新增依赖」的改造节奏冲突；
 // 这里按指南对「迷你走势线」的同一思路（SVG polyline 手写）扩展到 K 线，
 // 数据字段与版式与设计稿一致，后续若要交互式图表可平滑替换图表区。
-const { fmtNum, fmtPct, fmtPctPlain, direction } = require('../../../utils/format');
+const { toNum, fmtNum, fmtPct, fmtPctPlain, direction } = require('../../../utils/format');
 const { svgToDataUri } = require('../../../utils/svg-uri');
 
 // viewBox 与分区（对齐视觉稿：K 线区 ≥180rpx，下方成交量）
@@ -198,6 +198,11 @@ Component({
   properties: {
     name: { type: String, value: '' },
     code: { type: String, value: '' },
+    // 自定义标题：多卡并列时（自选K线页的五个周期）用它写「日K线」这类周期名，
+    // 留空则退回「<股票名> 走势 / K 线走势」的对话内写法
+    title: { type: String, value: '' },
+    // 空态文案：给了就占住图区高度写这句话，没数据时卡片不会塌成一条
+    placeholder: { type: String, value: '' },
     // 副标题（code 为空时展示，如「最近 30 个交易日 · 前复权」）
     subtitle: { type: String, value: '' },
     // [{ key, label }]，为空用默认周期
@@ -208,13 +213,14 @@ Component({
     klines: { type: Array, value: [] },
     // 均线 { ma5, ma10, ma20 }，与 klines 等长（可含 null）
     ma: { type: Object, value: null },
-    // 区间涨跌幅（% 数值）/ 振幅（% 数值）/ 量比
-    periodPct: { type: Number, value: null },
-    amplitude: { type: Number, value: null },
-    volumeRatio: { type: Number, value: null },
-    // 支撑位 / 压力位
-    support: { type: Number, value: null },
-    resistance: { type: Number, value: null },
+    // 区间涨跌幅（% 数值）/ 振幅（% 数值）/ 量比 / 支撑位 / 压力位。
+    // 这几个必须是 type: null（任意类型）：声明成 Number 时 null 会被组件框架
+    // 强转成 0，空态卡片上就会显示「0.00%」而不是「--」
+    periodPct: { type: null, value: null },
+    amplitude: { type: null, value: null },
+    volumeRatio: { type: null, value: null },
+    support: { type: null, value: null },
+    resistance: { type: null, value: null },
     note: { type: String, value: '' }
   },
   data: {
@@ -286,7 +292,8 @@ Component({
         }
       }
       this.setData({
-        pctText: fmtPct(d.periodPct),
+        // 空态不显示「--%」：没有数据时连百分号一起去掉
+        pctText: toNum(d.periodPct) === null ? '--' : fmtPct(d.periodPct),
         pctDir: direction(d.periodPct),
         // 振幅没有方向，不带正负号
         amplitudeText: fmtPctPlain(d.amplitude),

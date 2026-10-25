@@ -1,0 +1,11 @@
+{
+  "usingComponents": {
+    "base-navbar": "/components/base/navbar/navbar",
+    "base-toast": "/components/base/toast/toast",
+    "ant-icon": "antd-mini/Icon/index",
+    "kline-card": "/components/finance/kline-card/kline-card"
+  },
+  "backgroundColor": "#ffffff",
+  "backgroundColorTop": "#ffffff",
+  "backgroundColorBottom": "#ffffff"
+}

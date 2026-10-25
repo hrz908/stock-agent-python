@@ -4,6 +4,7 @@
     "pages/watchlist/watchlist",
     "pages/alerts/alerts",
     "pages/settings/settings",
+    "pages/kline/kline",
     "pages/test/index"
   ],
   "window": {

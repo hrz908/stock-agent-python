@@ -114,14 +114,20 @@
   color: var(--ink-3);
 }
 
+/* 头部右侧的两个文字入口：编辑在左、删除在右 */
+.alert-card-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--sp-3);
+}
+
 /* 文字按键的统一热区：24rpx 字撑不出 88rpx，靠 min-height 补 */
 .alert-card-editbtn {
   display: flex;
   align-items: center;
   flex: none;
-  margin-left: auto;
   min-height: 88rpx;
-  padding: 0 0 0 var(--sp-3);
   font-size: var(--fs-aux);
   color: var(--ink-2);
 }
@@ -134,13 +140,12 @@
   margin-top: var(--sp-1);
 }
 
-/* 删除入口：头部右侧纯文字，危险红 */
+/* 删除入口：头部最外侧纯文字，危险红 */
 .alert-card-delbtn {
   display: flex;
   align-items: center;
   flex: none;
   min-height: 88rpx;
-  padding: 0 0 0 var(--sp-3);
   font-size: var(--fs-aux);
   color: var(--danger);
 }
@@ -151,12 +156,28 @@
   line-height: 1.1;
 }
 
+/* 第三行：左条件、右检查频率，两端对齐。
+   原来两项挤在一句里用「·」连接，频率跟着条件长度飘，看不出是一组固定信息 */
 .alert-card-desc {
   margin-top: var(--sp-1);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
   font-size: var(--fs-aux);
   color: var(--ink-2);
   line-height: 1.4;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+
+.alert-card-cond {
+  flex: 1;
+  min-width: 0;
+}
+
+.alert-card-freq {
+  flex: none;
+  color: var(--ink-3);
+  white-space: nowrap;
 }
 
 /* ===== 底部「新增提醒」 ===== */

@@ -5,15 +5,17 @@
 <view class="fcard card-class">
   <view class="fcard-hd">
     <view class="fcard-title-col">
-      <!-- 无股票名时（如聊天场景只收到 rows）退化为「K 线走势」 -->
-      <view class="fcard-name">{{name ? name + ' 走势' : 'K 线走势'}}</view>
+      <!-- 标题优先级：外部指定 > 股票名 + 走势 > 兜底「K 线走势」 -->
+      <view class="fcard-name">{{title || (name ? name + ' 走势' : 'K 线走势')}}</view>
       <view class="fcard-code num">{{code || subtitle}}</view>
     </view>
 
   </view>
 
-  <!-- K 线图：SVG data-URI 背景（蜡烛 + MA + 成交量）；数据不足时不占位 -->
+  <!-- K 线图：SVG data-URI 背景（蜡烛 + MA + 成交量）；数据不足时不占位。
+       带了 placeholder 的页面（自选K线）用空态占位顶住图区高度 -->
   <view wx:if="{{chartSrc}}" class="chart" style="background-image: url({{chartSrc}});"></view>
+  <view wx:elif="{{placeholder}}" class="chart chart--empty">{{placeholder}}</view>
 
   <view class="fgrid">
     <view class="fgrid-row">

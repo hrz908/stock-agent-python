@@ -19,12 +19,13 @@ import { isDev } from '../../config';
 // 侧边抽屉导航项：每行 = 文字 + 右侧箭头（左侧不放图标）
 // 不列「主页」：抽屉本来就只在主页存在，这一项点了没地方去
 const MENUS = [
-  { key: 'watchlist', label: '自选股' },
-  { key: 'alerts', label: '提醒' },
-  { key: 'settings', label: '我的' },
+  { key: 'watchlist', label: '行情收益' },
+  { key: 'alerts', label: '提醒通知' },
+  { key: 'settings', label: '用户信息' },
+  { key: 'kline', label: '自选K线' },
   // 卡片画廊是假数据页，只给开发版：体验版/正式版留着「K线测试」入口
   // 等于把测试内容交付给用户，审核也会被判为内容不完整
-  ...(isDev ? [{ key: 'kline', label: 'K线测试' }] : [])
+  ...(isDev ? [{ key: 'cardtest', label: 'K线测试' }] : [])
 ];
 
 // 首屏引导问题：股票名每次进页面随机抽，避免永远是同一只
@@ -53,7 +54,8 @@ const ROUTES = {
   watchlist: '/pages/watchlist/watchlist',
   alerts: '/pages/alerts/alerts',
   settings: '/pages/settings/settings',
-  kline: '/pages/test/index'
+  kline: '/pages/kline/kline',
+  cardtest: '/pages/test/index'
 };
 
 // 「新对话」：注册一条新 session 后压栈本页的一个新实例 = 一条全新会话

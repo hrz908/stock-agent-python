@@ -17,3 +17,10 @@ export function search(keyword, limit = 5) {
 export function quote(code) {
   return get(`${API}/stock/quote`, { code });
 }
+
+// 单周期 K 线：period 取 m1 / m5 / m15 / day / week，limit 默认 60 根。
+// 返回 { code, period, bars: [{ d, o, h, l, c, v }] }（时间升序；价量是字符串，
+// 由页面转数字）。均线 / 区间统计后端不算，页面按卡片口径自己算
+export function kline(code, period, limit = 60) {
+  return get(`${API}/stock/kline`, { code, period, limit });
+}

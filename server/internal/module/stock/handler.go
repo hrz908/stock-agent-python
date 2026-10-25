@@ -1,6 +1,7 @@
 package stock
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -134,6 +135,78 @@ func GetQuote(c *gin.Context) {
 	}
 	if deps.RDB != nil {
 		_ = deps.RDB.Set(ctx, cacheKey, body, quoteCacheTTL).Err()
+	}
+
+	c.Header("X-Cache", "MISS")
+	c.Data(200, "application/json; charset=utf-8", body)
+}
+
+// klineCacheTTL K 线缓存 30 秒：与行情快照同一档位。
+// 页面一次要拉 5 个周期，来回切股票时同一只股票的请求会被这里挡住
+const klineCacheTTL = 30 * time.Second
+
+const (
+	// klineDefaultLimit 单次默认返回根数：卡片图区只画最近 15 根，
+	// 多取一些是为了让 MA20 与区间统计有足够样本
+	klineDefaultLimit = 60
+	// klineMaxLimit 上限：再多前端也画不下，只会把响应体撑大
+	klineMaxLimit = 120
+)
+
+// GetKline GET /api/v1/stock/kline?code=SH600519&period=day&limit=60
+// 单个周期的 K 线：分钟线走腾讯分钟接口，日 / 周走前复权接口。
+// 只返回 OHLCV，均线、区间统计由小程序按卡片口径自己算
+func GetKline(c *gin.Context) {
+	code, ok := stock.NormalizeCode(c.Query("code"))
+	if !ok {
+		resp.Fail(c, resp.CodeBadRequest, "股票代码格式不正确，应为 SH/SZ/BJ + 6 位数字")
+		return
+	}
+
+	period := strings.TrimSpace(c.DefaultQuery("period", "day"))
+	if !quote.KlinePeriodSupported(period) {
+		resp.Fail(c, resp.CodeBadRequest, "周期只支持 m1 / m5 / m15 / day / week")
+		return
+	}
+
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", strconv.Itoa(klineDefaultLimit)))
+	if err != nil || limit <= 0 {
+		limit = klineDefaultLimit
+	}
+	if limit > klineMaxLimit {
+		limit = klineMaxLimit
+	}
+
+	cacheKey := fmt.Sprintf("stock:kline:%s:%s:%d", code, period, limit)
+	ctx := c.Request.Context()
+
+	if deps.RDB != nil {
+		if cached, err := deps.RDB.Get(ctx, cacheKey).Bytes(); err == nil && len(cached) > 0 {
+			c.Header("X-Cache", "HIT")
+			c.Data(200, "application/json; charset=utf-8", cached)
+			return
+		}
+	}
+
+	bars, err := quote.FetchKlineBars(ctx, code, period, limit)
+	if err != nil || len(bars) == 0 {
+		log.Printf("fetch kline failed: code=%s period=%s err=%v", code, period, err)
+		resp.Fail(c, resp.CodeBadGateway, "K线获取失败，请稍后重试")
+		return
+	}
+
+	body, err := resp.JSONBytes(resp.CodeOK, "ok", gin.H{
+		"code":   code,
+		"period": period,
+		"bars":   bars,
+	})
+	if err != nil {
+		log.Printf("marshal kline failed: %v", err)
+		resp.Fail(c, resp.CodeInternal, "序列化失败")
+		return
+	}
+	if deps.RDB != nil {
+		_ = deps.RDB.Set(ctx, cacheKey, body, klineCacheTTL).Err()
 	}
 
 	c.Header("X-Cache", "MISS")

@@ -1,0 +1,133 @@
+/* ===== 页面骨架：与设置 / 提醒页同一套（固定页头 + 单块滚动区） ===== */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  position: relative;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-3) var(--sp-4) 0;
+}
+
+/* ===== 搜索框 =====
+   联想结果不做绝对定位浮层：下方是 scroll-view，它会盖住同层的定位浮层
+   （实测下拉被卡片切掉一半）。改成在流内展开，卡片整体下移，点击不会被挡 */
+.search-field {
+  flex: none;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 88rpx;
+  padding: 0 var(--sp-3);
+  box-sizing: border-box;
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  font-size: var(--fs-body);
+  color: var(--ink);
+}
+
+.search-ph {
+  color: var(--ink-3);
+  font-size: var(--fs-body);
+}
+
+/* 清除键：原生 input 没有内建清除，自绘一个（热区 56rpx 足够点中） */
+.search-clear {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+}
+
+/* 联想结果：在流内展开（见 .search-field 注释） */
+.search-drop {
+  margin-top: var(--sp-1);
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: var(--r-tag);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+
+.search-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--hairline);
+}
+
+.search-item:last-child {
+  border-bottom: none;
+}
+
+.search-item-name {
+  font-size: var(--fs-body);
+  color: var(--ink);
+}
+
+.search-item-code {
+  font-size: var(--fs-aux);
+  color: var(--ink-3);
+}
+
+/* ===== 当前股票 ===== */
+.picked {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.picked-name {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picked-code {
+  font-size: var(--fs-aux);
+  color: var(--ink-3);
+}
+
+/* ===== 五张 K 线卡 =====
+   只有这一块滚动：搜索框与联想结果固定在上方，不随卡片滚走 */
+.card-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+  margin-top: var(--sp-3);
+}
+
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-grid);
+  /* 底部留白：最后一张卡不要贴着屏幕底边 */
+  padding-bottom: var(--sp-5);
+}

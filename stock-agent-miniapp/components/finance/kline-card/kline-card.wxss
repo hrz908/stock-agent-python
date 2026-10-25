@@ -59,6 +59,19 @@
   background-size: 100% 100%;
 }
 
+/* 空态占位：高度与图区一致，卡片在没数据时也不会塌成一条。
+   虚线框只用来区分「这里将来是图」，不放任何按压 / 交互态 */
+.chart--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: var(--hairline-dashed);
+  border-radius: var(--r-tag);
+  font-size: var(--fs-min);
+  color: var(--ink-3);
+}
+
 /* ===== 区间指标行：等距居中；支撑压力行：整行靠左 =====
    等距居中：区间涨幅 / 振幅 / MA5 / 量比 四格居中（规则在 _card.wxss）。
    支撑·压力：整行文案靠左，两项之间用「·」点号隔开（同行情卡底部口径）。

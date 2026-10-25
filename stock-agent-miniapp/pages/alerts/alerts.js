@@ -40,20 +40,20 @@ const THRESHOLD_CONFIG = {
   volume:    { unit: '倍', placeholder: '如 1.5', min: 0.1, max: 100 }
 };
 
-// 列表文案：把弹窗里的字段拼成一句，与「新增提醒」表单一一对应
-// （触发条件 + 阈值 [+ 基准周期] · 检查频率）
+// 列表文案：把弹窗里的字段拆成两段——条件（左）与检查频率（右），
+// 卡片里左右分栏显示，不再拼成一句用「·」连接
 function describeAlert(a) {
   const condOpt = CONDITION_OPTIONS.filter(o => o.value === a.conditionType)[0];
   const freqOpt = FREQUENCY_OPTIONS.filter(o => o.value === a.checkFrequency)[0];
 
-  let condDesc;
+  let condText;
   if (a.conditionType === 'volume') {
-    condDesc = `成交量放大到 ${a.volumeBase || 20}日均量的 ${a.threshold} 倍`;
+    condText = `成交量放大到 ${a.volumeBase || 20}日均量的 ${a.threshold} 倍`;
   } else {
     const unit = THRESHOLD_CONFIG[a.conditionType] ? THRESHOLD_CONFIG[a.conditionType].unit : '';
-    condDesc = `${condOpt ? condOpt.label : ''} ${a.threshold}${unit}`;
+    condText = `${condOpt ? condOpt.label : ''} ${a.threshold}${unit}`;
   }
-  return `${condDesc} · ${freqOpt ? freqOpt.label : ''}`;
+  return { condText, freqText: freqOpt ? freqOpt.label : '' };
 }
 
 // 某条触发时间是否落在今天
@@ -116,8 +116,10 @@ function trendColorOf(a) {
 // 接口返回的提醒 -> 卡片渲染结构，各段文案在这里算好，WXML 直接取。
 // 触发状态标签与触发时间已按需求移除，不再派生 triggerText/time 字段
 function decorate(a) {
+  const text = describeAlert(a);
   return Object.assign({}, a, {
-    desc: describeAlert(a),
+    condText: text.condText,
+    freqText: text.freqText,
     priceText: priceTextOf(a),
     trendIcon: trendIconOf(a),
     trendColor: trendColorOf(a)

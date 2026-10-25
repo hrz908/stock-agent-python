@@ -25,22 +25,27 @@
     <!-- 提醒列表：只有这一个容器内部滚动，底边停在「新增提醒」按钮上方 -->
     <scroll-view class="list-scroll" scroll-y enhanced="{{true}}" show-scrollbar="{{false}}">
       <view wx:if="{{alerts.length > 0}}" class="alert-list">
-        <!-- 每条提醒一张卡片：头部（股票 + 编辑）→ 大号阈值（+ 删除）→ 条件描述 -->
+        <!-- 每条提醒一张卡片：头部（股票 + 编辑 + 删除）→ 大号阈值 → 条件描述 -->
         <view class="alert-card" wx:for="{{alerts}}" wx:for-item="item" wx:key="id">
           <view class="alert-card-head">
             <view class="alert-card-name">{{item.name}}<text class="alert-card-code num">{{item.code}}</text></view>
-            <!-- 删除：头部右上角纯文字（已移除垃圾桶图标），二次确认后删除 -->
-            <view class="alert-card-delbtn" data-id="{{item.id}}" catchtap="onDelete">删除</view>
+            <!-- 入口都在头部右上角：编辑在左、删除在右（删除是破坏性操作，放最外侧） -->
+            <view class="alert-card-actions">
+              <view class="alert-card-editbtn" data-id="{{item.id}}" catchtap="onEdit">编辑</view>
+              <view class="alert-card-delbtn" data-id="{{item.id}}" catchtap="onDelete">删除</view>
+            </view>
           </view>
 
           <view class="alert-card-price">
             <ant-icon type="{{item.trendIcon}}" style="font-size:56rpx;color:{{item.trendColor}};" />
             <text class="alert-card-price-text num" style="color: {{item.trendColor}};">{{item.priceText}}</text>
-            <!-- 编辑：价格行内右对齐，打开编辑弹窗 -->
-            <view class="alert-card-editbtn" data-id="{{item.id}}" catchtap="onEdit">编辑</view>
           </view>
 
-          <view class="alert-card-desc">{{item.desc}}</view>
+          <!-- 条件描述与检查频率同一行：左条件、右频率，两项之间不再用「·」连接 -->
+          <view class="alert-card-desc">
+            <text class="alert-card-cond">{{item.condText}}</text>
+            <text class="alert-card-freq">{{item.freqText}}</text>
+          </view>
         </view>
       </view>
 
