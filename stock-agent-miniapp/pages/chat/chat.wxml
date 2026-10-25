@@ -436,6 +436,7 @@
        放到抽屉弹层之外，避免被抽屉的 overflow 裁切；
        DOM 顺序在后，所以会盖在抽屉之上，关掉后抽屉仍在 -->
   <base-popup
+    id="delete-dialog"
     visible="{{deleteVisible}}"
     mode="center"
     title="删除对话"

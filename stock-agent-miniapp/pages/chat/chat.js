@@ -1513,8 +1513,10 @@ Page({
   },
 
   // 当前会话被删后原地换一条新会话：不跳页、不收起抽屉，
-  // 用户仍停在这一页的抽屉上，只是当前项换成了新的空会话
-  _resetToNewSession() {
+  // 用户仍停在这一页的抽屉上，只是当前项换成了新的空会话。
+  // deletedSid 用于在刷新回来的列表里再兜一次底：删除刚落库，
+  // 列表接口可能还带着那条，不滤掉它就会「删了又回来」
+  _resetToNewSession(deletedSid) {
     const sid = agentSocket.freshSessionId();
     this._abortInFlight();
     this._sessionId = sid;
@@ -1522,7 +1524,12 @@ Page({
     this.scrollToBottom({ force: true });
     // 注册失败不阻断：首条消息发出时 Go 网关仍会 registerSession 补注册
     createSession(sid, '').catch(() => {});
-    this.loadSessions();
+    this.loadSessions().then(() => {
+      if (!deletedSid || this._unloaded) return;
+      this.setData({
+        sessions: (this.data.sessions || []).filter((s) => s.session_id !== deletedSid)
+      });
+    });
   },
 
   // 恢复某会话的消息（文本气泡；结构化卡片不持久化，恢复后只有文本）。
@@ -1567,13 +1574,31 @@ Page({
     this._deletingSid = '';
     this.setData({ deleteVisible: false });
     if (!sid) return;
-    deleteSession(sid).then(() => {
+
+    // 先在本地摘掉再打后端：列表接口往往比删除先返回，
+    // 那条会话会「删了又冒出来」，看起来就像删不掉
+    this.setData({
+      sessions: (this.data.sessions || []).filter((s) => s.session_id !== sid)
+    });
+
+    const done = () => {
       if (sid === this._sessionId) {
-        this._resetToNewSession();
+        this._resetToNewSession(sid);
         return;
       }
       this.loadSessions();
-    }).catch(() => this.toast('删除失败'));
+    };
+
+    deleteSession(sid).then(done).catch((err) => {
+      // 404 = 服务端本来就没有这条（从未注册，或已被删掉过）。
+      // 这种情况按「已删除」处理，否则用户永远删不掉一条本地残留
+      if (err && Number(err.code) === 404) {
+        done();
+        return;
+      }
+      this.toast('删除失败');
+      this.loadSessions(); // 回滚：把列表拉回服务端真实状态
+    });
   },
 
   // 轻提示：自研 base-toast（替代 wx.showToast 默认样式）

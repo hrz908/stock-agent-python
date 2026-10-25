@@ -813,10 +813,12 @@
   border-radius: var(--r-tag);
 }
 
-/* 文字吃满剩余宽度，右侧箭头自然贴边 */
+/* 文字吃满剩余宽度，右侧箭头自然贴边。
+   比正文大一档、字重 500：单靠字号或单靠字重都显得要么太轻要么太硬 */
 .drawer-item-text {
   flex: 1;
-  font-size: var(--fs-body);
+  font-size: var(--fs-title);
+  font-weight: 500;
   color: var(--ink);
   text-align: left;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
