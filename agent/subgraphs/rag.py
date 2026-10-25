@@ -11,6 +11,7 @@ generate_with_citations: 用 prompts/rag.xml 生成带 [n] 引用的回答，并
 （{"docs":[{title, chunk_id, score}]}，与前端和 Go 事件协议一致）。
 """
 import logging
+import time
 from datetime import datetime
 from typing import Literal
 
@@ -39,11 +40,15 @@ def _get_retriever():
 
 
 async def hybrid_retrieve(state: dict) -> dict:
+    t0 = time.monotonic()
     query = state.get("rewritten") or state.get("query", "") or ""
+    timings: dict = {}
     try:
-        docs = await _get_retriever().ainvoke(query)
+        docs = await _get_retriever().asearch(query, timings=timings)
     except Exception as e:  # noqa: BLE001 - 检索失败按“不足”处理，交给 escalate
-        return {"retrieved": [], "error": f"retrieve_failed: {e}"}
+        timings["retrieve_ms"] = int((time.monotonic() - t0) * 1000)
+        return {"retrieved": [], "error": f"retrieve_failed: {e}", "timings": timings}
+    timings["retrieve_ms"] = int((time.monotonic() - t0) * 1000)
     retrieved = [{
         "content": d.page_content,
         "title": d.metadata.get("title", ""),
@@ -54,7 +59,7 @@ async def hybrid_retrieve(state: dict) -> dict:
         # 重排关闭时为 None，命中闸回退到 similarity
         "rerank_score": d.metadata.get("rerank_score"),
     } for d in docs]
-    return {"retrieved": retrieved}
+    return {"retrieved": retrieved, "timings": timings}
 
 
 class _Judge(BaseModel):
@@ -113,6 +118,7 @@ async def sufficiency_check(state: dict) -> dict:
     分数优先用 rerank_score（交叉编码器，绝对可分），重排关闭时回退 similarity
     （余弦在向量空间里有很高的地板值，只能做粗筛，不能做精确判定）。
     """
+    t0 = time.monotonic()
     retrieved = state.get("retrieved", []) or []
     if any(r.get("rerank_score") is not None for r in retrieved):
         top_score = max((r.get("rerank_score") or 0.0 for r in retrieved), default=0.0)
@@ -121,11 +127,20 @@ async def sufficiency_check(state: dict) -> dict:
         top_score = max((r.get("similarity", 0.0) for r in retrieved), default=0.0)
         threshold = RAG_THRESHOLD
     if len(retrieved) < _MIN_CHUNKS or top_score < threshold:
-        return {"intent": "stock_agent"}
+        return {
+            "intent": "stock_agent",
+            "timings": {"sufficiency_ms": int((time.monotonic() - t0) * 1000)},
+        }
     query = state.get("rewritten") or state.get("query", "") or ""
-    if await _judge_can_answer(query, retrieved):
-        return {}
-    return {"intent": "stock_agent"}
+    t_judge = time.monotonic()
+    can_answer = await _judge_can_answer(query, retrieved)
+    timings = {
+        "sufficiency_ms": int((time.monotonic() - t0) * 1000),
+        "judge_ms": int((time.monotonic() - t_judge) * 1000),
+    }
+    if can_answer:
+        return {"timings": timings}
+    return {"intent": "stock_agent", "timings": timings}
 
 
 def route_after_check(state: dict) -> Literal["escalate", "generate"]:
@@ -139,6 +154,7 @@ async def escalate(state: dict) -> dict:
 
 
 async def generate_with_citations(state: dict) -> dict:
+    t0 = time.monotonic()
     retrieved = state.get("retrieved", []) or []
     query = state.get("rewritten") or state.get("query", "") or ""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -173,14 +189,25 @@ async def generate_with_citations(state: dict) -> dict:
     llm = get_llm(streaming=True, temperature=0.3)
     # 流式生成：逐块 emit token，同时累加成完整 AIMessage 写回 state
     parts = []
+    ttft_ms = None
     async for chunk in llm.astream(messages):
         if isinstance(chunk.content, str) and chunk.content:
+            if ttft_ms is None:
+                ttft_ms = int((time.monotonic() - t0) * 1000)
             emit("token", {"delta": chunk.content})
         parts.append(chunk)
     ai = parts[0] if parts else None
     for p in parts[1:]:
         ai = ai + p
-    return {"messages": [ai if ai is not None else AIMessage(content="")], "citations": citations}
+    total_ms = int((time.monotonic() - t0) * 1000)
+    return {
+        "messages": [ai if ai is not None else AIMessage(content="")],
+        "citations": citations,
+        "timings": {
+            "rag_ttft_ms": ttft_ms if ttft_ms is not None else total_ms,
+            "rag_generate_ms": total_ms,
+        },
+    }
 
 
 def build_rag_subgraph():

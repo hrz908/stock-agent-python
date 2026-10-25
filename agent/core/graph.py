@@ -13,9 +13,10 @@ post -> END
 route_by_intent 是纯函数，仅读取 state["intent"]，异常/未知一律回退 clarify。
 
 意图口径：
-- stock      : 一切股票问题，统一先进 RAG 漏斗，命中带引用直接作答；
-- stock_agent: 内部意图，rag 两级判定（阈值 + LLM 判读）未命中时写入，
-               由 route_after_rag 重路由到炒股 agent 子图（进程内工具取数）；
+- stock      : 文档型股票问题，统一先进 RAG 漏斗，命中带引用直接作答；
+- stock_agent: 内部意图，两个来源：
+               1) classify 命中实时数据词，直接进取数子图（跳过 RAG）；
+               2) rag 两级判定（阈值 + LLM 判读）未命中，升级到取数子图；
 - chat       : 闲聊，直接陪聊，不挂工具；
 - off_topic  : 与股票无关的正经话题，固定话术婉拒（nodes/refuse.py）；
 - clarify    : 含糊 / 低置信度 / 护栏拦截，反问或安全降级。
@@ -32,8 +33,9 @@ from subgraphs.chat import build_chat_subgraph
 from subgraphs.rag import build_rag_subgraph
 from subgraphs.stock import build_stock_subgraph
 
-# classify 可产出的意图值（stock_agent 由 rag 两级判定写入，不来自 classify）
-_CLASSIFY_INTENTS = {'stock', 'chat', 'off_topic', 'clarify'}
+# classify 可产出的意图值：stock_agent 既可由 classify 的实时数据快路径写入，
+# 也可由 rag 两级判定未命中时写入。
+_CLASSIFY_INTENTS = {'stock', 'stock_agent', 'chat', 'off_topic', 'clarify'}
 
 
 def route_after_guardrail(state: dict) -> Literal['clarify', 'rewrite']:
@@ -41,7 +43,9 @@ def route_after_guardrail(state: dict) -> Literal['clarify', 'rewrite']:
     return 'clarify' if state.get('error') else 'rewrite'
 
 
-def route_by_intent(state: dict) -> Literal['stock', 'chat', 'off_topic', 'clarify']:
+def route_by_intent(
+    state: dict,
+) -> Literal['stock', 'stock_agent', 'chat', 'off_topic', 'clarify']:
     """纯函数路由：按 intent 分派；未知一律回退 clarify。"""
     intent = state.get('intent', '')
     return intent if intent in _CLASSIFY_INTENTS else 'clarify'
@@ -79,6 +83,7 @@ def build_graph(checkpointer=None):
     g.add_edge('rewrite', 'classify')
     g.add_conditional_edges('classify', route_by_intent, {
         'stock': 'rag',
+        'stock_agent': 'stock_agent',
         'chat': 'chat',
         'off_topic': 'refuse',
         'clarify': 'clarify',

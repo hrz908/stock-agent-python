@@ -26,6 +26,13 @@ EMBED_DIM = int(os.getenv("EMBED_DIM", "1536"))
 TOOL_TIMEOUT = float(os.getenv("TOOL_TIMEOUT", "8.0"))
 # LLM 单次请求超时（秒）：约束单次请求的完成时间；不设的话上游卡死会挂住整条事件流
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))
+# 小模型（改写/分类/判读）单次超时：这些调用只处理短输入，60s 等满没有意义
+SMALL_LLM_TIMEOUT = float(os.getenv("SMALL_LLM_TIMEOUT", "30"))
+# 工具决策调用的单独超时：它只输出 tool_calls，不需要等满生成模型的 60s
+TOOL_CALL_LLM_TIMEOUT = float(os.getenv("TOOL_CALL_LLM_TIMEOUT", "30"))
+# LLM 重试次数：OpenAI SDK 默认 2，配合 60s 超时会把一次上游卡顿放大成 60~180s。
+# 默认只重试 1 次，既保留瞬时抖动恢复能力，也避免 68s 这类长尾。
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "1"))
 # RAG 相关度阈值：针对余弦相似度（不是 RRF 融合分）。
 # 仅当重排关闭时生效。Qwen3 向量空间的地板值很高（无关 query 与语料的平均相似度
 # 也有 0.56，实测相关/无关的 top 相似度完全重叠），单靠它只能做粗筛，

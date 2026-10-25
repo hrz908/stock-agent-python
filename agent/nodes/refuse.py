@@ -5,6 +5,7 @@
 与 clarify（反问澄清）、guardrail 降级是三条不同的降级链路，互不复用。
 """
 import asyncio
+import time
 
 from langchain_core.messages import AIMessage
 
@@ -22,7 +23,11 @@ _CHUNK_INTERVAL = 0.02
 
 
 async def refuse(state: dict) -> dict:
+    t0 = time.monotonic()
     for i in range(0, len(_REFUSE_TEXT), _CHUNK):
         emit("token", {"delta": _REFUSE_TEXT[i:i + _CHUNK]})
         await asyncio.sleep(_CHUNK_INTERVAL)
-    return {"messages": [AIMessage(content=_REFUSE_TEXT)]}
+    return {
+        "messages": [AIMessage(content=_REFUSE_TEXT)],
+        "timings": {"refuse_ms": int((time.monotonic() - t0) * 1000)},
+    }

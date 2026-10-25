@@ -3,12 +3,14 @@ r"""炒股 agent 子图（有界 ReAct 循环，进程内工具直连取数）�
 流程:
     tool_call --(有 tool_calls 且未超轮次)--> tool_execute --┐
        ↑                                                    │
-       └────────────────────────────────────────────────────┘
+       └──────(还没取到数据，如只调了 symbol_search)──────────┘
+    tool_execute --(数据到手 / 数据源客观无数据)--> synthesize --> END
     tool_call --(无 tool_calls / 已达轮次上限)--> synthesize --> END
 
-tool_execute 完回到 tool_call，让模型看到结果再决定「继续调」还是「收尾作答」，
-以完成「先 symbol_search 拿代码、再用代码 get_quote/get_valuation」的多跳链路；
-轮次由 _MAX_TOOL_ROUNDS 封顶，避免无限循环。
+tool_execute 后只在「还没取到数据」时回 tool_call，保留
+「先 symbol_search 拿代码、再用代码 get_quote/get_valuation」的多跳链路；
+一旦取到数据，或数据源明确返回「未上榜/暂无数据」，就直接 synthesize，
+避免让模型再空跑一轮非流式决策。轮次由 _MAX_TOOL_ROUNDS 封顶。
 
 - tool_call: LLM 决定是否/如何调工具（streaming=False，不外泄推理 token）。
 - tool_execute: 并发执行本轮所有 tool_calls（工具内置超时 + 重试 + 降级），
@@ -32,7 +34,8 @@ from typing import Literal
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
-from config import MAX_INPUT_TOKENS, TOOL_CONCURRENCY
+from config import MAX_INPUT_TOKENS, TOOL_CALL_LLM_TIMEOUT, TOOL_CONCURRENCY
+from core.keywords import is_concept_question
 from core.llm import estimate_tokens, get_llm, is_context_overflow, message_chars
 from core.state import AgentState, recent_turns
 from core.template import load_template, render
@@ -150,7 +153,13 @@ _bound_llm = None
 def _tool_bound_llm():
     global _bound_llm
     if _bound_llm is None:
-        _bound_llm = get_llm(streaming=False, temperature=0.2).bind_tools(_tools())
+        # 工具决策只输出 tool_calls，不需要等满生成模型的 60s；单独设 30s 上限，
+        # 配合 LLM_MAX_RETRIES=1，避免一次上游卡顿把股票路径拖到 60s+。
+        _bound_llm = get_llm(
+            streaming=False,
+            temperature=0.2,
+            timeout=TOOL_CALL_LLM_TIMEOUT,
+        ).bind_tools(_tools())
     return _bound_llm
 
 
@@ -422,6 +431,17 @@ def _normalize_tool_call(ai: AIMessage) -> AIMessage:
 
 
 async def tool_call(state: dict) -> dict:
+    t0 = time.monotonic()
+    prev_ms = int((state.get("timings") or {}).get("tool_call_ms", 0))
+
+    def done(messages: list) -> dict:
+        return {
+            "messages": messages,
+            "timings": {
+                "tool_call_ms": prev_ms + int((time.monotonic() - t0) * 1000),
+            },
+        }
+
     # 首轮先懒加载工具集（进程内 @tool，见 _ensure_tools）
     await _ensure_tools()
     # 只喂本轮消息（含本轮已取到的工具结果），逐条截断正文，防止上下文膨胀
@@ -443,9 +463,9 @@ async def tool_call(state: dict) -> dict:
         # 上下文超长：这一轮不再调工具，直接进 synthesize（那里有降级文案），
         # 绝不让超长请求冒泡出去把整条对话变成空
         logger.warning("tool_call context overflow, skip tool round", exc_info=True)
-        return {"messages": [AIMessage(content="")]}
+        return done([AIMessage(content="")])
     # 模型偶尔把工具调用写成正文而不是结构化字段，这里还原成真正的 tool_call
-    return {"messages": [_normalize_tool_call(ai)]}
+    return done([_normalize_tool_call(ai)])
 
 
 def _call_rounds(state: dict) -> int:
@@ -477,12 +497,32 @@ def route_after_call(state: dict) -> Literal["tool_execute", "tool_call", "synth
         and _needs_data_fetch(state)
         and not _got_data(state)
     ):
+        # 数据源已经明确返回「未上榜/暂无数据」时，再决策一轮也不会改变结果，
+        # 直接走 synthesize 的确定性兜底，省掉 1~2 次 LLM 往返。
+        if _all_failures_graceful_empty(state.get("tool_results") or []):
+            return "synthesize"
         return "tool_call"
     return "synthesize"
 
 
+def route_after_execute(state: dict) -> Literal["tool_call", "synthesize"]:
+    """工具执行后的路由：数据到手或客观无数据就收尾，否则继续多跳。
+
+    - 取到任一取数类工具数据 -> synthesize（不再让模型空跑一轮决策）；
+    - 本轮取数工具全部是「未上榜/暂无」这类客观无数据 -> synthesize（兜底文案）；
+    - 只调了 symbol_search / 尚无数据 -> 回 tool_call，保留「先搜代码再取数」的多跳。
+    """
+    if _got_data(state):
+        return "synthesize"
+    if _all_failures_graceful_empty(state.get("tool_results") or []):
+        return "synthesize"
+    return "tool_call"
+
+
 async def tool_execute(state: dict) -> dict:
     """并发执行 last AIMessage 的所有 tool_calls，收集结构化结果。"""
+    t0 = time.monotonic()
+    prev_ms = int((state.get("timings") or {}).get("tool_execute_ms", 0))
     msgs = state.get("messages", [])
     ai = msgs[-1] if msgs and isinstance(msgs[-1], AIMessage) else None
     if ai is None or not ai.tool_calls:
@@ -535,7 +575,13 @@ async def tool_execute(state: dict) -> dict:
 
     # tool_results 已配置 operator.add reducer：这里只返回本轮新增结果，
     # 由 reducer 跨轮拼接到已有列表，synthesize 仍能看到全部轮次的工具数据
-    return {"messages": tool_messages, "tool_results": tool_results}
+    return {
+        "messages": tool_messages,
+        "tool_results": tool_results,
+        "timings": {
+            "tool_execute_ms": prev_ms + int((time.monotonic() - t0) * 1000),
+        },
+    }
 
 
 # ===== 卡片选择：一次回复最多一张，且必须对得上用户问的是什么 =====
@@ -554,7 +600,8 @@ _KLINE_MARKERS = (
 # 每张卡对应的「问题关键词」：命中越多，这张卡越贴合用户真正问的东西。
 # 只用于排序，不下发、也不改变正文口径；同分时按工具调用顺序取第一个。
 _CARD_KEYWORDS = {
-    "compare_card": ("对比", "比较", "同业", "同行", "竞品", "谁更", "哪个好", "哪家", "相比", "vs"),
+    "compare_card": ("对比", "比较", "同业", "同行", "竞品", "谁更", "哪个好",
+                     "哪家", "相比", "vs"),
     "valuation_card": ("估值", "市盈率", "市净率", "市销率", "股息", "分位", "贵不贵", "便宜"),
     "fundflow_card": ("资金", "主力", "流入", "流出", "龙虎榜", "席位", "超大单", "大单", "北向"),
     "report_card": ("财报", "业绩", "营收", "营业收入", "净利润", "毛利", "现金流",
@@ -928,22 +975,12 @@ def _all_failures_graceful_empty(tool_results: list) -> bool:
     )
 
 
-# 概念性问题：问的是「是什么 / 怎么算 / 有什么区别」，本身不需要真实数据。
-# 这类问题不能被「没取到数据」的兜底文案接管——否则会把一条本来能答好的
-# 知识型回答（实测：PE/PB/PS 通俗解释）换成无意义的取数失败提示。
-# 注意「对比」不在表里：它已移入 _DATA_KEYWORDS——「A 和 B 对比」要取当日
-# 快照出对比卡；「区别/不同」足以覆盖「PE 和 PB 有什么不同」这类概念问法
-_CONCEPT_KEYWORDS = (
-    "解释", "含义", "意思", "区别", "不同", "为什么", "怎么算", "如何算",
-    "怎么用", "如何用", "是什么", "什么是", "通俗", "简单说", "怎么理解",
-    "如何理解", "讲讲", "介绍", "科普", "定义", "有什么区别",
-)
-
-
+# 概念词表已下沉到 core/keywords.py：classify 的快路径也需要同一套口径，
+# 避免「解释市盈率」被实时数据分流误送去取数。
 def _is_concept_question(state: dict) -> bool:
     """这一轮是不是纯概念/知识型问题（不需要真实行情数据）。"""
     text = (state.get("query") or "") + " " + (state.get("rewritten") or "")
-    return any(k in text for k in _CONCEPT_KEYWORDS)
+    return is_concept_question(text)
 
 
 def _failure_reason(tool_results: list) -> str:
@@ -1043,13 +1080,20 @@ def _slim_tool_results(tool_results: list) -> list:
 
 
 async def synthesize(state: dict) -> dict:
+    t0 = time.monotonic()
     tool_results = state.get("tool_results", []) or []
     fallback = _no_data_fallback(state, tool_results)
     if fallback:
         # 不走 LLM：兜底文案必须显式 emit 成 token。main.py 只透传 custom 事件，
         # 返回的 AIMessage 不会自动变成前端文本——少这一句前端就是空白回答（实测）
         emit("token", {"delta": fallback})
-        return {"messages": [AIMessage(content=fallback)]}
+        return {
+            "messages": [AIMessage(content=fallback)],
+            "timings": {
+                "synth_ttft_ms": 0,
+                "synth_ms": int((time.monotonic() - t0) * 1000),
+            },
+        }
     # 无工具结果（模型直接回答）时也给一个空上下文
     tr_text = (json.dumps(_slim_tool_results(tool_results), ensure_ascii=False, default=str)
                if tool_results else "（无工具数据）")
@@ -1078,10 +1122,13 @@ async def synthesize(state: dict) -> dict:
     messages = _fit_context(messages)
 
     llm = get_llm(streaming=True, temperature=0.4)
+    ttft_ms = None
     try:
         parts = []
         async for chunk in llm.astream(messages):
             if isinstance(chunk.content, str) and chunk.content:
+                if ttft_ms is None:
+                    ttft_ms = int((time.monotonic() - t0) * 1000)
                 emit("token", {"delta": chunk.content})
             parts.append(chunk)
     except Exception as e:  # noqa: BLE001
@@ -1090,11 +1137,24 @@ async def synthesize(state: dict) -> dict:
         # 上游仍报超长：降级成一条能用的回答，绝不让整条对话只剩 error 事件
         logger.warning("synthesize context overflow, fallback to safe reply", exc_info=True)
         emit("token", {"delta": _OVERFLOW_REPLY})
-        return {"messages": [AIMessage(content=_OVERFLOW_REPLY)]}
+        return {
+            "messages": [AIMessage(content=_OVERFLOW_REPLY)],
+            "timings": {
+                "synth_ttft_ms": ttft_ms if ttft_ms is not None else 0,
+                "synth_ms": int((time.monotonic() - t0) * 1000),
+            },
+        }
     ai = parts[0] if parts else None
     for p in parts[1:]:
         ai = ai + p
-    return {"messages": [ai if ai is not None else AIMessage(content="")]}
+    total_ms = int((time.monotonic() - t0) * 1000)
+    return {
+        "messages": [ai if ai is not None else AIMessage(content="")],
+        "timings": {
+            "synth_ttft_ms": ttft_ms if ttft_ms is not None else total_ms,
+            "synth_ms": total_ms,
+        },
+    }
 
 
 def build_stock_subgraph():
@@ -1111,8 +1171,12 @@ def build_stock_subgraph():
         "tool_call": "tool_call",
         "synthesize": "synthesize",
     })
-    # 执行完工具回到 tool_call：让模型基于工具结果决定「继续调」还是「收尾作答」（多跳 ReAct）
-    g.add_edge("tool_execute", "tool_call")
+    # 执行完工具：已取到数据 / 客观无数据 -> 直接收尾；只有还没取到数据时才回
+    # tool_call 继续多跳（如第一轮只调了 symbol_search）。
+    g.add_conditional_edges("tool_execute", route_after_execute, {
+        "tool_call": "tool_call",
+        "synthesize": "synthesize",
+    })
     g.add_edge("synthesize", END)
     # 子图不单独做 checkpoint：无 interrupt、也不跨调用记忆状态，
     # 关掉后省掉每个 superstep 一份全量 state 的落库（父图仍记录整体状态）

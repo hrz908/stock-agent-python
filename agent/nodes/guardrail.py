@@ -5,6 +5,7 @@
 并把 messages 裁到窗口内（_trim_history），避免 checkpoint 随轮数膨胀。
 """
 import re
+import time
 
 from langchain_core.messages import ToolMessage
 from langgraph.types import Overwrite
@@ -73,8 +74,10 @@ async def guardrail(state: dict) -> dict:
     每轮请求都从本节点开始，用 Overwrite 绕过 reducer 强制清零，保证 synthesize 只看到本轮取数结果；
     messages 同理，整体替换为裁剪后的窗口，阻止 checkpoint 膨胀。
     """
+    t0 = time.monotonic()
     query = state.get("query", "") or ""
     trimmed = _trim_history(state.get("messages") or [])
+    timings = {"guardrail_ms": int((time.monotonic() - t0) * 1000)}
     if _REGEX.search(query):
         return {
             "error": "guardrail_blocked",
@@ -82,5 +85,13 @@ async def guardrail(state: dict) -> dict:
             "confidence": 0.0,
             "tool_results": Overwrite([]),
             "messages": Overwrite(trimmed),
+            # timings 走 merge reducer；每轮必须 Overwrite 重置，否则上一轮的
+            # tool_call_ms 等会跨用户轮次累加，第二轮耗时看起来像 20s+。
+            "timings": Overwrite(timings),
         }
-    return {"error": None, "tool_results": Overwrite([]), "messages": Overwrite(trimmed)}
+    return {
+        "error": None,
+        "tool_results": Overwrite([]),
+        "messages": Overwrite(trimmed),
+        "timings": Overwrite(timings),
+    }

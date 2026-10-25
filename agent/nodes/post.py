@@ -7,8 +7,10 @@ log_agent_run 供 main.py 在 done 事件前调用，把一轮运行写入 agent
 所有步骤容错，任何一步失败都不阻断响应。
 """
 import logging
+import time
 
 from langchain_core.messages import AIMessage, HumanMessage
+from psycopg.types.json import Jsonb
 
 from config import SUMMARY_TOKEN_LIMIT
 from core.llm import count_message_tokens, get_small_llm, message_chars
@@ -71,9 +73,11 @@ async def log_agent_run(
     tokens_in: int = 0,
     tokens_out: int = 0,
     ttft_ms: int = None,
+    first_event_ms: int = None,
     total_ms: int = None,
     tool_calls: int = 0,
     error_code: str = None,
+    timings: dict = None,
 ) -> None:
     """写一行 agent_runs 审计记录；失败只记日志，绝不阻断响应流。"""
     # user_id 列是 BIGINT NOT NULL：非数字身份（调试请求）直接跳过，
@@ -87,13 +91,13 @@ async def log_agent_run(
             await conn.execute(
                 """
                 INSERT INTO agent_runs (user_id, thread_id, intent, confidence,
-                                        tokens_in, tokens_out, ttft_ms, total_ms,
-                                        tool_calls, error_code)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        tokens_in, tokens_out, ttft_ms, first_event_ms,
+                                        total_ms, tool_calls, error_code, timings)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (user_id, thread_id, intent, confidence,
-                 tokens_in or 0, tokens_out or 0, ttft_ms, total_ms,
-                 tool_calls or 0, error_code),
+                 tokens_in or 0, tokens_out or 0, ttft_ms, first_event_ms,
+                 total_ms, tool_calls or 0, error_code, Jsonb(timings or {})),
             )
             await conn.commit()
     except Exception as e:  # noqa: BLE001 - 审计失败不影响主流程
@@ -101,9 +105,13 @@ async def log_agent_run(
 
 
 async def post(state: dict) -> dict:
+    t0 = time.monotonic()
     # 1. 滚动摘要（后台容错）
     await _roll_summary(state)
 
     messages = list(state.get("messages", []))
     # 2. 统计用量。免责声明已按产品要求整条移除：正文不再追加任何声明块
-    return {"usage": _collect_usage(messages)}
+    return {
+        "usage": _collect_usage(messages),
+        "timings": {"post_ms": int((time.monotonic() - t0) * 1000)},
+    }

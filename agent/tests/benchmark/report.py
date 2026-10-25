@@ -9,9 +9,57 @@ DIM_NAMES = {
     "timeliness": "时效性", "clarity": "表达清晰度",
 }
 
+STAGE_NAMES = {
+    "guardrail_ms": "规则护栏",
+    "rewrite_ms": "改写",
+    "classify_ms": "意图分类",
+    "retrieve_ms": "检索合计",
+    "embed_ms": "Query 向量",
+    "sql_ms": "混合检索 SQL",
+    "rerank_ms": "重排",
+    "sufficiency_ms": "命中判定",
+    "judge_ms": "LLM 判读",
+    "rag_ttft_ms": "RAG 首 token",
+    "rag_generate_ms": "RAG 生成",
+    "tool_call_ms": "工具决策 LLM",
+    "tool_execute_ms": "工具执行",
+    "synth_ttft_ms": "取数首 token",
+    "synth_ms": "取数生成",
+    "chat_ttft_ms": "闲聊首 token",
+    "chat_generate_ms": "闲聊生成",
+    "clarify_ms": "澄清",
+    "refuse_ms": "婉拒",
+    "post_ms": "收尾",
+}
+
 
 def _fmt(v, suffix=""):
     return "—" if v is None else f"{v}{suffix}"
+
+
+def _pct(values: list, p: float):
+    """线性插值分位数；无样本返回 None。"""
+    if not values:
+        return None
+    s = sorted(values)
+    idx = min(len(s) - 1, max(0, int(round(p / 100 * (len(s) - 1)))))
+    return s[idx]
+
+
+def _ms(value):
+    return "—" if value is None else f"{int(round(value))}"
+
+
+def _latency_row(name: str, turns: list) -> list:
+    ttft = [t["ttft_ms"] for t in turns if t.get("ttft_ms") is not None]
+    first = [t["first_event_ms"] for t in turns if t.get("first_event_ms") is not None]
+    total = [t["elapsed_ms"] for t in turns if t.get("elapsed_ms") is not None]
+    return [
+        name, str(len(turns)),
+        _ms(_pct(ttft, 50)), _ms(_pct(ttft, 90)),
+        _ms(_pct(first, 50)), _ms(_pct(first, 90)),
+        _ms(_pct(total, 50)), _ms(_pct(total, 90)),
+    ]
 
 
 def render_report(results: list, evals: list, summary: dict, tag: str, mode: str) -> str:
@@ -32,6 +80,39 @@ def render_report(results: list, evals: list, summary: dict, tag: str, mode: str
     for k, name in DIM_NAMES.items():
         add(f"| {name} | {_fmt(summary['dims'].get(k))} |")
     add("")
+
+    # ---------- 延迟 ----------
+    turns_all = [(r, t) for r in results for t in (r.get("turns") or [])]
+    add("## 延迟\n")
+    add("| 范围 | 轮次 | 答案 TTFT P50(ms) | TTFT P90 | 首事件 P50 | 首事件 P90 "
+        "| 总耗时 P50 | 总耗时 P90 |")
+    add("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    add("| " + " | ".join(_latency_row("全部", [t for _, t in turns_all])) + " |")
+    by_cat_turns: dict = {}
+    for r, t in turns_all:
+        by_cat_turns.setdefault(r.get("category", "?"), []).append(t)
+    for cat, ts in sorted(by_cat_turns.items()):
+        add("| " + " | ".join(_latency_row(CATEGORY_NAMES.get(cat, cat), ts)) + " |")
+    add("")
+    add("注：答案 TTFT 取 token/card/table 的首个事件；首事件包含 tool_start / sources "
+        "等过程提示。旧结果没有 first_event_ms / 阶段计时时显示 —。\n")
+
+    stage_values: dict = {}
+    for _, t in turns_all:
+        for k, v in (t.get("timings") or {}).items():
+            if isinstance(v, (int, float)):
+                stage_values.setdefault(k, []).append(v)
+    if stage_values:
+        add("### 阶段耗时\n")
+        add("| 阶段 | 样本 | P50(ms) | P90(ms) |")
+        add("| --- | --- | --- | --- |")
+        ordered = [k for k in STAGE_NAMES if k in stage_values]
+        ordered += [k for k in stage_values if k not in STAGE_NAMES]
+        for k in ordered:
+            vals = stage_values[k]
+            add(f"| {STAGE_NAMES.get(k, k)} | {len(vals)} | "
+                f"{_ms(_pct(vals, 50))} | {_ms(_pct(vals, 90))} |")
+        add("")
 
     add("## 分类表现\n")
     add("| 类型 | 用例数 | 规则通过率 | 评委均分 |")

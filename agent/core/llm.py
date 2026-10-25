@@ -4,16 +4,34 @@
 """
 from langchain_openai import ChatOpenAI
 
-from config import LLM_MODEL, LLM_TIMEOUT, OPENAI_API_BASE, OPENAI_API_KEY, SMALL_MODEL
+from config import (
+    LLM_MAX_RETRIES,
+    LLM_MODEL,
+    LLM_TIMEOUT,
+    OPENAI_API_BASE,
+    OPENAI_API_KEY,
+    SMALL_LLM_TIMEOUT,
+    SMALL_MODEL,
+)
 
 # 进程内复用模型实例：ChatOpenAI 每次实例化都会新建一个 httpx 客户端（含连接池），
 # 而一轮对话至少经过 rewrite / classify / 生成三次调用——每次重建 TLS 纯属浪费。
-# 实例是无状态的（消息都通过 invoke 传入），按 (模型, streaming, temperature) 缓存即可。
+# 实例是无状态的（消息都通过 invoke 传入），按
+# (模型, streaming, temperature, timeout, max_retries) 缓存。
 _LLM_CACHE: dict = {}
 
 
-def _cached(model: str, streaming: bool, temperature: float) -> ChatOpenAI:
-    key = (model, bool(streaming), round(float(temperature), 2))
+def _cached(
+    model: str,
+    streaming: bool,
+    temperature: float,
+    timeout: float,
+    max_retries: int,
+) -> ChatOpenAI:
+    key = (
+        model, bool(streaming), round(float(temperature), 2),
+        round(float(timeout), 2), int(max_retries),
+    )
     llm = _LLM_CACHE.get(key)
     if llm is None:
         llm = ChatOpenAI(
@@ -22,24 +40,52 @@ def _cached(model: str, streaming: bool, temperature: float) -> ChatOpenAI:
             openai_api_key=OPENAI_API_KEY,
             streaming=streaming,
             temperature=temperature,
-            timeout=LLM_TIMEOUT,
+            timeout=timeout,
+            # OpenAI SDK 默认重试 2 次；不显式收口会让一次上游卡顿变成 60s+
+            max_retries=max_retries,
         )
         _LLM_CACHE[key] = llm
     return llm
 
 
-def get_llm(streaming: bool = True, temperature: float = 0.7) -> ChatOpenAI:
+def get_llm(
+    streaming: bool = True,
+    temperature: float = 0.7,
+    timeout: float | None = None,
+    max_retries: int | None = None,
+) -> ChatOpenAI:
     """主力对话模型：默认流式，温度略高以保证回答自然。
 
     timeout 是单次请求硬上限：工具链有 8s 兜底，LLM 生成之前没有，
     不设会让整个事件流无限期挂住（Go 网关 runTimeout 到点砍流，用户只看到断流、没有解释）。
+    tool_call 等非流式决策可显式传更短的 timeout。
     """
-    return _cached(LLM_MODEL, streaming, temperature)
+    return _cached(
+        LLM_MODEL,
+        streaming,
+        temperature,
+        LLM_TIMEOUT if timeout is None else timeout,
+        LLM_MAX_RETRIES if max_retries is None else max_retries,
+    )
 
 
-def get_small_llm(streaming: bool = False, temperature: float = 0.0) -> ChatOpenAI:
-    """小模型：用于指代消解、意图分类、滚动摘要，温度 0 追求确定性。"""
-    return _cached(SMALL_MODEL, streaming, temperature)
+def get_small_llm(
+    streaming: bool = False,
+    temperature: float = 0.0,
+    timeout: float | None = None,
+    max_retries: int | None = None,
+) -> ChatOpenAI:
+    """小模型：用于指代消解、意图分类、滚动摘要，温度 0 追求确定性。
+
+    默认 30s 超时：小模型只处理短输入，等满 60s 只会放大长尾。
+    """
+    return _cached(
+        SMALL_MODEL,
+        streaming,
+        temperature,
+        SMALL_LLM_TIMEOUT if timeout is None else timeout,
+        LLM_MAX_RETRIES if max_retries is None else max_retries,
+    )
 
 
 # tiktoken 编码器首次构建要读完整词表，进程内复用同一个实例；

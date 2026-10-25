@@ -13,6 +13,11 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph.message import add_messages
 
 
+def merge_timings(left: dict, right: dict) -> dict:
+    """阶段计时按 key 合并：节点只返回自己负责的耗时，后写覆盖同名 key。"""
+    return {**(left or {}), **(right or {})}
+
+
 class AgentState(TypedDict, total=False):
     # 对话消息（含 human / ai / tool），由 add_messages 累加
     messages: Annotated[list, add_messages]
@@ -22,7 +27,8 @@ class AgentState(TypedDict, total=False):
     query: str
     # 改写后的独立问题（指代消解结果）
     rewritten: str
-    # 意图路由：stock / chat / off_topic / clarify；rag 未命中后改写为 stock_agent
+    # 意图路由：stock / stock_agent / chat / off_topic / clarify；
+    # stock_agent 可来自 classify 的实时数据快路径，也可来自 rag 未命中后的升级
     intent: str
     confidence: float
     # 分类节点抽取的实体（symbol / market / date_range），供下游复用
@@ -39,6 +45,9 @@ class AgentState(TypedDict, total=False):
     error: str | None
     # token 用量统计
     usage: dict
+    # 阶段耗时（毫秒）：rewrite_ms / classify_ms / embed_ms / sql_ms / rerank_ms /
+    # judge_ms / tool_call_ms / tool_execute_ms / synth_ttft_ms / synth_ms 等
+    timings: Annotated[dict, merge_timings]
 
 
 def initial_state(user_id: str, thread_id: str, query: str) -> AgentState:
@@ -58,6 +67,7 @@ def initial_state(user_id: str, thread_id: str, query: str) -> AgentState:
         citations=[],
         error=None,
         usage={},
+        timings={},
     )
 
 

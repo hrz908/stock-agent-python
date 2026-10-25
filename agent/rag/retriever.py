@@ -236,8 +236,10 @@ class HybridRetriever(BaseRetriever):
                 timings["rerank_ms"] = int((time.monotonic() - t2) * 1000)
         return docs
 
-    async def _run_search(self, query: str, **filters) -> list[Document]:
-        docs = await self._run_candidates(query, **filters)
+    async def _run_search(
+        self, query: str, timings: dict | None = None, **filters
+    ) -> list[Document]:
+        docs = await self._run_candidates(query, timings, **filters)
         # 重排关闭时全为 0 分，stable sort 保持 RRF 序，与旧行为一致
         docs.sort(key=lambda d: d.metadata.get("rerank_score", 0.0), reverse=True)
         docs = _apply_rerank_filter(docs)
@@ -251,10 +253,15 @@ class HybridRetriever(BaseRetriever):
         stock_code: str = "",
         source_type: str = "",
         since: str = "",
+        timings: dict | None = None,
     ) -> list[Document]:
-        """带过滤的检索入口（工具层用）；非法过滤值会被忽略而不是报错。"""
+        """带过滤的检索入口（工具层用）；非法过滤值会被忽略而不是报错。
+
+        timings 传入时回填 embed_ms / sql_ms / rerank_ms，供图节点做阶段计时。
+        """
         return await self._run_search(
-            query, stock_code=stock_code, source_type=source_type, since=since
+            query, timings=timings,
+            stock_code=stock_code, source_type=source_type, since=since,
         )
 
     def _get_relevant_documents(

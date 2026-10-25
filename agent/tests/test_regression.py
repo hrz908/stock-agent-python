@@ -45,6 +45,7 @@ from subgraphs.stock import (
     _pending_nudge,
     _recent_history,
     route_after_call,
+    route_after_execute,
 )
 from tools import take_latest
 from tools.rag_tool import search_knowledge_base
@@ -316,6 +317,159 @@ def test_graph_wiring_and_retry():
         stock_mod.get_llm = orig
 
 
+def test_tool_short_circuit():
+    print("\n[P13] 取数短路：有数据/客观无数据直接收尾")
+    ok = {"tool_results": _tool_results("get_quote", True, data=[{"price": 1.0}])}
+    check("取到数据 -> synthesize", route_after_execute(ok) == "synthesize", str(route_after_execute(ok)))
+    empty = {"tool_results": _tool_results("get_top_list", False, "近期未上榜或暂无龙虎榜数据")}
+    check("客观无数据 -> synthesize", route_after_execute(empty) == "synthesize",
+          str(route_after_execute(empty)))
+    search = {"tool_results": _tool_results("symbol_search", True, data=[{"code": "600519"}])}
+    check("只搜到代码 -> 继续 tool_call", route_after_execute(search) == "tool_call",
+          str(route_after_execute(search)))
+    fail = {"tool_results": _tool_results("get_quote", False, "timeout")}
+    check("瞬时失败 -> 允许再决策", route_after_execute(fail) == "tool_call",
+          str(route_after_execute(fail)))
+    check("空结果 -> 继续 tool_call", route_after_execute({"tool_results": []}) == "tool_call")
+
+    # route_after_call 在客观无数据时不再回 tool_call
+    st = {
+        "query": "查一下三花智控最近的龙虎榜席位明细",
+        "rewritten": "",
+        "tool_results": _tool_results("get_top_list", False, "近期未上榜或暂无龙虎榜数据"),
+        "messages": [HumanMessage(content="q"), AIMessage(content="x")],
+    }
+    check("客观无数据不再重试决策", route_after_call(st) == "synthesize",
+          str(route_after_call(st)))
+
+
+def test_graph_short_circuit_after_tool_success():
+    print("\n[P13] 子图接线：数据到手后不再多跑 tool_call")
+    import asyncio
+
+    from langchain_core.messages import AIMessageChunk
+
+    from subgraphs import stock as stock_mod
+
+    class _FakeTool:
+        name = "get_quote"
+
+        async def ainvoke(self, args):
+            return {"ok": True, "data": {"code": "600519", "name": "贵州茅台", "price": 1.0}}
+
+    class _FakeToolLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, msgs):
+            self.calls += 1
+            return AIMessage(content="", tool_calls=[{
+                "name": "get_quote", "args": {"code": "600519"}, "id": "1",
+            }])
+
+    class _FakeStreamLLM:
+        async def astream(self, msgs):
+            yield AIMessageChunk(content="已取到数据")
+
+    tool_llm = _FakeToolLLM()
+    orig_tool_bound = stock_mod._tool_bound_llm
+    orig_get_llm = stock_mod.get_llm
+    orig_tools = stock_mod._TOOLS
+    orig_bound = stock_mod._bound_llm
+    stock_mod._tool_bound_llm = lambda: tool_llm
+    stock_mod.get_llm = lambda **kw: _FakeStreamLLM()
+    stock_mod._TOOLS = [_FakeTool()]
+    stock_mod._bound_llm = None
+    try:
+        g = stock_mod.build_stock_subgraph()
+        q = "查询贵州茅台（SH600519）的最新行情"
+        out = asyncio.run(g.ainvoke({
+            "messages": [HumanMessage(content=q)],
+            "query": q,
+            "rewritten": "",
+            "tool_results": [],
+            "timings": {},
+        }))
+        check("数据到手后只跑一轮决策", tool_llm.calls == 1, f"calls={tool_llm.calls}")
+        check("最终生成回答",
+              any("已取到" in (getattr(m, "content", "") or "") for m in out.get("messages", [])),
+              str(out.get("messages")))
+        check("阶段计时含 tool_call/tool_execute/synth",
+              all(k in (out.get("timings") or {})
+                  for k in ("tool_call_ms", "tool_execute_ms", "synth_ttft_ms")),
+              str(out.get("timings")))
+    finally:
+        stock_mod._tool_bound_llm = orig_tool_bound
+        stock_mod.get_llm = orig_get_llm
+        stock_mod._TOOLS = orig_tools
+        stock_mod._bound_llm = orig_bound
+
+
+def test_stage_timings_and_ttft():
+    print("\n[P13] 阶段计时与 TTFT 口径")
+    import asyncio
+
+    from app.main import _is_answer_event
+    from core.state import initial_state, merge_timings
+    from nodes.classify import classify
+    from nodes.guardrail import guardrail
+    from nodes.rewrite import rewrite
+
+    check("token 算答案事件", _is_answer_event("token"))
+    check("card 算答案事件", _is_answer_event("card"))
+    check("table 算答案事件", _is_answer_event("table"))
+    check("tool_start 不算答案事件", not _is_answer_event("tool_start"))
+    check("sources 不算答案事件", not _is_answer_event("sources"))
+
+    st = initial_state("1", "t", "q")
+    check("初始 timings 为空", st.get("timings") == {})
+    check("timings reducer 合并", merge_timings({"a": 1}, {"b": 2}) == {"a": 1, "b": 2})
+
+    out = asyncio.run(guardrail({"query": "你好", "messages": []}))
+    check("guardrail_ms 已记录",
+          isinstance(out["timings"].value.get("guardrail_ms"), int), str(out.get("timings")))
+
+    from langgraph.types import Overwrite
+    out_reset = asyncio.run(guardrail({
+        "query": "你好", "messages": [], "timings": {"tool_call_ms": 9999},
+    }))
+    check("guardrail 重置上轮 timings",
+          isinstance(out_reset.get("timings"), Overwrite)
+          and "tool_call_ms" not in out_reset["timings"].value,
+          str(out_reset.get("timings")))
+    out2 = asyncio.run(rewrite({"query": "你好", "messages": [], "thread_id": ""}))
+    check("rewrite_ms 已记录",
+          isinstance((out2.get("timings") or {}).get("rewrite_ms"), int), str(out2.get("timings")))
+    out3 = asyncio.run(classify({"query": "贵州茅台最新行情", "rewritten": "", "messages": []}))
+    check("classify_ms 已记录",
+          isinstance((out3.get("timings") or {}).get("classify_ms"), int), str(out3.get("timings")))
+
+
+def test_llm_retry_config():
+    print("\n[P13] LLM 超时与重试收口")
+    from config import LLM_MAX_RETRIES, SMALL_LLM_TIMEOUT, TOOL_CALL_LLM_TIMEOUT
+    from core import llm as llm_mod
+
+    orig_key = llm_mod.OPENAI_API_KEY
+    # 构造 ChatOpenAI 需要非空 key；这里只做离线配置检查，不发起请求
+    llm_mod.OPENAI_API_KEY = "test-key"
+    try:
+        llm = llm_mod.get_llm(streaming=False, timeout=TOOL_CALL_LLM_TIMEOUT)
+        check("max_retries 已收口", llm.max_retries == LLM_MAX_RETRIES,
+              f"{llm.max_retries} vs {LLM_MAX_RETRIES}")
+        check("tool_call 超时生效", llm.request_timeout == TOOL_CALL_LLM_TIMEOUT,
+              f"{llm.request_timeout} vs {TOOL_CALL_LLM_TIMEOUT}")
+        small = llm_mod.get_small_llm()
+        check("小模型默认 30s", small.request_timeout == SMALL_LLM_TIMEOUT,
+              f"{small.request_timeout} vs {SMALL_LLM_TIMEOUT}")
+    finally:
+        llm_mod.OPENAI_API_KEY = orig_key
+        llm_mod._LLM_CACHE.clear()
+
+
 def test_text_tool_call_restore():
     print("\n[P4] 文本形态的工具调用能被还原成结构化调用")
     txt = 'function\nget_quote\n```json\n{"code":"SH600519"}\n```'
@@ -495,7 +649,7 @@ def test_rag_judge_fallback():
     try:
         out2 = asyncio.run(rag_mod.sufficiency_check(
             {"retrieved": retrieved, "query": "茅台研报观点"}))
-        check("判官异常时按命中（不 escalate）", out2 == {}, str(out2))
+        check("判官异常时按命中（不 escalate）", "intent" not in out2, str(out2))
         check("判官不可用时返回 True", asyncio.run(rag_mod._judge_can_answer("q", retrieved)) is True)
     finally:
         rag_mod.get_small_llm = orig
@@ -526,13 +680,35 @@ def test_intent_taxonomy():
     print("\n[P5] 意图三分与漏斗口径")
     import asyncio
 
+    from core.graph import route_by_intent
     from nodes.classify import _hit_data_keyword, classify
 
     check("数据关键词命中", _hit_data_keyword("贵州茅台最新行情"))
     check("研报类不算数据关键词", not _hit_data_keyword("帮我读一下这篇研报的观点"))
     st = asyncio.run(classify({"query": "查询SH600519的实时报价", "rewritten": "", "messages": []}))
-    check("数据问句确定性判为 stock", st.get("intent") == "stock", str(st))
+    check("实时数据问句直连 stock_agent", st.get("intent") == "stock_agent", str(st))
     check("快路径置信度为 1", st.get("confidence") == 1.0, str(st))
+    check("stock_agent 能通过主图路由",
+          route_by_intent({"intent": "stock_agent"}) == "stock_agent")
+
+    # 文档型问题仍走 RAG：财报/研报/公告可能命中原文，不能为了省检索直接取数
+    st_doc = asyncio.run(classify({
+        "query": "看一下宁德时代最新的财报主要财务指标", "rewritten": "", "messages": [],
+    }))
+    check("文档型问句仍判 stock（走 RAG）", st_doc.get("intent") == "stock", str(st_doc))
+
+    # 概念型问题即使含「市盈率/龙虎榜」也留在 RAG
+    st_concept = asyncio.run(classify({
+        "query": "解释一下市盈率的含义", "rewritten": "", "messages": [],
+    }))
+    check("概念型问句仍判 stock（走 RAG）", st_concept.get("intent") == "stock", str(st_concept))
+
+    from core.keywords import is_realtime_data_question
+    check("行情问句属于实时数据", is_realtime_data_question("茅台现在多少钱"))
+    check("年报内容问句不算实时数据",
+          not is_realtime_data_question("茅台2024年年报说了什么"))
+    check("财报指标问句不算实时数据",
+          not is_realtime_data_question("看一下宁德时代最新的财报主要财务指标"))
 
 
 def test_direct_tools():
@@ -785,6 +961,10 @@ def main():
     test_concept_question_not_blocked()
     test_data_question_always_fetches()
     test_graph_wiring_and_retry()
+    test_tool_short_circuit()
+    test_graph_short_circuit_after_tool_success()
+    test_stage_timings_and_ttft()
+    test_llm_retry_config()
     test_text_tool_call_restore()
     test_card_validation()
     test_card_selection()

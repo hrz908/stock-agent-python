@@ -123,10 +123,22 @@ def _line(event: str, data: dict) -> str:
     return json.dumps({"event": event, "data": data}, ensure_ascii=False) + "\n"
 
 
+# 用户真正“看到答案”的事件：token / card / table。
+# tool_start、tool_end、sources 只是过程提示，不能算 TTFT，否则审计里的首响
+# 会明显早于用户真实看到文字/卡片的时间（股票路径尤其失真）。
+_ANSWER_EVENTS = frozenset({"token", "card", "table"})
+
+
+def _is_answer_event(event: str) -> bool:
+    return event in _ANSWER_EVENTS
+
+
 async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGenerator[str, None]:
     usage: dict = {}
     t0 = time.monotonic()
     ttft_ms = None
+    first_event_ms = None
+    timings: dict = {}
     error_code = None
     graph = None
     # 审计字段随流收集：正常结束时不再为了它们整份回读 state
@@ -168,8 +180,12 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
             if mode == "custom":
                 # data 已是 {"event":..,"data":..}（由 subgraphs.emit 产出），直接透传
                 if isinstance(data, dict) and "event" in data:
-                    # 首个对用户可见的事件即 TTFT（首 token 或首张卡片）
-                    if ttft_ms is None:
+                    event = str(data.get("event") or "")
+                    if first_event_ms is None:
+                        first_event_ms = int((time.monotonic() - t0) * 1000)
+                    # 只有 token/card/table 才算用户看到答案的 TTFT；
+                    # tool_start / tool_end / sources 是过程提示，单独记 first_event_ms
+                    if ttft_ms is None and _is_answer_event(event):
                         ttft_ms = int((time.monotonic() - t0) * 1000)
                     yield json.dumps(data, ensure_ascii=False) + "\n"
 
@@ -181,6 +197,9 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
                     for node_update in data.values():
                         if not isinstance(node_update, dict):
                             continue
+                        # 阶段计时随 updates 增量收集；子图节点也会冒泡到这里
+                        if isinstance(node_update.get("timings"), dict):
+                            timings.update(node_update["timings"])
                         # 护栏/分类节点写入的 error 作为审计错误码
                         if node_update.get("error"):
                             error_code = str(node_update["error"])[:100]
@@ -197,6 +216,8 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
     except Exception as e:  # noqa: BLE001 - 任何异常都转成 error 事件，不让流崩掉
         logger.exception("event_generator failed")
         error_code = type(e).__name__
+        if first_event_ms is None:
+            first_event_ms = int((time.monotonic() - t0) * 1000)
         yield _line("error", {"message": f"{type(e).__name__}: {e}"})
 
     finally:
@@ -204,15 +225,19 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
         # 审计落库：字段优先用流里收集到的（省掉一次全量 state 回读），
         # 只有流中途失败、没收集到 intent 时才回读兜底
         try:
-            if graph is not None and intent is None:
+            # 正常路径的 intent/timings 都由 updates 收集到了；只有流中途失败
+            # 或阶段计时缺失时才回读一次 state 兜底。
+            if graph is not None and (intent is None or not timings):
                 snapshot = await graph.aget_state(config)
                 values = (snapshot.values if snapshot else None) or {}
-                intent = values.get("intent") or None
-                confidence = values.get("confidence")
+                intent = intent or values.get("intent") or None
+                confidence = values.get("confidence") if confidence is None else confidence
                 if tool_calls is None:
                     tool_calls = len(values.get("tool_results") or [])
                 if not usage and isinstance(values.get("usage"), dict):
                     usage = values["usage"]
+                if isinstance(values.get("timings"), dict):
+                    timings = {**timings, **values["timings"]}
             # agent_runs.user_id 是 BIGINT，非数字时置空避免插入报错
             try:
                 uid = int(user_id)
@@ -226,9 +251,11 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
                 tokens_in=usage.get("input_tokens", 0),
                 tokens_out=usage.get("output_tokens", 0),
                 ttft_ms=ttft_ms,
+                first_event_ms=first_event_ms,
                 total_ms=total_ms,
                 tool_calls=tool_calls,
                 error_code=error_code,
+                timings=timings,
             )
         except Exception:  # noqa: BLE001
             logger.warning("agent run audit failed", exc_info=True)

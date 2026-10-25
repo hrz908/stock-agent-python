@@ -4,6 +4,7 @@
 token 在 astream 循环里显式 emit("token", ...) 经 main.py 的 custom 模式透传，
 不依赖 LangGraph 的 messages 流模式（避免双重发射）。
 """
+import time
 from datetime import datetime
 
 from langchain_core.messages import AIMessage, SystemMessage
@@ -16,6 +17,7 @@ from subgraphs import emit
 
 
 async def llm_stream(state: dict) -> dict:
+    t0 = time.monotonic()
     query = state.get("rewritten") or state.get("query", "") or ""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system = render("chat.xml", now=now, query=query)
@@ -27,14 +29,24 @@ async def llm_stream(state: dict) -> dict:
     llm = get_llm(streaming=True, temperature=0.7)
     # 流式生成：逐块 emit token（经 custom 模式透传），同时累加成完整 AIMessage 写回 state
     parts = []
+    ttft_ms = None
     async for chunk in llm.astream(msgs):
         if isinstance(chunk.content, str) and chunk.content:
+            if ttft_ms is None:
+                ttft_ms = int((time.monotonic() - t0) * 1000)
             emit("token", {"delta": chunk.content})
         parts.append(chunk)
     ai = parts[0] if parts else None
     for p in parts[1:]:
         ai = ai + p
-    return {"messages": [ai if ai is not None else AIMessage(content="")]}
+    total_ms = int((time.monotonic() - t0) * 1000)
+    return {
+        "messages": [ai if ai is not None else AIMessage(content="")],
+        "timings": {
+            "chat_ttft_ms": ttft_ms if ttft_ms is not None else total_ms,
+            "chat_generate_ms": total_ms,
+        },
+    }
 
 
 def build_chat_subgraph():

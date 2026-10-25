@@ -4,6 +4,8 @@
 state["error"] 非空（如护栏拦截，给出安全降级回复，不进入任何工具/检索链路）。
 统一产出一条 AIMessage，随后进入 post 收尾。
 """
+import time
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from core.llm import get_small_llm
@@ -21,13 +23,18 @@ _CLARIFY_SYSTEM = (
 
 
 async def clarify(state: dict) -> dict:
+    t0 = time.monotonic()
     # 护栏拦截：直接安全降级，不调模型。固定文案必须 emit 成 token——
     # main.py 只透传 custom 事件，光返回 AIMessage 前端拿不到任何文字
     if state.get("error") == "guardrail_blocked":
         emit("token", {"delta": _BLOCK_REPLY})
-        return {"messages": [AIMessage(content=_BLOCK_REPLY)]}
+        return {
+            "messages": [AIMessage(content=_BLOCK_REPLY)],
+            "timings": {"clarify_ms": int((time.monotonic() - t0) * 1000)},
+        }
 
     query = state.get("rewritten") or state.get("query", "") or ""
+    ttft_ms = None
     try:
         llm = get_small_llm(streaming=True, temperature=0.3)
         parts = []
@@ -36,6 +43,8 @@ async def clarify(state: dict) -> dict:
             HumanMessage(content=f"用户问题：{query}"),
         ]):
             if isinstance(chunk.content, str) and chunk.content:
+                if ttft_ms is None:
+                    ttft_ms = int((time.monotonic() - t0) * 1000)
                 emit("token", {"delta": chunk.content})
             parts.append(chunk)
         text = "".join(
@@ -46,4 +55,11 @@ async def clarify(state: dict) -> dict:
     if not text:
         # 模型没生成出文字：兜底话术同样要显式 emit，否则前端空白
         emit("token", {"delta": _FALLBACK})
-    return {"messages": [AIMessage(content=text or _FALLBACK)]}
+    total_ms = int((time.monotonic() - t0) * 1000)
+    return {
+        "messages": [AIMessage(content=text or _FALLBACK)],
+        "timings": {
+            "clarify_ttft_ms": ttft_ms if ttft_ms is not None else total_ms,
+            "clarify_ms": total_ms,
+        },
+    }

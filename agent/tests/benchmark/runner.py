@@ -106,8 +106,11 @@ async def run_case_inproc(case: Case, graph, run_id: str) -> dict:
 
         text_parts, cards, tables, sources, errors = [], [], [], [], []
         tool_events = {}
+        stage_timings = {}
         final_intent, final_conf = "", 0.0
         ttft_ms = None
+        first_token_ms = None
+        first_event_ms = None
 
         async for item in graph.astream(
             inp, config=config,
@@ -121,9 +124,14 @@ async def run_case_inproc(case: Case, graph, run_id: str) -> dict:
                 mode, data = "custom", item
             if mode == "custom" and isinstance(data, dict) and "event" in data:
                 ev, payload = data["event"], data.get("data", {})
+                if first_event_ms is None:
+                    first_event_ms = int((time.monotonic() - t0) * 1000)
+                # 与线上 agent_runs.ttft_ms 对齐：token / card / table 都算“看到答案”
+                if ev in {"token", "card", "table"} and ttft_ms is None:
+                    ttft_ms = int((time.monotonic() - t0) * 1000)
                 if ev == "token":
-                    if ttft_ms is None:
-                        ttft_ms = int((time.monotonic() - t0) * 1000)
+                    if first_token_ms is None:
+                        first_token_ms = int((time.monotonic() - t0) * 1000)
                     text_parts.append(payload.get("delta", ""))
                 elif ev == "card":
                     cards.append(payload.get("type", "?"))
@@ -132,15 +140,20 @@ async def run_case_inproc(case: Case, graph, run_id: str) -> dict:
                 elif ev == "sources":
                     sources.append(payload)
                 elif ev == "tool_start":
-                    tool_events[payload.get("tool", "?")] = {"name": payload.get("tool"), "ms": None}
+                    name = payload.get("tool", "?")
+                    tool_events.setdefault(name, {"name": name, "ms": None})
                 elif ev == "tool_end":
-                    tool_events.setdefault(payload.get("tool", "?"), {})["ms"] = payload.get("ms")
-                    tool_events[payload["tool"]]["ok"] = payload.get("ok")
+                    name = payload.get("tool", "?")
+                    item = tool_events.setdefault(name, {"name": name, "ms": None})
+                    item["ms"] = payload.get("ms")
+                    item["ok"] = payload.get("ok")
                 elif ev == "error":
                     errors.append(str(payload.get("message", ""))[:300])
             elif mode == "updates" and isinstance(data, dict):
                 for node_update in data.values():
                     if isinstance(node_update, dict):
+                        if isinstance(node_update.get("timings"), dict):
+                            stage_timings.update(node_update["timings"])
                         if node_update.get("intent"):
                             final_intent = node_update["intent"]
                         if node_update.get("confidence") is not None:
@@ -158,6 +171,8 @@ async def run_case_inproc(case: Case, graph, run_id: str) -> dict:
             final_intent = values["intent"]
         if values.get("confidence") is not None:
             final_conf = values["confidence"]
+        if isinstance(values.get("timings"), dict):
+            stage_timings = {**stage_timings, **values["timings"]}
         tr = values.get("tool_results") or []
 
         # 正文以最终状态里的最后一条 AIMessage 为准：post 节点会把免责声明
@@ -182,7 +197,11 @@ async def run_case_inproc(case: Case, graph, run_id: str) -> dict:
             "sources": len(sources),
             "errors": errors,
             "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            "first_event_ms": first_event_ms,
             "ttft_ms": ttft_ms,
+            "first_token_ms": first_token_ms,
+            "timings": stage_timings,
+            "tool_events": list(tool_events.values()),
         })
 
     last = turns_out[-1] if turns_out else {}
@@ -224,7 +243,10 @@ async def run_case_http(case: Case, base_url: str, run_id: str, timeout: float =
             base_url.rstrip("/") + "/run/stream", data=payload,
             headers={"Content-Type": "application/json"})
         text_parts, cards, tables, sources, errors = [], [], [], [], []
+        tool_events = {}
         ttft_ms = None
+        first_token_ms = None
+        first_event_ms = None
         try:
             with opener.open(req, timeout=timeout) as resp:
                 for raw in resp:
@@ -237,9 +259,13 @@ async def run_case_http(case: Case, base_url: str, run_id: str, timeout: float =
                         continue
                     ev = obj.get("event")
                     data = obj.get("data", {})
+                    if first_event_ms is None:
+                        first_event_ms = int((time.monotonic() - t0) * 1000)
+                    if ev in {"token", "card", "table"} and ttft_ms is None:
+                        ttft_ms = int((time.monotonic() - t0) * 1000)
                     if ev == "token":
-                        if ttft_ms is None:
-                            ttft_ms = int((time.monotonic() - t0) * 1000)
+                        if first_token_ms is None:
+                            first_token_ms = int((time.monotonic() - t0) * 1000)
                         text_parts.append(data.get("delta", ""))
                     elif ev == "card":
                         cards.append(data.get("type", "?"))
@@ -247,6 +273,11 @@ async def run_case_http(case: Case, base_url: str, run_id: str, timeout: float =
                         tables.append(data.get("type", "?"))
                     elif ev == "sources":
                         sources.append(data)
+                    elif ev == "tool_end":
+                        name = data.get("tool", "?")
+                        item = tool_events.setdefault(name, {"name": name, "ms": None})
+                        item["ms"] = data.get("ms")
+                        item["ok"] = data.get("ok")
                     elif ev == "error":
                         errors.append(str(data.get("message", ""))[:300])
         except Exception as e:  # noqa: BLE001 - 单条失败不阻断整批
@@ -262,7 +293,11 @@ async def run_case_http(case: Case, base_url: str, run_id: str, timeout: float =
             "sources": len(sources),
             "errors": errors,
             "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            "first_event_ms": first_event_ms,
             "ttft_ms": ttft_ms,
+            "first_token_ms": first_token_ms,
+            "timings": {},
+            "tool_events": list(tool_events.values()),
         })
 
     last = turns_out[-1] if turns_out else {}

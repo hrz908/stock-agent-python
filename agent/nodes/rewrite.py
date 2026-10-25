@@ -6,6 +6,7 @@
 改写失败 / 无历史无摘要时回退原始 query，绝不阻断主流程。
 """
 import re
+import time
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -72,15 +73,17 @@ def _needs_rewrite(query: str) -> bool:
 
 
 async def rewrite(state: dict) -> dict:
+    t0 = time.monotonic()
     query = state.get("query", "") or ""
     history = _format_history(state.get("messages", []))
     summary = await _get_summary(state.get("thread_id", ""))
+    timings = {"rewrite_ms": int((time.monotonic() - t0) * 1000)}
     # 无历史且无摘要则无需改写
     if not history and not summary:
-        return {"rewritten": query}
+        return {"rewritten": query, "timings": timings}
     # 有历史，但问题自己就完整（无指代、带代码/足够长）：不惊动小模型
     if not _needs_rewrite(query):
-        return {"rewritten": query}
+        return {"rewritten": query, "timings": timings}
 
     # 滚动摘要作为对话背景前缀，弥补被裁剪掉的早期历史
     bg = f"对话背景摘要：\n{summary}\n\n" if summary else ""
@@ -94,6 +97,8 @@ async def rewrite(state: dict) -> dict:
         text = (resp.content or "").strip().strip('"').strip()
         # 空结果或多行异常时回退原始 query
         rewritten = text.splitlines()[0].strip() if text else query
-        return {"rewritten": rewritten or query}
+        timings["rewrite_ms"] = int((time.monotonic() - t0) * 1000)
+        return {"rewritten": rewritten or query, "timings": timings}
     except Exception:  # noqa: BLE001 - 改写失败不影响主流程
-        return {"rewritten": query}
+        timings["rewrite_ms"] = int((time.monotonic() - t0) * 1000)
+        return {"rewritten": query, "timings": timings}

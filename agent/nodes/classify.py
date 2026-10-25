@@ -5,44 +5,31 @@
 解析失败一律 clarify。
 
 意图三分：
-- stock: 一切股票相关问题，统一先进 RAG 漏斗——命中带引用作答，
+- stock: 文档型股票问题，统一先进 RAG 漏斗——命中带引用作答，
   未命中由主图改写成 stock_agent 重路由；
+- stock_agent: 实时数据问句（行情/估值/资金/龙虎榜/新闻等）直接进取数子图，
+  跳过 RAG 的 embed + SQL + rerank；
 - chat: 闲聊寒暄，直接陪聊，不挂工具；
 - off_topic: 与股票无关的正经话题，走固定话术婉拒（nodes/refuse.py）；
 - clarify: 问题含糊或低置信度，反问澄清。
 
-关键词兜底先行：行情/报价/K线/涨跌/估值/财报/资金类问句命中即确定性判为 stock，
-既省一次路由 LLM 调用，也防 LLM 把取数问句判错；漏斗不会拿无关文档硬答——rag 子图还有 LLM 判读把门。
+关键词兜底先行：实时数据词命中即确定性判为 stock_agent；文档型词（财报/研报/公告）
+仍判为 stock 走 RAG；概念型词（解释/区别/是什么）也留在 RAG。三条分支都不调
+路由 LLM，既省一次调用，也防 LLM 把取数问句判错。
 """
 import re
+import time
 from datetime import datetime
 
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
+from core.keywords import hit_data_keyword, is_concept_question, is_realtime_data_question
 from core.llm import get_small_llm
 from core.template import load_template, parse_route, render
 from nodes.rewrite import _format_history
 
 _CONF_MIN = 0.6
-
-# 数据类关键词：中文/混合词直接子串匹配（大小写不敏感，先 lower 再比）
-_DATA_KEYWORDS_SUBSTR = (
-    # 行情 / 价格类（含「成交量」一族）；查询先 lower 再匹配，故「日K/周K/月K」写成小写形式
-    "行情", "报价", "价格", "股价", "多少钱", "啥价", "涨跌", "涨幅", "收盘", "开盘",
-    "最高", "最低", "k线", "日k", "周k", "月k", "年k", "走势",
-    "成交量", "成交额", "换手", "量比", "振幅",
-    # 估值 / 财务类
-    "估值", "市盈率", "市净率", "市销率", "股息", "分红", "派息", "市值", "peg",
-    "财报", "业绩", "营收", "净利润", "毛利", "净利", "roe", "eps",
-    # 资金 / 榜单 / 同业对比 / 资讯类
-    "资金", "主力", "龙虎榜", "流入", "流出",
-    "同业", "同行", "竞品", "对比", "新闻", "动态", "消息",
-    # 注意：北向/南向/融资融券已移除——对应工具已下线，
-    # 关键词留在表里会把这些问句路由进取数子图却无工具可调（死路由）
-)
-# 短英文指标整词匹配（词边界），防止 "apple" 命中 "pe"、"space" 命中 "ps"
-_DATA_KEYWORDS_WORD = re.compile(r"(?<![a-zA-Z])(pe|pb|ps)(?![a-zA-Z])", re.IGNORECASE)
 
 # 指代不明的问句：「那个股票怎么样」「这只股票如何」——rewrite 无历史可消解时原样进入分类。
 # 实测路由 LLM 会判成 stock，白跑一轮漏斗后给出「没有数据」（R-03）。这里加确定性护栏：
@@ -125,27 +112,36 @@ async def _route_decision(prompt: str) -> dict:
 
 def _hit_data_keyword(query: str) -> bool:
     """数据类问句 -> True；短英文指标用词边界，中文/混合词用子串。"""
-    q = (query or "").lower()
-    if any(k in q for k in _DATA_KEYWORDS_SUBSTR):
-        return True
-    return bool(_DATA_KEYWORDS_WORD.search(q))
+    return hit_data_keyword(query)
 
 
 async def classify(state: dict) -> dict:
+    t0 = time.monotonic()
+
+    def done(payload: dict) -> dict:
+        payload["timings"] = {
+            "classify_ms": int((time.monotonic() - t0) * 1000),
+        }
+        return payload
+
     # 护栏已拦截时不再分类，直接透传 clarify
     if state.get("error"):
-        return {"intent": "clarify", "confidence": 0.0, "entities": {}}
+        return done({"intent": "clarify", "confidence": 0.0, "entities": {}})
 
     query = state.get("rewritten") or state.get("query", "") or ""
 
-    # 关键词兜底先行：命中数据词即确定性 stock（漏斗内部再决定查文档还是取数），
-    # 省一次 small_llm 调用，也不给 LLM 判错的机会
+    # 关键词兜底先行：命中实时数据词直接进取数子图，省一次 small_llm 调用，
+    # 也省掉 RAG 的 embed + SQL + rerank；文档型（财报/研报/公告）仍走 RAG，
+    # 概念型（解释/区别/是什么）也保持知识库回答，避免把「市盈率是什么」
+    # 误送去取数。三条分支都不调 LLM，判定是确定性的。
     if _hit_data_keyword(query):
-        return {"intent": "stock", "confidence": 1.0, "entities": {}}
+        if is_realtime_data_question(query) and not is_concept_question(query):
+            return done({"intent": "stock_agent", "confidence": 1.0, "entities": {}})
+        return done({"intent": "stock", "confidence": 1.0, "entities": {}})
 
     # 指代不明兜底：「那个股票怎么样」无历史可消解时直接 clarify，不让路由 LLM 猜
     if _is_vague_reference(query):
-        return {"intent": "clarify", "confidence": 0.9, "entities": {}}
+        return done({"intent": "clarify", "confidence": 0.9, "entities": {}})
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     history = _format_history(state.get("messages", []))
@@ -162,4 +158,4 @@ async def classify(state: dict) -> dict:
     if confidence < _CONF_MIN:
         intent = "clarify"
 
-    return {"intent": intent, "confidence": confidence, "entities": route["entities"]}
+    return done({"intent": intent, "confidence": confidence, "entities": route["entities"]})
