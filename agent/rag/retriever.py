@@ -55,10 +55,15 @@ fused AS (
   FROM (SELECT id,rk FROM vec UNION ALL SELECT id,rk FROM lex) u GROUP BY id
 )
 SELECT c.id, c.content, d.title, d.source_path, d.id AS doc_id,
+       a.stock_codes,
        f.score, (1 - (c.embedding <=> %(vec)s::vector)) AS similarity
 FROM fused f
 JOIN chunks c USING(id)
 JOIN documents d ON d.id=c.document_id
+-- 外层始终左连语料表：命中闸要做「实体一致性」校验（问题点名某只股票，
+-- 结果却全是别家公司的研报时不能硬答）。文件 ingest 的文档没有对应行，
+-- stock_codes 为 NULL，校验时按「无代码，不参与」处理。
+LEFT JOIN ashare_documents a ON a.doc_id=c.document_id
 ORDER BY f.score DESC, c.id LIMIT %(limit)s;
 """
 
@@ -218,13 +223,15 @@ class HybridRetriever(BaseRetriever):
         if timings is not None:
             timings["sql_ms"] = int((time.monotonic() - t1) * 1000)
         docs: list[Document] = []
-        for cid, content, title, source_path, doc_id, score, similarity in rows:
+        for cid, content, title, source_path, doc_id, stock_codes, score, similarity in rows:
             docs.append(Document(
                 page_content=content,
                 metadata={
                     "id": cid, "title": title, "source_path": source_path,
                     # doc_id 用于「同一文档最多进几块」：年报几百块，按标题限流会误伤
                     "doc_id": str(doc_id) if doc_id is not None else "",
+                    # 命中闸的实体一致性校验用；文件类文档为空列表
+                    "stock_codes": list(stock_codes) if stock_codes else [],
                     "score": float(score),
                     # 余弦相似度（1 - 余弦距离），与 RAG_THRESHOLD 同尺度，用于相关性判定
                     "similarity": float(similarity) if similarity is not None else 0.0,

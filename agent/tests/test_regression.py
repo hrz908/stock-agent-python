@@ -655,6 +655,12 @@ def test_rag_judge_fallback():
 
     from subgraphs import rag as rag_mod
 
+    orig_ent = rag_mod.entity_codes
+
+    async def _no_entity(_q):
+        return set()
+
+    rag_mod.entity_codes = _no_entity
     out = asyncio.run(rag_mod.sufficiency_check({"retrieved": [], "query": "x"}))
     check("空检索 -> stock_agent", out.get("intent") == "stock_agent", str(out))
     out_concept = asyncio.run(rag_mod.sufficiency_check(
@@ -684,6 +690,43 @@ def test_rag_judge_fallback():
     finally:
         rag_mod.get_small_llm = orig
 
+    ret = [
+        {"title": "研报A", "content": "内容", "similarity": 0.9, "rerank_score": 0.99,
+         "stock_codes": ["300750"]},
+        {"title": "研报B", "content": "内容", "similarity": 0.8, "rerank_score": 0.95,
+         "stock_codes": ["300750"]},
+    ]
+
+    # 实体不一致：问题点名茅台，但片段全是宁德时代 -> 按未命中处理（不硬答别家）
+    async def _maotai(_q):
+        return {"600519"}
+
+    rag_mod.entity_codes = _maotai
+    rag_mod.get_small_llm = lambda **kw: (_ for _ in ()).throw(RuntimeError("不应判读"))
+    try:
+        out_mismatch = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": ret, "query": "贵州茅台最新研报观点"}))
+        check("实体不一致按未命中（升级取数）", out_mismatch.get("intent") == "stock_agent",
+              str(out_mismatch))
+    finally:
+        rag_mod.get_small_llm = orig
+
+    # 实体一致：片段就是问题这家 -> 高分短路命中
+    async def _catl(_q):
+        return {"300750"}
+
+    rag_mod.entity_codes = _catl
+    rag_mod._judge_runnable = None
+    rag_mod.get_small_llm = lambda **kw: (_ for _ in ()).throw(RuntimeError("短路不应判读"))
+    try:
+        out_hit = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": ret, "query": "宁德时代最新研报观点"}))
+        check("实体一致且高分 -> 命中", "intent" not in out_hit, str(out_hit))
+    finally:
+        rag_mod.entity_codes = orig_ent
+        rag_mod.get_small_llm = orig
+        rag_mod._judge_runnable = None
+
     # 判官判「不能回答」-> escalate 到炒股 agent
     class _Verdict:
         can_answer = False
@@ -697,6 +740,7 @@ def test_rag_judge_fallback():
         def with_structured_output(self, schema):
             return _Chain()
 
+    rag_mod.entity_codes = _no_entity  # 该用例只验判官，不涉及实体校验
     rag_mod.get_small_llm = lambda **kw: _SmallLLM()
     try:
         out3 = asyncio.run(rag_mod.sufficiency_check(
@@ -704,6 +748,7 @@ def test_rag_judge_fallback():
         check("判官判不能 -> stock_agent", out3.get("intent") == "stock_agent", str(out3))
     finally:
         rag_mod.get_small_llm = orig
+        rag_mod.entity_codes = orig_ent
 
 
 def test_intent_taxonomy():
@@ -941,8 +986,11 @@ def test_retrieval_knobs():
 
     # 过滤下推到 vec/lex 两路；非法值被忽略，不能把 SQL 拼坏
     plain_sql, plain_params = _build_search_sql()
-    check("无过滤时不 join 语料表", "ashare_documents" not in plain_sql and not plain_params,
-          plain_sql[:80])
+    # 外层始终左连语料表拿 stock_codes（命中闸的实体校验用），但无过滤时不应产生过滤参数
+    check("无过滤时不产生过滤参数", not plain_params, str(plain_params))
+    check("外层左连语料表取 stock_codes",
+          "LEFT JOIN ashare_documents a ON a.doc_id=c.document_id" in plain_sql
+          and "a.stock_codes" in plain_sql, plain_sql[:120])
     check("中文全文检索改用 tsv_zh + to_tsquery",
           "c.tsv_zh @@ q" in plain_sql and "to_tsquery" in plain_sql and "websearch_to_tsquery" not in plain_sql,
           plain_sql[:120])
@@ -955,7 +1003,8 @@ def test_retrieval_knobs():
     ))
     filt_sql, filt_params = _build_search_sql("600519", "research_report", "2025-01-01 00:00:00+08:00")
     check("过滤条件覆盖两路召回",
-          filt_sql.count("a.stock_codes") == 2 and filt_sql.count("a.source_type") == 2
+          # 外层 SELECT 也有一处 a.stock_codes（命中闸实体校验），过滤条件本身仍在两路 CTE
+          filt_sql.count("a.stock_codes") == 3 and filt_sql.count("a.source_type") == 2
           and filt_sql.count("a.pub_time") == 2, filt_sql)
     check("过滤参数只传一份", set(filt_params) == {"code", "stype", "since"}, str(filt_params))
 
@@ -986,6 +1035,12 @@ def test_rag_judge_short_circuit():
     from subgraphs import rag as rag_mod
 
     orig = rag_mod.get_small_llm
+    orig_ent = rag_mod.entity_codes
+
+    async def _no_entity(_q):
+        return set()
+
+    rag_mod.entity_codes = _no_entity
     rag_mod._judge_runnable = None
     rag_mod.get_small_llm = lambda **kw: (_ for _ in ()).throw(RuntimeError("judge 不应被调用"))
     try:
@@ -1022,6 +1077,7 @@ def test_rag_judge_short_circuit():
         check("未达短路阈值仍判读", out2.get("intent") == "stock_agent", str(out2))
     finally:
         rag_mod.get_small_llm = orig
+        rag_mod.entity_codes = orig_ent
         rag_mod._judge_runnable = None
 
 
@@ -1151,6 +1207,28 @@ def test_kb_sources_event():
     check("tool_results 正常累加", len(out.get("tool_results") or []) == 1, str(out))
 
 
+def test_entity_codes():
+    print("\n[P16] 查询实体识别（名称/代码）")
+    import asyncio
+
+    from rag import entity
+
+    orig = entity._stock_names
+
+    async def _names():
+        return [("贵州茅台", "600519"), ("宁德时代", "300750")]
+
+    entity._stock_names = _names
+    try:
+        check("全名匹配", asyncio.run(entity.entity_codes("贵州茅台三季报")) == {"600519"})
+        check("代码匹配", asyncio.run(entity.entity_codes("600519 最新价")) == {"600519"})
+        check("多实体", asyncio.run(entity.entity_codes("贵州茅台和宁德时代对比")) == {"600519", "300750"})
+        check("无实体", asyncio.run(entity.entity_codes("市盈率是什么")) == set())
+        check("简称不匹配全名（保守不误判）", asyncio.run(entity.entity_codes("茅台三季报")) == set())
+    finally:
+        entity._stock_names = orig
+
+
 def main():
     print("=" * 62)
     print("AI 对话故障回归测试")
@@ -1188,6 +1266,7 @@ def main():
     test_rag_judge_short_circuit()
     test_rewrite_route_merge()
     test_kb_sources_event()
+    test_entity_codes()
     print("\n" + "=" * 62)
     if _FAILED:
         print(f"FAILED: {len(_FAILED)} 项 -> {_FAILED}")

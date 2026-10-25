@@ -26,6 +26,7 @@ from core.keywords import is_concept_question
 from core.llm import get_llm, get_small_llm
 from core.state import AgentState, recent_turns
 from core.template import render
+from rag.entity import entity_codes
 from rag.retriever import build_retriever
 from subgraphs import emit
 
@@ -61,6 +62,8 @@ async def hybrid_retrieve(state: dict) -> dict:
         "similarity": d.metadata.get("similarity", 0.0),
         # 重排关闭时为 None，命中闸回退到 similarity
         "rerank_score": d.metadata.get("rerank_score"),
+        # 命中闸的实体一致性校验用（文件类文档为空列表）
+        "stock_codes": d.metadata.get("stock_codes") or [],
     } for d in docs]
     return {"retrieved": retrieved, "timings": timings}
 
@@ -139,6 +142,19 @@ async def sufficiency_check(state: dict) -> dict:
             "intent": miss_intent,
             "timings": {"sufficiency_ms": int((time.monotonic() - t0) * 1000)},
         }
+    # 实体一致性：问题点名了某只股票（代码/全称），但所有带代码的片段都属于别家公司，
+    # 说明检索只是「主题相似」——交给判读或直接作答都会把别家数据说成用户的标的，
+    # 直接按未命中处理，升级取数。文件类/快讯类片段没有代码，不参与该判定。
+    codes = await entity_codes(query)
+    if codes:
+        coded = [r for r in retrieved if r.get("stock_codes")]
+        if coded and not any(set(r.get("stock_codes") or []) & codes for r in coded):
+            logger.info("实体不一致，按未命中处理：query=%s 命中代码=%s",
+                        query[:40], sorted({c for r in coded for c in r.get("stock_codes") or []}))
+            return {
+                "intent": miss_intent,
+                "timings": {"sufficiency_ms": int((time.monotonic() - t0) * 1000)},
+            }
     # 高分短路：分数已远超阈值时判读没有增量信息（实测相关样本 top1 中位 1.0、
     # 负样本最大 0.884），直接命中省掉一次 2s 级小模型调用。
     # 只对重排分生效：余弦相似度地板值高（0.9 并不等于高相关），仍交给 judge。
