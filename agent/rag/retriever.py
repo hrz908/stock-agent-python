@@ -25,6 +25,7 @@ from config import (
 )
 from db import get_pool
 from rag.reranker import rerank_scores
+from rag.zh_tokenize import query_tsquery
 
 logger = logging.getLogger("stocka.agent")
 
@@ -43,11 +44,11 @@ WITH vec AS (
   ORDER BY c.embedding <=> %(vec)s::vector LIMIT 50
 ),
 lex AS (
-  SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(c.tsv, q) DESC) AS rk
-  FROM chunks c, websearch_to_tsquery('simple', %(q)s) q
+  SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(c.tsv_zh, q) DESC) AS rk
+  FROM chunks c, to_tsquery('simple', %(q_ts)s) q
   {join}
   {where_lex}
-  ORDER BY ts_rank_cd(c.tsv, q) DESC LIMIT 50
+  ORDER BY ts_rank_cd(c.tsv_zh, q) DESC LIMIT 50
 ),
 fused AS (
   SELECT id, SUM(1.0/(60+rk)) AS score
@@ -125,7 +126,7 @@ def _build_search_sql(
 
     join = "JOIN ashare_documents a ON a.doc_id = c.document_id" if conditions else ""
     where_vec = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-    where_lex = "WHERE " + " AND ".join(conditions + ["c.tsv @@ q"])
+    where_lex = "WHERE " + " AND ".join(conditions + ["c.tsv_zh @@ q"])
     sql = SEARCH_SQL.format(join=join, where_vec=where_vec, where_lex=where_lex)
     return sql, params
 
@@ -200,7 +201,13 @@ class HybridRetriever(BaseRetriever):
             source_type=_normalize_source_type(source_type),
             since=_normalize_since(since),
         )
-        params = {**filter_params, "vec": vl, "q": query, "limit": limit}
+        params = {
+            **filter_params,
+            "vec": vl,
+            # 中文 bigram / ASCII 词拼成 OR tsquery；空查询用哨兵词避免空 tsquery
+            "q_ts": query_tsquery(query),
+            "limit": limit,
+        }
         t1 = time.monotonic()
         # 复用只读池：一轮对话里 RAG 漏斗和知识库工具会各触发一次检索
         pool = await get_pool()

@@ -448,6 +448,29 @@ def test_stage_timings_and_ttft():
           isinstance((out3.get("timings") or {}).get("classify_ms"), int), str(out3.get("timings")))
 
 
+def test_zh_tokenize():
+    print("\n[P14] 中文 bigram 词元化")
+    from rag.zh_tokenize import document_text, query_tsquery
+
+    doc = document_text("贵州茅台发布了回购公告，投资者可关注")
+    check("中文按 bigram 切分", "贵州" in doc and "州茅" in doc and "茅台" in doc, doc)
+    check("ASCII 代码保留", "600519" in document_text("查询600519最新价"), document_text("查询600519最新价"))
+    check("重复 bigram 保留（供 tf 计分）", document_text("茅台茅台") == "茅台 台茅 茅台",
+          document_text("茅台茅台"))
+    q = query_tsquery("贵州茅台 回购 600519")
+    check("查询词元去重 OR 拼接", "茅台 | 回购 | 600519" in q, q)
+    check("空文本哨兵", query_tsquery("") == "__empty__")
+    check("单字虚词过滤", query_tsquery("的") == "__empty__", query_tsquery("的"))
+    # 与 ingest 侧保持一致：两份同源文件必须产出相同词元
+    import runpy
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / ".." / "ingest" / "zh_tokenize.py").resolve()
+    ns = runpy.run_path(str(src))
+    check("ingest 侧词元一致",
+          ns["document_text"]("贵州茅台回购") == document_text("贵州茅台回购"))
+
+
 def test_llm_retry_config():
     print("\n[P13] LLM 超时与重试收口")
     from config import LLM_MAX_RETRIES, SMALL_LLM_TIMEOUT, TOOL_CALL_LLM_TIMEOUT
@@ -913,6 +936,9 @@ def test_retrieval_knobs():
     plain_sql, plain_params = _build_search_sql()
     check("无过滤时不 join 语料表", "ashare_documents" not in plain_sql and not plain_params,
           plain_sql[:80])
+    check("中文全文检索改用 tsv_zh + to_tsquery",
+          "c.tsv_zh @@ q" in plain_sql and "to_tsquery" in plain_sql and "websearch_to_tsquery" not in plain_sql,
+          plain_sql[:120])
     check("过滤值归一化", (
         _normalize_stock_code("sh600519") == "600519"
         and _normalize_source_type("研报") == "research_report"
@@ -979,6 +1005,7 @@ def main():
     test_fewshot_examples_wired()
     test_history_trim_and_session_utils()
     test_retrieval_knobs()
+    test_zh_tokenize()
     print("\n" + "=" * 62)
     if _FAILED:
         print(f"FAILED: {len(_FAILED)} 项 -> {_FAILED}")

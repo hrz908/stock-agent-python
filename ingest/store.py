@@ -7,6 +7,8 @@ import psycopg.errors
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
+from zh_tokenize import document_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -165,6 +167,7 @@ class Store:
                             doc_id,
                             chunk["seq"],
                             chunk["content"],
+                            document_text(chunk["content"]),
                             chunk.get("token_count"),
                             json.dumps(chunk.get("metadata", {}), ensure_ascii=False),
                             _vec_literal(chunk["embedding"]),
@@ -174,8 +177,9 @@ class Store:
                     async with conn.cursor() as cur:
                         await cur.executemany(
                             """
-                            INSERT INTO chunks (document_id, seq, content, token_count, metadata, embedding)
-                            VALUES (%s, %s, %s, %s, %s::jsonb, %s::vector)
+                            INSERT INTO chunks (document_id, seq, content, search_text,
+                                                token_count, metadata, embedding)
+                            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::vector)
                             """,
                             rows,
                         )

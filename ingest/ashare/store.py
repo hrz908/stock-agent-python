@@ -16,6 +16,7 @@ from psycopg.types.json import Jsonb
 from ashare import config
 from ashare.quality import from_signed64, hamming, to_signed64
 from ashare.types import Chunk, RunStats
+from zh_tokenize import document_text
 
 logger = logging.getLogger(__name__)
 
@@ -223,6 +224,7 @@ class Store:
                 doc_id,
                 chunk.seq,
                 chunk.content,
+                document_text(chunk.content),
                 chunk.token_count,
                 Jsonb({**chunk.metadata, "doc_id": str(doc_id)}),
                 vec_literal(chunk.embedding),
@@ -232,8 +234,9 @@ class Store:
         with self.conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO chunks (document_id, seq, content, token_count, metadata, embedding)
-                VALUES (%s, %s, %s, %s, %s::jsonb, %s::vector)
+                INSERT INTO chunks (document_id, seq, content, search_text,
+                                    token_count, metadata, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::vector)
                 """,
                 rows,
             )

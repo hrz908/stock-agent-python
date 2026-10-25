@@ -212,6 +212,9 @@ services:
       ASHARE_EMBED_MODEL: ${OFFLINE_EMBED_MODEL:-Qwen/Qwen3-Embedding-4B}
       ASHARE_EMBED_DIM: ${EMBED_DIM:-1536}
       ASHARE_MODEL_PATH: /models/${ASHARE_MODEL_NAME:-Qwen3-Embedding-4B}
+      # 没有本地模型权重时走 OpenAI 兼容 embedding API；两者都空才回退本地模型
+      ASHARE_EMBED_API_BASE: ${OPENAI_API_BASE:-}
+      ASHARE_EMBED_API_KEY: ${OPENAI_API_KEY:-}
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
     volumes:
