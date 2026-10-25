@@ -109,7 +109,8 @@ def _history_text(state: dict) -> str:
     msgs = list(state.get("messages") or [])
     query = (state.get("query") or "").strip()
     if msgs and isinstance(msgs[-1], HumanMessage):
-        last = msgs[-1].content if isinstance(msgs[-1].content, str) else str(msgs[-1].content or "")
+        last_content = msgs[-1].content
+        last = last_content if isinstance(last_content, str) else str(last_content or "")
         if not query or last.strip() == query:
             msgs = msgs[:-1]
     return _format_history(msgs)
