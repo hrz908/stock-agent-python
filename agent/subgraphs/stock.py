@@ -573,6 +573,30 @@ async def tool_execute(state: dict) -> dict:
         ))
         tool_results.append({"tool": name, "result": result})
 
+    # 知识库工具补一条 sources 事件：与 RAG 子图同一协议，前端据此展示引用来源。
+    # 多轮/多次检索按 chunk_id 去重，最多 8 条（与检索器窗口一致）。
+    kb_docs: list[dict] = []
+    seen_kb: set[str] = set()
+    for item in tool_results:
+        if item.get("tool") != "search_knowledge_base":
+            continue
+        result = item.get("result") or {}
+        if not result.get("ok"):
+            continue
+        for doc in result.get("data") or []:
+            cid = str(doc.get("chunk_id") or "")
+            key = cid or f"{doc.get('title', '')}|{str(doc.get('content', ''))[:40]}"
+            if key in seen_kb:
+                continue
+            seen_kb.add(key)
+            kb_docs.append({
+                "title": doc.get("title", ""),
+                "chunk_id": cid,
+                "score": doc.get("score", 0.0),
+            })
+    if kb_docs:
+        emit("sources", {"docs": kb_docs[:8]})
+
     # tool_results 已配置 operator.add reducer：这里只返回本轮新增结果，
     # 由 reducer 跨轮拼接到已有列表，synthesize 仍能看到全部轮次的工具数据
     return {

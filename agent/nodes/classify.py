@@ -128,6 +128,11 @@ async def classify(state: dict) -> dict:
     if state.get("error"):
         return done({"intent": "clarify", "confidence": 0.0, "entities": {}})
 
+    # 多轮场景下 rewrite 的合并路径已产出意图，这里只补计时直接透传，
+    # 避免同一轮把路由提示词再跑一遍
+    if state.get("intent"):
+        return done({})
+
     query = state.get("rewritten") or state.get("query", "") or ""
 
     # 关键词兜底先行：命中实时数据词直接进取数子图，省一次 small_llm 调用，

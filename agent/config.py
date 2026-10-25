@@ -57,6 +57,10 @@ RAG_PER_DOC = int(os.getenv("RAG_PER_DOC", "3"))
 RAG_RERANK_FILTER = os.getenv("RAG_RERANK_FILTER", "false").strip().lower() in (
     "1", "true", "yes", "on",
 )
+# 高分短路：最高重排分达到该值时跳过 LLM judge 判读，直接按命中处理。
+# 实测语料上相关样本 top1 中位 1.0、语料外负样本最大值 0.884，0.9 能省掉
+# 约 95% 的 judge 调用（每次 ~2.3s）且不误放负样本；0 表示关闭短路。
+RAG_JUDGE_SKIP_SCORE = float(os.getenv("RAG_JUDGE_SKIP_SCORE", "0.9"))
 # Go 网关地址（工具调用回现有后端获取行情）
 GO_SERVER_URL = os.getenv("GO_SERVER_URL", "http://127.0.0.1:8080")
 # 调 Go 网关受保护接口用的服务间 token（Agent 作为可信内部服务）

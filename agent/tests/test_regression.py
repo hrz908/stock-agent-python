@@ -972,6 +972,164 @@ def test_retrieval_knobs():
     check("同 id 重复被去重", len(_clean_docs(same_id, per_doc=2)) == 1)
 
 
+def test_rag_judge_short_circuit():
+    print("\n[P15] RAG 高分短路（跳过一次 judge）")
+    import asyncio
+
+    from subgraphs import rag as rag_mod
+
+    orig = rag_mod.get_small_llm
+    rag_mod._judge_runnable = None
+    rag_mod.get_small_llm = lambda **kw: (_ for _ in ()).throw(RuntimeError("judge 不应被调用"))
+    try:
+        hi = [
+            {"title": "研报A", "content": "内容", "similarity": 0.9, "rerank_score": 0.95},
+            {"title": "研报B", "content": "内容", "similarity": 0.8, "rerank_score": 0.9},
+        ]
+        out = asyncio.run(rag_mod.sufficiency_check({"retrieved": hi, "query": "茅台研报观点"}))
+        check("高分短路不调 judge", "intent" not in out, str(out))
+        check("短路时 judge_ms=0", (out.get("timings") or {}).get("judge_ms") == 0, str(out))
+    finally:
+        rag_mod.get_small_llm = orig
+
+    class _Verdict:
+        can_answer = False
+        reason = "资料不含实时价格"
+
+    class _Chain:
+        async def ainvoke(self, msgs):
+            return _Verdict()
+
+    class _SmallLLM:
+        def with_structured_output(self, schema):
+            return _Chain()
+
+    rag_mod._judge_runnable = None
+    rag_mod.get_small_llm = lambda **kw: _SmallLLM()
+    try:
+        mid = [
+            {"title": "研报A", "content": "内容", "similarity": 0.9, "rerank_score": 0.7},
+            {"title": "研报B", "content": "内容", "similarity": 0.8, "rerank_score": 0.6},
+        ]
+        out2 = asyncio.run(rag_mod.sufficiency_check({"retrieved": mid, "query": "茅台现在多少钱"}))
+        check("未达短路阈值仍判读", out2.get("intent") == "stock_agent", str(out2))
+    finally:
+        rag_mod.get_small_llm = orig
+        rag_mod._judge_runnable = None
+
+
+def test_rewrite_route_merge():
+    print("\n[P15] 多轮改写与意图合并为一次调用")
+    import asyncio
+
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from nodes.classify import classify
+    from nodes.rewrite import rewrite as rewrite_node
+
+    rw = rewrite_node.__globals__
+
+    hist = [HumanMessage(content="贵州茅台现在多少钱"), AIMessage(content="约1500元")]
+    state = {"query": "那它的市盈率呢", "messages": hist, "thread_id": ""}
+
+    class _Decision:
+        rewritten = "贵州茅台的市盈率是多少"
+        intent = "stock"
+        confidence = 0.95
+        reason = ""
+        symbol = "贵州茅台"
+        market = "SH"
+        date_range = ""
+
+    class _Chain:
+        async def ainvoke(self, msgs):
+            return _Decision()
+
+    class _LLM:
+        def with_structured_output(self, schema):
+            return _Chain()
+
+    orig = rw["get_small_llm"]
+    rw["_merge_runnable"] = None
+    rw["get_small_llm"] = lambda **kw: _LLM()
+    try:
+        out = asyncio.run(rewrite_node(state))
+    finally:
+        rw["get_small_llm"] = orig
+        rw["_merge_runnable"] = None
+    check("合并路径产出改写", out.get("rewritten") == "贵州茅台的市盈率是多少", str(out))
+    check("合并路径产出意图", out.get("intent") == "stock" and out.get("confidence") == 0.95, str(out))
+    check("合并路径带实体", (out.get("entities") or {}).get("symbol") == "贵州茅台", str(out))
+
+    # 合并调用异常 -> 回退只改写，不写 intent（交给 classify）
+    class _FailLLM:
+        def with_structured_output(self, schema):
+            raise RuntimeError("structured unavailable")
+
+    rw["_merge_runnable"] = None
+    rw["get_small_llm"] = lambda **kw: _FailLLM()
+    try:
+        out2 = asyncio.run(rewrite_node(state))
+    finally:
+        rw["get_small_llm"] = orig
+        rw["_merge_runnable"] = None
+    check("合并失败不写意图", "intent" not in out2, str(out2))
+    check("合并失败仍返回 query 兜底", bool(out2.get("rewritten")), str(out2))
+
+    # classify 见到已有 intent 直接透传，不再调 LLM
+    orig_cls = classify.__globals__["get_small_llm"]
+    classify.__globals__["get_small_llm"] = lambda **kw: (_ for _ in ()).throw(
+        RuntimeError("classify 不应重复调用"))
+    try:
+        out3 = asyncio.run(classify({
+            "query": "那它的市盈率呢", "rewritten": "贵州茅台的市盈率是多少",
+            "intent": "stock", "confidence": 0.95, "messages": [],
+        }))
+    finally:
+        classify.__globals__["get_small_llm"] = orig_cls
+    check("已路由时 classify 透传", "intent" not in out3, str(out3))
+    check("透传时 classify_ms=0", (out3.get("timings") or {}).get("classify_ms") == 0, str(out3))
+
+
+def test_kb_sources_event():
+    print("\n[P15] 知识库工具 sources 事件")
+    import asyncio
+
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from subgraphs import stock as stock_mod
+
+    class _FakeTool:
+        name = "search_knowledge_base"
+
+        async def ainvoke(self, args):
+            return {"ok": True, "data": [
+                {"title": "研报A", "content": "x", "chunk_id": "11",
+                 "score": 0.91, "similarity": 0.7},
+                {"title": "研报A", "content": "x", "chunk_id": "11",
+                 "score": 0.91, "similarity": 0.7},
+            ]}
+
+    captured = []
+    orig_tools, orig_emit = stock_mod._TOOLS, stock_mod.emit
+    stock_mod._TOOLS = [_FakeTool()]
+    stock_mod.emit = lambda ev, data: captured.append((ev, data))
+    try:
+        ai = AIMessage(content="", tool_calls=[{
+            "name": "search_knowledge_base", "args": {"query": "q"}, "id": "1",
+        }])
+        state = {"messages": [HumanMessage(content="q"), ai], "tool_results": [], "timings": {}}
+        out = asyncio.run(stock_mod.tool_execute(state))
+    finally:
+        stock_mod._TOOLS, stock_mod.emit = orig_tools, orig_emit
+
+    src = [data for ev, data in captured if ev == "sources"]
+    check("知识库结果发出 sources", len(src) == 1, str(captured))
+    check("sources 按 chunk_id 去重", len(src[0]["docs"]) == 1, str(src))
+    check("sources 含 chunk_id", src[0]["docs"][0]["chunk_id"] == "11", str(src))
+    check("tool_results 正常累加", len(out.get("tool_results") or []) == 1, str(out))
+
+
 def main():
     print("=" * 62)
     print("AI 对话故障回归测试")
@@ -1006,6 +1164,9 @@ def main():
     test_history_trim_and_session_utils()
     test_retrieval_knobs()
     test_zh_tokenize()
+    test_rag_judge_short_circuit()
+    test_rewrite_route_merge()
+    test_kb_sources_event()
     print("\n" + "=" * 62)
     if _FAILED:
         print(f"FAILED: {len(_FAILED)} 项 -> {_FAILED}")

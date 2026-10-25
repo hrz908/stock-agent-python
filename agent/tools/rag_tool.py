@@ -44,7 +44,7 @@ async def search_knowledge_base(
         since: 可选，发布时间下限 YYYY-MM-DD，如 "2025-01-01"。
 
     Returns:
-        {"ok": True, "data": [{title, content, similarity, source_path}...]} 成功；
+        {"ok": True, "data": [{title, content, similarity, score, chunk_id, source_path}...]} 成功；
         {"ok": False, "error": "..."} 失败降级（知识库不可用时不阻塞其余工具）。
     """
     n = max(1, min(int(limit or 4), _RETRIEVER_K))
@@ -58,5 +58,8 @@ async def search_knowledge_base(
         "title": d.metadata.get("title", ""),
         "content": d.page_content,
         "similarity": d.metadata.get("similarity", 0.0),
+        # 引用事件用：chunk_id 对齐 sources 协议，score 优先重排分（与命中闸同尺度）
+        "score": d.metadata.get("rerank_score") or d.metadata.get("similarity", 0.0),
+        "chunk_id": str(d.metadata.get("id", "")),
         "source_path": d.metadata.get("source_path", ""),
     } for d in docs[:n]]}

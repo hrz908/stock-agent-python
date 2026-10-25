@@ -70,6 +70,14 @@ async def lifespan(app: FastAPI):
         await get_graph()
     except Exception as e:  # noqa: BLE001 - 预热失败不阻断启动，首个请求会再试
         logger.warning("graph warmup failed: %s", e)
+    # 预热 tiktoken：首次 encode 要加载/下载词表（实测约 3.9s），
+    # 不预热会把它算到首个请求的 guardrail 上，TTFT 直接多 4s
+    try:
+        from core.llm import estimate_tokens
+
+        estimate_tokens("预热")
+    except Exception as e:  # noqa: BLE001 - 预热失败不阻断启动
+        logger.warning("tokenizer warmup failed: %s", e)
     # 会话注册表（chat_sessions）：历史对话列表的存储，幂等建表
     try:
         await ensure_sessions_table()

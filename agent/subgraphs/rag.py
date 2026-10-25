@@ -19,7 +19,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from config import RAG_THRESHOLD, RAG_TOP_K, RERANK_THRESHOLD
+from config import RAG_JUDGE_SKIP_SCORE, RAG_THRESHOLD, RAG_TOP_K, RERANK_THRESHOLD
 from core.llm import get_llm, get_small_llm
 from core.state import AgentState, recent_turns
 from core.template import render
@@ -120,7 +120,8 @@ async def sufficiency_check(state: dict) -> dict:
     """
     t0 = time.monotonic()
     retrieved = state.get("retrieved", []) or []
-    if any(r.get("rerank_score") is not None for r in retrieved):
+    has_rerank = any(r.get("rerank_score") is not None for r in retrieved)
+    if has_rerank:
         top_score = max((r.get("rerank_score") or 0.0 for r in retrieved), default=0.0)
         threshold = RERANK_THRESHOLD
     else:
@@ -130,6 +131,16 @@ async def sufficiency_check(state: dict) -> dict:
         return {
             "intent": "stock_agent",
             "timings": {"sufficiency_ms": int((time.monotonic() - t0) * 1000)},
+        }
+    # 高分短路：分数已远超阈值时判读没有增量信息（实测相关样本 top1 中位 1.0、
+    # 负样本最大 0.884），直接命中省掉一次 2s 级小模型调用。
+    # 只对重排分生效：余弦相似度地板值高（0.9 并不等于高相关），仍交给 judge。
+    if has_rerank and RAG_JUDGE_SKIP_SCORE > 0 and top_score >= RAG_JUDGE_SKIP_SCORE:
+        return {
+            "timings": {
+                "sufficiency_ms": int((time.monotonic() - t0) * 1000),
+                "judge_ms": 0,
+            },
         }
     query = state.get("rewritten") or state.get("query", "") or ""
     t_judge = time.monotonic()

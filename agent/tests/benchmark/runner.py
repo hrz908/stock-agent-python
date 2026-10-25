@@ -21,6 +21,9 @@ from .cases import Case
 
 AGENT_DIR = Path(__file__).resolve().parents[2]  # .../agent
 REPO_DIR = AGENT_DIR.parent                        # .../new-projects
+# 容器内跑（benchmark / 检索评测）时 DATABASE_URL 的 postgres 主机名就是对的，
+# 不能按宿主直连口径改成 localhost
+IN_CONTAINER = Path("/.dockerenv").exists()
 
 
 def load_env_file(path) -> dict:
@@ -47,6 +50,7 @@ def apply_inproc_env(env_file=None, verbose=False) -> dict:
        - NO_PROXY=*（本机系统代理会拦 akshare/东财直连；LLM 走 SiliconFlow 实测直连可用）
        - TOOL_CACHE_TTL=0（基准要测真实上游延迟，关掉工具结果缓存）
     3. DATABASE_URL 若指向 docker 内网主机名（postgres），改回 localhost。
+       仅在宿主机直跑时成立；容器内保留 compose 注入的服务名。
     """
     env = load_env_file(env_file or (REPO_DIR / "server" / ".env"))
     applied = {}
@@ -55,16 +59,17 @@ def apply_inproc_env(env_file=None, verbose=False) -> dict:
             os.environ[k] = v
             applied[k] = v
     overrides = {
-        "GO_SERVER_URL": "http://127.0.0.1:8080",
         "NO_PROXY": "*",
         "no_proxy": "*",
         "TOOL_CACHE_TTL": "0",
     }
+    if not IN_CONTAINER:
+        overrides["GO_SERVER_URL"] = "http://127.0.0.1:8080"
     for k, v in overrides.items():
         os.environ[k] = v
         applied[k] = v
     db = os.environ.get("DATABASE_URL", "")
-    if "@postgres:" in db or "@redis:" in db:
+    if not IN_CONTAINER and ("@postgres:" in db or "@redis:" in db):
         os.environ["DATABASE_URL"] = re.sub(r"@postgres:", "@localhost:", db)
         os.environ["REDIS_URL"] = re.sub(r"@redis:", "@localhost:", os.environ.get("REDIS_URL", ""))
         applied["DATABASE_URL"] = os.environ["DATABASE_URL"]

@@ -4,14 +4,25 @@
 用 small_llm（温度 0）；若 Redis 有该 thread 的滚动摘要（post 节点写入），
 则拼入 prompt 作为对话背景，与最近历史共同构成完整上下文。
 改写失败 / 无历史无摘要时回退原始 query，绝不阻断主流程。
+
+多轮且确实需要改写时，改写与意图路由合并成一次小模型调用（rewritten + intent），
+省掉 classify 的第二次往返；单轮（无历史）或问题本身完整时仍只做改写/直通，
+路由照旧交给 classify。合并调用失败自动回退到「只改写」，不改变任何降级路径。
 """
 import re
 import time
+from datetime import datetime
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from core.llm import get_small_llm
 from core.redis import get_redis
+from core.template import load_template, render
+
+# 与 nodes/classify.py 的低置信度口径保持一致（低于该值强制 clarify）
+_CONF_MIN = 0.6
+_ROUTE_INTENTS = {"stock", "chat", "off_topic", "clarify"}
 
 # 依赖上下文的指代词：出现这些才真的需要消解。
 # 反过来说，一个不含指代、且自带 6 位代码的问题（「600519 现在多少钱」）
@@ -29,6 +40,46 @@ _SYSTEM = (
     "3. 若最新问题本身已完整，原样输出。\n"
     "4. 保持与用户相同的语言。"
 )
+
+# 合并路径：一次调用同时产出改写与路由。规则仍复用 router.xml / router_examples.xml，
+# 只在末尾追加改写要求，避免维护两套意图口径。
+_MERGE_SYSTEM = (
+    "你是股票投研助手的查询改写器与意图路由器。先结合对话历史改写指代，"
+    "再按给定规则判断意图，只输出结构化字段。"
+)
+_MERGE_RULE = (
+    "\n\n<rewrite_rule>\n"
+    "在判断意图之前，先结合 <history> 把 <query> 改写成一个不依赖上下文、"
+    "可独立理解的问题，写入 rewritten 字段。要求：补全指代（它/这个/那只股票等）"
+    "为具体实体；若最新问题本身已完整，rewritten 原样使用 <query> 的内容；"
+    "保持与用户相同的语言。\n"
+    "</rewrite_rule>"
+)
+
+
+class _RewriteRoute(BaseModel):
+    """改写 + 路由的合并输出契约（字段与 router.xml 的 route 一致，另加 rewritten）。"""
+
+    rewritten: str = Field(description="改写后不依赖上下文的独立问题")
+    intent: str = Field(description="stock|chat|off_topic|clarify 之一")
+    confidence: float = Field(description="对该判断的把握，0~1 的小数")
+    reason: str = Field(default="", description="一句话理由")
+    symbol: str = Field(default="", description="标的代码或名称，可空")
+    market: str = Field(default="", description="SH|SZ|BJ|HK|US，可空")
+    date_range: str = Field(default="", description="时间范围描述，可空")
+
+
+# with_structured_output 每次都会重新包装 schema，缓存这个 runnable
+_merge_runnable = None
+
+
+def _get_merge_runnable():
+    global _merge_runnable
+    if _merge_runnable is None:
+        _merge_runnable = get_small_llm(
+            streaming=False, temperature=0.0
+        ).with_structured_output(_RewriteRoute)
+    return _merge_runnable
 
 
 def _format_history(messages: list, limit: int = 10) -> str:
@@ -88,6 +139,40 @@ async def rewrite(state: dict) -> dict:
     # 滚动摘要作为对话背景前缀，弥补被裁剪掉的早期历史
     bg = f"对话背景摘要：\n{summary}\n\n" if summary else ""
     prompt = f"{bg}对话历史：\n{history}\n\n用户最新问题：{query}\n\n改写后的独立问题："
+
+    # 合并路径：一次调用同时产出改写与意图，省掉 classify 的一次往返
+    try:
+        route_prompt = bg + render(
+            "router.xml",
+            now=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            history=history,
+            query=query,
+            examples=load_template("router_examples.xml"),
+        ) + _MERGE_RULE
+        decision = await _get_merge_runnable().ainvoke([
+            SystemMessage(content=_MERGE_SYSTEM),
+            HumanMessage(content=route_prompt),
+        ])
+        text = (decision.rewritten or "").strip().strip('"').strip()
+        rewritten = text.splitlines()[0].strip() if text else query
+        intent = decision.intent if decision.intent in _ROUTE_INTENTS else "clarify"
+        confidence = float(decision.confidence or 0.0)
+        if confidence < _CONF_MIN:
+            intent, confidence = "clarify", 0.0
+        return {
+            "rewritten": rewritten or query,
+            "intent": intent,
+            "confidence": confidence,
+            "entities": {
+                "symbol": decision.symbol or "",
+                "market": decision.market or "",
+                "date_range": decision.date_range or "",
+            },
+            "timings": {"rewrite_ms": int((time.monotonic() - t0) * 1000)},
+        }
+    except Exception:  # noqa: BLE001 - 合并失败退回「只改写」，不阻断主流程
+        pass
+
     try:
         llm = get_small_llm(streaming=False, temperature=0.0)
         resp = await llm.ainvoke([
