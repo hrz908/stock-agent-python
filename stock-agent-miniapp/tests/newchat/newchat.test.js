@@ -13,7 +13,6 @@ const assert = require('assert');
 const { createChatPage } = require('./harness');
 
 const NEW_CHAT_URL = '/pages/chat/chat?new=1';
-const GREETING = '你好，我是溜来。你可以问我行情、K 线、研报等问题。';
 
 const cases = [];
 const test = (name, fn) => cases.push({ name, fn });
@@ -118,16 +117,14 @@ test('抽屉未打开时点击：注册成功即跳转，不必等动画', async
 });
 
 // ---------- 6. 新对话页首屏 ----------
-test('新对话页 onLoad(?new=1&session=)：首屏问候语、不回拉消息、沿用注册好的 session', async () => {
+test('新对话页 onLoad(?new=1&session=)：首屏无消息、不回拉消息、沿用注册好的 session', async () => {
   const { page, calls, flush } = createChatPage();
   page.onLoad({ new: '1', session: 'sess_new_1' });
   await flush();
 
   assert.strictEqual(page._sessionId, 'sess_new_1', '新页面必须沿用注册好的会话');
   assert.strictEqual(calls.sessionMessages.length, 0, '空会话无需回拉消息（省一次请求 + 避免空结果覆盖首屏）');
-  assert.strictEqual(page.data.messages.length, 1, '首屏只有问候语');
-  assert.strictEqual(page.data.messages[0].role, 'assistant');
-  assert.strictEqual(page.data.messages[0].content[0].data, GREETING);
+  assert.strictEqual(page.data.messages.length, 0, '首屏不铺问候语，直接留给引导问题');
   assert.strictEqual(page.data.newChatting, false, '新页面不继承上一页的创建中状态');
 });
 
@@ -182,17 +179,20 @@ test('新对话页发送：带上新会话的 session_id（上下文不串到上
   assert.strictEqual(calls.sendMessage[0].sid, 'sess_fresh', '新会话的提问必须落在新 thread 上');
 });
 
-// ---------- 10. 删除当前会话后自动开新对话 ----------
-test('删除当前会话：自动开一条新对话并跳转过去', async () => {
+// ---------- 10. 删除当前会话后原地重置为新对话 ----------
+test('删除当前会话：确认后自动开一条新对话，原地重置（不跳页）', async () => {
   const { page, calls, flush } = createChatPage();
   page.onLoad({ session: 'sess_gone' });
 
   page.onSessionDelete({ currentTarget: { dataset: { sid: 'sess_gone' } } });
+  assert.strictEqual(page.data.deleteVisible, true, '先弹确认框，不直接删');
+  page.confirmDeleteSession();
   await flush();
 
   assert.deepStrictEqual(calls.deleteSession, ['sess_gone']);
   assert.strictEqual(calls.createSession.length, 1, '删掉当前会话后应自动开一条新的');
-  assert.strictEqual(calls.navigateTo.length, 1, '并跳转到新对话页');
+  assert.strictEqual(calls.navigateTo.length, 0, '原地换会话，不跳页（抽屉仍开着）');
+  assert.strictEqual(page.data.messages.length, 0, '新会话首屏不留旧消息');
 });
 
 // ---------- 11. 删除与在途注册的竞态 ----------

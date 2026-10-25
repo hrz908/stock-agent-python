@@ -25,7 +25,7 @@
     <!-- 提醒列表：只有这一个容器内部滚动，底边停在「新增提醒」按钮上方 -->
     <scroll-view class="list-scroll" scroll-y enhanced="{{true}}" show-scrollbar="{{false}}">
       <view wx:if="{{alerts.length > 0}}" class="alert-list">
-        <!-- 每条提醒一张卡片：头部（股票 + 编辑 + 删除）→ 大号阈值 → 条件描述 -->
+        <!-- 每条提醒一张卡片：头部（股票 + 编辑 + 删除）→ 阈值 → 条件描述 -->
         <view class="alert-card" wx:for="{{alerts}}" wx:for-item="item" wx:key="id">
           <view class="alert-card-head">
             <view class="alert-card-name">{{item.name}}<text class="alert-card-code num">{{item.code}}</text></view>
@@ -37,7 +37,7 @@
           </view>
 
           <view class="alert-card-price">
-            <ant-icon type="{{item.trendIcon}}" style="font-size:56rpx;color:{{item.trendColor}};" />
+            <ant-icon type="{{item.trendIcon}}" style="font-size:40rpx;color:{{item.trendColor}};" />
             <text class="alert-card-price-text num" style="color: {{item.trendColor}};">{{item.priceText}}</text>
           </view>
 

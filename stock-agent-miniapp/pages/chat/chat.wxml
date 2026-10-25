@@ -24,7 +24,6 @@
       show-scrollbar="{{false}}"
       scroll-with-animation="{{scrollAnimated}}"
       scroll-top="{{scrollTop}}"
-      bindscroll="onChatScroll"
     >
       <view class="chat-inner">
         <block wx:for="{{messages}}" wx:for-item="msg" wx:key="index">
@@ -217,10 +216,10 @@
           </view>
         </block>
 
-        <!-- 首屏引导：只有问候语时给出可点问题，点一下等同发送。
+        <!-- 首屏引导：空会话（还没有任何消息）时给出可点问题，点一下等同发送。
              问句由网关按热度池 + 股票状态生成，展示 display、发送 query，
              走与打字完全相同的链路（见 chat.js onQuickAsk） -->
-        <view wx:if="{{messages.length <= 1 && !sending}}" class="quick-asks">
+        <view wx:if="{{!messages.length && !sending}}" class="quick-asks">
           <view class="quick-asks-title">你可以这样问</view>
           <view
             class="quick-ask"
@@ -409,7 +408,7 @@
               <text class="history-item-title">{{item.title}}</text>
             </view>
             <view class="history-item-del" data-sid="{{item.session_id}}" catchtap="onSessionDelete">
-              <ant-icon type="DeleteOutline" style="font-size:28rpx;color:var(--ink-3);" />
+              <ant-icon type="CloseOutline" style="font-size:28rpx;color:var(--ink-3);" />
             </view>
           </view>
           <view wx:if="{{!sessions.length}}" class="history-empty">暂无历史对话</view>

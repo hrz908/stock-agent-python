@@ -424,7 +424,7 @@
 }
 
 /* ===== 首屏引导问题 =====
-   只有问候语时出现，点一下等于发送（chat.js onQuickAsk）。
+   空会话时出现，点一下等于发送（chat.js onQuickAsk）。
    省掉「我能问什么」这一轮思考，首屏不再是白纸 */
 .quick-asks {
   display: flex;

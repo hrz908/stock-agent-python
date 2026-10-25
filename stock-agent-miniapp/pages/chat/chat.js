@@ -23,10 +23,7 @@ const MENUS = [
   { key: 'kline', label: 'K线卡片' },
   { key: 'watchlist', label: '自选股浮动' },
   { key: 'alerts', label: '提醒推送' },
-  { key: 'settings', label: '设置' },
-  // 卡片画廊是假数据页，只给开发版：体验版/正式版留着「K线测试」入口
-  // 等于把测试内容交付给用户，审核也会被判为内容不完整
-  ...(isDev ? [{ key: 'cardtest', label: 'K线测试' }] : [])
+  { key: 'settings', label: '设置' }
 ];
 
 // 首屏引导问题：正常走后端 /quick-asks（热度候选池 + 加权抽样 + 状态选模板 +
@@ -72,17 +69,13 @@ const ROUTES = {
   watchlist: '/pages/watchlist/watchlist',
   alerts: '/pages/alerts/alerts',
   settings: '/pages/settings/settings',
-  kline: '/pages/kline/kline',
-  cardtest: '/pages/test/index'
+  kline: '/pages/kline/kline'
 };
 
 // 「新对话」：注册一条新 session 后压栈本页的一个新实例 = 一条全新会话
 // （独立消息、独立会话），旧对话留在栈里可返回；
 // 从新对话页进子页，返回照样回到新对话页。?session= 带上注册好的 id
 const NEW_CHAT_URL = '/pages/chat/chat?new=1';
-
-// 空会话 / 恢复失败时的首屏问候语
-const GREETING = '你好，我是溜来。你可以问我行情、K 线、研报等问题。';
 
 // 触发抽屉开关的最小横向滑动距离（px）
 const SWIPE_MIN = 40;
@@ -472,7 +465,7 @@ function eventCard(payload) {
 
 // ===== 卡片 =====
 // 一次回复最多出一张卡（后端按问题意图只挑一张），且一律排在正文之后：
-// card / table 事件先暂存到 _pendingCard，正文逐字打完再由 _drainCards 落位。
+// card / table 事件先暂存到 _pendingCard，整轮结束（正文逐字打完）后由 _drainCards 落位。
 // 不做 loading 占位卡：占位卡要排在正文之前才有意义，而这一版卡片必须在正文之后。
 
 // ===== 语音输入 =====
@@ -532,9 +525,9 @@ Page({
     // 同时兼作连点闸门（一次点击 = 一条会话，见 onNewChat）
     newChatting: false,
     // 对话区滚动位置：用数值 scroll-top 控制。
-    // 旧写法 scroll-into-view 每次都要「先清空锚点再置位」，流式期间
-    // 会不停重启滚动动画，看起来就是画面上下抽动。
-    // scrollAnimated 只在非流式场景（发消息、插卡片）打开，流式跟随一律瞬移
+    // 旧写法 scroll-into-view 每次都要「先清空锚点再置位」，会不停重启滚动动画。
+    // 现在只有「用户主动发消息 / 切换会话」这类显式场景才定位到底部；
+    // AI 回复期间不再跟随，新内容向下溢出，视口停在用户当前看的位置
     scrollTop: 0,
     scrollAnimated: false,
     menus: MENUS,
@@ -553,9 +546,8 @@ Page({
     voiceTip: VOICE_TIP_IDLE,
     // 聆听中实时识别出的文字：显示在输入栏上方的预输入框里
     voiceText: '',
-    messages: [
-      assistantMsg(GREETING)
-    ],
+    // 空会话不铺问候气泡：首屏直接交给下方的引导问题
+    messages: [],
     // 首屏引导问题：onLoad 里随机生成（行情 / 资金 / 估值三类意图），
     // 点一条即发送，省掉「我能问什么」这一轮思考
     quickAsks: [],
@@ -652,14 +644,10 @@ Page({
     this._stallTimer = 0;
     // 本轮是否已收到 done（等文字打完才真正收尾）
     this._streamClosing = false;
-    // 本轮是否已经开始出正文：工具先跑、文字后到时，卡片要压到文字之后
+    // 本轮是否已经开始出正文：正文一出现，加载块就让位（加载文案不再刷）
     this._roundTextStarted = false;
-    // 本轮待落位的卡片（最多一条）：文字没打完前先存着，不插进消息列表
+    // 本轮待落位的卡片（最多一条）：整轮结束前先存着，绝不插到正文中间
     this._pendingCard = null;
-    // 滚动跟随状态：是否停在底部（用户上翻看历史时不再被拽回去）、
-    // 最近一次写入视图的 scroll-top
-    this._atBottom = true;
-    this._scrollTopVal = 0;
 
     // 抽屉内容避让状态栏：statusBarHeight 下方再留 28px（原 44，按需求整体上移一点）。
     // 抽屉在左侧、胶囊菜单在右上，横向不重叠，故减小留白不会撞上菜单按钮
@@ -673,9 +661,9 @@ Page({
       keyboardOffset: 0,
       chatHeight
     });
-    this.scrollToBottom({ force: true });
-    // 恢复历史会话的消息（新对话为空，走默认问候语）。
-    // 新对话（?new=1）跳过：会话刚注册、必为空，首屏直接用问候语即可
+    // 恢复历史会话的消息（空会话保持空列表，首屏只剩引导问题）。
+    // 新对话（?new=1）跳过：会话刚注册、必为空，不用多打一次接口。
+    // 这里不预先滚到底：空会话滚到底会把问候语顶出屏幕，滚动交给消息回填后
     if (resumeSid && !isNewChat) this.loadSessionMessages(resumeSid);
 
     if (wx.onWindowResize) {
@@ -861,8 +849,9 @@ Page({
   },
 
   // 一帧：按积压量决定这一帧揭示几个字，重绘后继续下一帧。
-  // 积压归零即停帧（等下一个 token 拉起）：done 已经来过就收尾整轮，
-  // 否则只放行暂存的那张卡片
+  // 积压归零即停帧（等下一个 token 拉起）：done 已经来过就收尾整轮。
+  // 卡片不在这里放行——打字追上 token 只是缓冲空了，正文随时还会续写，
+  // 落卡一律等到整轮结束（见 _drainCards）
   _typeTick() {
     if (this._streamIndex < 0) return;
     const total = this._streamText.length;
@@ -870,7 +859,6 @@ Page({
     if (backlog <= 0) {
       if (this._streamClosing) this._endTurn();
       else {
-        this._drainCards();
         // 字已经追平、下一段还没来：从这里开始计停顿，真停了才补一句说明
         this._watchStreamStall();
       }
@@ -883,7 +871,9 @@ Page({
   },
 
   // 把当前应显示的文本落到视图：文本与 markdown 块同一次 setData 写入，
-  // 避免出现「文字新、版式旧」的一帧；滚动放在渲染回调里，量到的是新高度
+  // 避免出现「文字新、版式旧」的一帧。
+  // 这里刻意不跟随滚动：正文逐字变长时只让它向下溢出，视口停在用户当前看的位置。
+  // 跟着底部走会变成「每帧把页面往下推」，读上一段时视线一直被拽走。
   _renderStream() {
     const idx = this._streamIndex;
     if (idx < 0) return;
@@ -891,7 +881,7 @@ Page({
     const patch = {};
     patch['messages[' + idx + '].content[0].data'] = text;
     patch['messages[' + idx + '].blocks'] = parseMarkdown(text);
-    this.setData(patch, () => this.scrollToBottom());
+    this.setData(patch);
   },
 
   // 立刻把剩下的字全部显示：出错、切会话、新一轮发送这类不能等打字机的场合
@@ -928,14 +918,12 @@ Page({
     this._drainCards();
   },
 
-  // 落位。三道闸门，任一未过就继续等着：
-  // 1) 逐字定时器还在跑；2) 正文还有没揭示的积压；
-  // 3) 本轮还没开始出正文、也还没结束（工具先跑了）——此时插卡就是「卡和文字同时出现」
+  // 落位。只认一个闸门：整轮结束（done 已到、正文逐字打完、sending 已解锁）。
+  // 「这一帧把缓冲区放完了」不等于「正文写完了」——后端在开始生成正文之前
+  // 就下发卡片，若在打字追上 token 的空档插卡，视觉上就是「先卡片、后文字」。
   _drainCards() {
     if (!this._pendingCard) return;
-    if (this._typeTimer) return;
-    if (this._streamIndex >= 0 && this._streamShown < this._streamText.length) return;
-    if (this.data.sending && !this._roundTextStarted) return;
+    if (this.data.sending) return;
     const msg = this._pendingCard;
     this._pendingCard = null;
     this._placeCard(msg);
@@ -1035,9 +1023,10 @@ Page({
     }
   },
 
-  // 卡片插到消息列表末尾：永远在正文之后，卡片位置由这一轮的文字长度决定
+  // 卡片插到消息列表末尾：落位时整轮正文已经写完，所以卡片永远排在这轮文字之后。
+  // 同样不滚动：整轮结束也不是「回到底部」的理由，视口留在用户正在读的地方
   _placeCard(msg) {
-    this.setData({ messages: this.data.messages.concat([msg]) }, () => this.scrollToBottom({ force: true }));
+    this.setData({ messages: this.data.messages.concat([msg]) });
   },
 
   onReady() {
@@ -1156,7 +1145,7 @@ Page({
         const list = (data && data.quick_asks) || [];
         if (!list.length) return;
         // 用户已经开口就不再替换，避免把建议塞进对话中段
-        if (this.data.messages.length > 1 || this.data.sending) return;
+        if (this.data.messages.length || this.data.sending) return;
         this.setData({ quickAsks: list });
       })
       .catch(() => {
@@ -1194,7 +1183,7 @@ Page({
     });
     // 加载块与用户消息同帧落位：先发一句「正在理解」，别让界面空着等
     this._startLoad();
-    this.scrollToBottom({ force: true });
+    this.scrollToBottom();
     this._armSendWatchdog();
 
     // 通过 SSE 发送：每次提问开一条独立流；传入本页 session_id（后端据此拼 thread_id），
@@ -1210,12 +1199,12 @@ Page({
     this._sendWatchdog = setTimeout(() => {
       this._sendWatchdog = 0;
       if (!this.data.sending) return;
-      // 超时收尾同 error：剩余文字直接铺完，没落位的卡片作废
+      // 超时收尾同 error：剩余文字直接铺完；卡片数据是好的，照常落位
       this._snapStreamEnd();
       this._finishStreaming();
-      this._pendingCard = null;
       this._endLoad();
       this.setData({ sending: false });
+      this._drainCards();
       this.toast('服务暂时没有响应，请重试');
     }, SEND_TIMEOUT_MS);
   },
@@ -1408,15 +1397,13 @@ Page({
     );
   },
 
-  // 滚到底：改用数值 scroll-top 定位，不再走 scroll-into-view。
-  // 旧实现每帧都要「清空锚点 → 重设锚点」，配合滚动动画会不停重启，
-  // 长文本流式下表现为画面反复上下抽动。现在：
-  // - 按内容高度递增地写 scroll-top（值不变不会触发滚动，天然去抖）
-  // - 用户上翻看历史时不跟随，只有新消息 / 卡片这类场景才 force
-  // - 流式进行中关闭滚动动画，避免动画过程里的位置回弹
-  scrollToBottom(opts) {
-    const force = !!(opts && opts.force);
-    if (!force && this._atBottom === false) return;
+  // 滚到底：用数值 scroll-top 定位，不再走 scroll-into-view
+  // （旧写法每帧「清空锚点 → 重设锚点」会不停重启滚动动画，画面上下抽动）。
+  // 只在显式场景调用：发送新消息、切换/恢复会话、新建会话；
+  // AI 流式正文与卡片落位都不调它——回复期间视口保持不动。
+  scrollToBottom() {
+    // 空会话没有「底部」可看：首屏只有引导问题，滚到底只会把顶部内容顶出屏幕
+    if (!this.data.messages.length) return;
     if (this._scrollTimer) return;
     this._scrollTimer = setTimeout(() => {
       this._scrollTimer = 0;
@@ -1425,25 +1412,12 @@ Page({
       query.exec((res) => {
         const rect = res && res[0];
         if (!rect || !rect.height) return;
-        // scroll-top 会被自动夹到「内容高度 - 容器高度」，直接给内容总高即可；
-        // 内容变长时这个值单调递增，每次都会真正滚到底
-        const top = Math.ceil(rect.height);
-        if (top <= this._scrollTopVal) return;
-        this._scrollTopVal = top;
-        this.setData({ scrollTop: top, scrollAnimated: this._streamIndex < 0 });
+        // 内容总高直接交给 scroll-top，视图层会自动夹到「内容高度 - 容器高度」。
+        // 不做「高度没变就跳过」的去重：切换到更短的会话后旧值更大，
+        // 跳过会让下一次发消息滚不到底
+        this.setData({ scrollTop: Math.ceil(rect.height), scrollAnimated: true });
       });
     }, SCROLL_FOLLOW_MS);
-  },
-
-  // 记录用户是否停在底部：由 scroll-view 的 bindscroll 驱动。
-  // 只有贴底时才自动跟随新内容，用户往上翻历史不会被拽回去
-  onChatScroll(e) {
-    const d = e && e.detail;
-    if (!d) return;
-    const viewH = this.data.chatHeight || 0;
-    const maxTop = Math.max(0, (d.scrollHeight || 0) - viewH);
-    // 距底部 24px 内都算贴底：容忍小数像素与测量误差
-    this._atBottom = maxTop - (d.scrollTop || 0) <= 24;
   },
 
   // ===== 侧边抽屉 =====
@@ -1619,8 +1593,8 @@ Page({
     const sid = agentSocket.freshSessionId();
     this._abortInFlight();
     this._sessionId = sid;
-    this.setData({ messages: [assistantMsg(GREETING)] });
-    this.scrollToBottom({ force: true });
+    this.setData({ messages: [] });
+    this.scrollToBottom();
     // 注册失败不阻断：首条消息发出时 Go 网关仍会 registerSession 补注册
     createSession(sid, '').catch(() => {});
     this.loadSessions().then(() => {
@@ -1632,7 +1606,7 @@ Page({
   },
 
   // 恢复某会话的消息（文本气泡；结构化卡片不持久化，恢复后只有文本）。
-  // 失败时退回问候语 + 轻提示——宁可显示空会话，也别把上一条对话的
+  // 失败时清空消息 + 轻提示——宁可显示空会话，也别把上一条对话的
   // 消息留在界面上冒充新会话的内容
   loadSessionMessages(sid) {
     return sessionMessages(sid).then((data) => {
@@ -1640,12 +1614,10 @@ Page({
       const msgs = list.map((m) =>
         (m.role === 'user' ? userMsg(m.content) : assistantMsg(m.content))
       );
-      this.setData({
-        messages: msgs.length ? msgs : [assistantMsg(GREETING)]
-      });
-      this.scrollToBottom({ force: true });
+      this.setData({ messages: msgs });
+      this.scrollToBottom();
     }).catch(() => {
-      this.setData({ messages: [assistantMsg(GREETING)] });
+      this.setData({ messages: [] });
       this.toast('会话加载失败');
     });
   },

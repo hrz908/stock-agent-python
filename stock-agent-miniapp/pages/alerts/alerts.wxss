@@ -84,13 +84,15 @@
 }
 
 /* ===== 提醒卡 =====
-   顶部不留内边距：头部自带 88rpx 热区行，否则名字上方会空出一截 */
+   顶部不留内边距：头部热区比行高略高，否则名字上方会空出一截。
+   overflow 裁掉子元素溢出，编辑/删除的 88rpx 热区不会顶到卡片外面 */
 .alert-card {
   padding: 0 var(--sp-3) var(--sp-3);
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .alert-card-head {
@@ -122,38 +124,42 @@
   gap: var(--sp-3);
 }
 
-/* 文字按键的统一热区：24rpx 字撑不出 88rpx，靠 min-height 补 */
+/* 文字按键的统一热区：24rpx 字撑不出 88rpx，靠 min-height 补。
+   热区保持 88rpx（44px），上下各 -12rpx 的负边距把行高收到 64rpx，
+   点击范围不变、第一行变紧凑 */
 .alert-card-editbtn {
   display: flex;
   align-items: center;
   flex: none;
   min-height: 88rpx;
+  margin: -12rpx 0;
   font-size: var(--fs-aux);
   color: var(--ink-2);
 }
 
-/* 大号阈值：卡片唯一的 display 数字，等宽 + 涨跌色；行尾放编辑入口 */
+/* 阈值行：等宽 + 涨跌色。字号降到 hero 档，行高随图标一起收，
+   不再用 display 64 把卡片撑长；仍是卡内最大的数字 */
 .alert-card-price {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin-top: var(--sp-1);
 }
 
-/* 删除入口：头部最外侧纯文字，危险红 */
+/* 删除入口：头部最外侧纯文字，危险红；与编辑键同样负边距收行高 */
 .alert-card-delbtn {
   display: flex;
   align-items: center;
   flex: none;
   min-height: 88rpx;
+  margin: -12rpx 0;
   font-size: var(--fs-aux);
   color: var(--danger);
 }
 
 .alert-card-price-text {
-  font-size: var(--fs-display);
+  font-size: var(--fs-hero);
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
 /* 第三行：左条件、右检查频率，两端对齐。

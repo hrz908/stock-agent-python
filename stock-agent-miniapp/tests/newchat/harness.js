@@ -31,7 +31,9 @@ function toCommonJS(src) {
         .slice(1, -1)
         .split(',')
         .map((s) => s.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        // 命名导入的别名（x as y）在解构里要写成 x: y，否则语法不合法
+        .map((s) => s.replace(/^(\w+)\s+as\s+(\w+)$/, '$1: $2'));
       return 'const { ' + names.join(', ') + " } = __req('" + mod + "');";
     }
     return 'const ' + c + " = __req('" + mod + "').default;";
@@ -177,9 +179,14 @@ function createChatPage(opts) {
         return opts.deleteSession ? opts.deleteSession(sid) : Promise.resolve({});
       }
     },
+    // 首屏建议问题：返回空列表，页面保留本地兜底（本套用例不校验建议内容）
+    '../../services/quickAsk': {
+      list: () => Promise.resolve({ quick_asks: [] }),
+      click: noop
+    },
     // 只返回结构够用的最小形态：本套用例不校验 markdown 渲染
     '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] },
-    // 环境开关：用例里按开发版跑（isDev 为真才保留「K线测试」抽屉项）
+    // 环境开关：用例里按开发版跑（isDev 只影响行情卡跳详情页的分支）
     '../../config': { isDev: true, apiBase: 'https://test.local', wsBase: 'wss://test.local' }
   };
 
