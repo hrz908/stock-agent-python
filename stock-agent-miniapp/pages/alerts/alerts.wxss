@@ -138,16 +138,10 @@
   color: var(--danger);
 }
 
-/* 本页唯一的 display 档数字。位数多时允许压缩，但绝不换行把卡片撑高 */
 .alert-card-price-text {
-  min-width: 0;
-  font-size: var(--fs-display);
+  font-size: var(--fs-hero);
   font-weight: 700;
   line-height: 1.1;
-  letter-spacing: -1rpx;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .alert-card-desc {

@@ -71,13 +71,12 @@
   background: var(--down-tint);
 }
 
-/* 总浮动金额：本页唯一的 display 档数字 + 等宽 */
+/* 总浮动金额：主数字级字号（--fs-hero）+ 等宽 */
 .hero-amount {
   margin-top: var(--sp-2);
-  font-size: var(--fs-display);
+  font-size: var(--fs-hero);
   font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -1rpx;
+  letter-spacing: -0.5rpx;
 }
 
 .hero-amount.is-up {
@@ -289,7 +288,7 @@
   align-items: center;
   justify-content: center;
   gap: 2rpx;
-  background: var(--danger);
+  background: var(--up);
   opacity: 0;
 }
 
@@ -364,7 +363,7 @@
 .form-error {
   margin-top: var(--sp-2);
   font-size: var(--fs-aux);
-  color: var(--danger);
+  color: var(--up);
 }
 
 /* 代码联想下拉：绝对定位浮在输入框下方，不挤压表单 */

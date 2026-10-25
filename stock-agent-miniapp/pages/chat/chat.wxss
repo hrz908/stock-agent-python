@@ -52,23 +52,24 @@
   margin-top: var(--sp-4);
 }
 
-/* ===== 用户气泡：右对齐浅底块 ===== */
+/* ===== 用户气泡：右对齐，主行动蓝实底 + 白字（参考图 chat 页） ===== */
 .msg--user {
   display: flex;
   justify-content: flex-end;
 }
 
-/* 用户气泡：浅底 + 深字。提问是这场对话的标题，不该比答案更重；
-   近黑实底会把视线拽在问题上，答案反而退到次要位置 */
+/* 用户气泡：shadcn primary 近黑底（原先用主行动蓝，属大面积强调色，
+   违反「强调色只做链接/焦点」的收口规则） */
 .bubble--user {
   max-width: 80%;
   padding: var(--sp-2) var(--sp-3);
-  background: var(--surface-2);
+  background: var(--ink);
   border-radius: var(--r-tag) var(--r-tag) 0 var(--r-tag);
 }
 
+/* 蓝底上文字必须反白，否则 var(--ink) 近黑字看不见 */
 .bubble--user .bubble-text {
-  color: var(--ink);
+  color: var(--primary-fg); /* 深色底上的浅色文字 */
 }
 
 .bubble-text {
@@ -79,19 +80,20 @@
   word-break: break-word;
 }
 
-/* ===== AI 气泡：手记正文 =====
-   左侧一条发丝竖线当页边，内容不包框；卡片消息、纯文本、状态提示
-   都落在这条线的右侧，整段回答因此共用一条左边缘 */
+/* ===== AI 气泡：左对齐卡片面 ===== */
 .msg--assistant {
   display: flex;
   justify-content: flex-start;
 }
 
 .bubble--assistant {
-  max-width: 100%;
-  padding: 0 0 0 var(--sp-3);
-  border-left: 2rpx solid var(--line);
-  background: transparent;
+  max-width: 92%;
+  padding: var(--sp-3) var(--pad-card);
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: var(--r-tag) var(--r-tag) var(--r-tag) 0;
+  /* 浅色主题：白气泡落在浅灰底上靠轻投影浮起来（参考图 chat 页） */
+  box-shadow: var(--shadow-card);
 }
 
 /* ===== markdown 版式 =====
@@ -268,20 +270,17 @@
 }
 
 /* ===== 气泡内的金融卡（components/finance/*） ===== */
-/* 卡片消息：气泡退成只有页边线的空容器，底与框交给卡片自己的浅底块；
-   宽度拉满一行。
+/* 卡片消息：气泡退让成透明容器，卡片自带 surface 底 / 描边 / 内边距，
+   避免「卡中卡」的双层底；宽度拉满一行。
    width:100% 必须显式写：.msg--assistant 是 flex 行容器，flex 子项默认按
    内容收缩（fit-content），卡片的 width:100% 只能参照这个收缩宽，
-   结果卡片只有内容宽；显式 100% 才会占满整个消息行。
-   border-left 必须跟着重写：本块在 .bubble--assistant 之后，覆盖掉页边线
-   就会让卡片消息掉出这条竖线 */
+   结果卡片只有内容宽；显式 100% 才会占满整个消息行 */
 .bubble--bare {
   width: 100%;
   max-width: 100%;
-  padding: 0 0 0 var(--sp-3);
-  border: none;
-  border-left: 2rpx solid var(--line);
+  padding: 0;
   background: transparent;
+  border: none;
 }
 
 /* .msg-card 已上收到 styles/token.wxss（与卡片画廊测试页共用，避免两边漂移） */
@@ -296,16 +295,18 @@
 }
 
 /* ===== 状态提示（正在思考 / 工具查询 / 重连） =====
-   与 AI 回复同一条页边线，不做成小卡片 */
+   与 AI 气泡同一套视觉语言：卡片面、左上直角，挂在列表底部 */
 .status-tip {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
   width: fit-content;
-  max-width: 100%;
+  max-width: 80%;
   margin-top: var(--sp-4);
-  padding-left: var(--sp-3);
-  border-left: 2rpx solid var(--line);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: 0 var(--r-tag) var(--r-tag) var(--r-tag);
 }
 
 .status-tip-text {
@@ -337,11 +338,11 @@
   animation-delay: 0.4s;
 }
 
-/* 思考气泡：AI 回复位置的占位加载态；左缩进由 .bubble--assistant 统一给 */
+/* 思考气泡：代替底部小条，作为 AI 回复位置的占位加载态 */
 .thinking-bubble {
   display: flex;
   align-items: center;
-  padding: var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-3);
 }
 
 .thinking-dots {
@@ -378,13 +379,15 @@
   }
 }
 
-/* ===== 免责声明（合规兜底条，所有回答底部固定挂载） =====
-   纯文字、与正文同一条左边缘：它每屏都出现，包成灰底框就成了
-   第四个争夺注意力的方块。弱化不等于隐藏，字号与对比度仍达标 */
+/* ===== 免责声明（合规兜底条，所有回答底部固定挂载） ===== */
 .disclaimer {
-  margin: var(--sp-4) 0 0 var(--sp-3);
+  margin-top: var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--hairline);
+  border-radius: var(--r-tag);
+  background: var(--surface-2);
   font-size: var(--fs-min);
-  line-height: 1.8;
+  line-height: 1.7;
   color: var(--ink-3);
 }
 
@@ -819,10 +822,10 @@
   margin-bottom: var(--sp-2);
 }
 
-/* 选中效果：当前会话——近黑底白字（全站选中态统一走 primary，不用强调蓝） */
+/* 选中效果：当前会话——淡蓝底 + 蓝描边 + 蓝标题 */
 .history-item--active {
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--accent-tint);
+  border: 2rpx solid var(--accent);
 }
 
 .history-item-main {
@@ -838,7 +841,7 @@
 }
 
 .history-item--active .history-item-title {
-  color: var(--primary-fg);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -857,26 +860,4 @@
   text-align: center;
   font-size: var(--fs-aux);
   color: var(--ink-3);
-}
-
-/* ===== 首屏建议问题 =====
-   空会话里唯一可点的东西：把「能问什么」直接摆出来，点一下即发送。
-   左缩进与 AI 正文对齐（页边线只在气泡上，这里不再画一条） */
-.suggest {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin: var(--sp-3) 0 0 var(--sp-3);
-}
-
-/* 热区 88rpx：项目铁律第 7 条，药丸再小也不能小于这个高度 */
-.suggest-chip {
-  display: flex;
-  align-items: center;
-  min-height: 88rpx;
-  padding: 0 var(--sp-3);
-  background: var(--surface-2);
-  border-radius: var(--r-pill);
-  font-size: var(--fs-aux);
-  color: var(--ink);
 }

@@ -1,11 +1,16 @@
 /* 金融卡共享外壳：8 张卡共用（各卡 wxss 用 @import 引入，
    避免每张卡重复一遍基础样式）。
-   无边框 / 无底色 / 无内边距：卡片内容与 AI 正文共用同一条左边缘，
-   层次由浅底数据栅格与出血的走势线分段，不再靠「框」切块。
-   数字一律配 .num 等宽（组件隔离下不透传，见下方 .num 复写）。 */
+   视觉规格对齐设计稿与 HTML 预览：--surface 卡面 / --line 描边 /
+   16px 圆角 / 14px 内边距；数字一律配 .num 等宽（styles/base.wxss）。 */
 .fcard {
   width: 100%;
   box-sizing: border-box;
+  padding: var(--pad-card);
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: var(--r-card);
+  /* shadcn：卡片默认无阴影（--shadow-card 已置 none），层次靠发丝边框 */
+  box-shadow: var(--shadow-card);
 }
 
 .fcard-hd {
@@ -46,28 +51,26 @@
   word-break: break-word;
 }
 
-/* 数据栅格：浅底块包住两行三列（设计稿 3 列 × 2 行）。
-   浅底是卡片唯一的「面」：卡片外壳已去边框，靠它把一组指标收成一块。 */
+/* 数据栅格：一条顶部分隔线 + 两行三列（设计稿 3 列 × 2 行） */
 .fgrid {
   display: flex;
   flex-direction: column;
-  margin-top: var(--sp-3);
-  padding: var(--sp-3);
-  background: var(--surface-2);
-  border-radius: var(--r-tag);
+  margin-top: var(--sp-card);
+  padding-top: var(--sp-3);
+  border-top: var(--hairline);
 }
 
-/* 头部下方直接跟栅格时（估值卡）收紧一档 */
+/* 无顶线的变体（卡片头部下方直接跟栅格时用） */
 .fgrid--flat {
-  margin-top: var(--sp-2);
+  border-top: none;
+  padding-top: 0;
 }
 
 .fgrid-row {
   display: flex;
   gap: var(--gap-grid);
-}
 
-/* 行间距用显式类名，不用兄弟选择器（WXSS 禁用） */
+/* 行间距用显式类名，不用兄弟选择器（WXSS 禁用） */}
 .fgrid-row--gap {
   margin-top: var(--gap-grid);
 }
@@ -75,7 +78,7 @@
 .fcell {
   flex: 1;
   min-width: 0;
-}
+  }
 
 .fcell-k {
   font-size: var(--fs-min);
@@ -116,12 +119,16 @@
   color: var(--flat);
 }
 
-/* ---- 卡内栅格统一左对齐（8 张卡共用） ----
-   标签与数值都贴本格左边缘：同一列的上下两格共用一条竖线，
-   数字才能顺着列往下读；居中会让每格自成一坨，横竖都不成线。 */
+/* ---- 卡内信息统一「等距居中」（8 张卡共用） ----
+   居中：所有指标栅格（行情两行、K 线区间涨幅行、估值两行、财报毛利率行、
+        研报机构评级行）一律每格居中。
+   等距：横向由 .fcell 的 flex:1 + .fgrid-row 的 gap 均分；
+        纵向沿用各块既有 margin 与 .fnote 的 line-height。
+   注：上一版做过「首格左 / 末格右」，用户看过后收回——栅格统一居中，
+        只有价格行、支撑压力行这类「整行文案」才用左右 / 靠左对齐。 */
 .fcell-k,
 .fcell-v {
-  text-align: left;
+  text-align: center;
 }
 
 /* 底部说明（数据日期 / 来源等）左对齐 */

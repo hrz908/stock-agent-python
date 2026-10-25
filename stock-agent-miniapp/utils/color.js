@@ -6,11 +6,11 @@
 // 改上面 token.wxss 的色值时必须同步改这里，否则「页面换肤、SVG 图标没换」。
 const COLOR_VARS = {
   'var(--ink)': '#09090b',
-  'var(--ink-2)': '#52525b',
-  'var(--ink-3)': '#6b6b73',
+  'var(--ink-2)': '#71717a',
+  'var(--ink-3)': '#a1a1aa',
   'var(--up)': '#dc2626',
-  'var(--down)': '#15803d',
-  'var(--flat)': '#52525b',
+  'var(--down)': '#16a34a',
+  'var(--flat)': '#71717a',
   'var(--accent)': '#2559EB',
   'var(--line)': '#e4e4e7',
   'var(--bg)': '#ffffff',
@@ -23,8 +23,8 @@ const COLOR_VARS = {
 // 涨跌方向 -> 色值（国内红涨绿跌）
 const TREND_COLORS = {
   up: '#dc2626',
-  down: '#15803d',
-  flat: '#52525b'
+  down: '#16a34a',
+  flat: '#71717a'
 };
 
 // 入参可以是 var(--xx)（仅支持上表里的名字）、trend 名或直接 hex

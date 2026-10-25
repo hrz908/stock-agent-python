@@ -29,7 +29,7 @@
           </view>
 
           <view class="alert-card-price">
-            <ant-icon type="{{item.trendIcon}}" style="font-size:44rpx;color:{{item.trendColor}};" />
+            <ant-icon type="{{item.trendIcon}}" style="font-size:56rpx;color:{{item.trendColor}};" />
             <text class="alert-card-price-text num" style="color: {{item.trendColor}};">{{item.priceText}}</text>
             <!-- 编辑：价格行内右对齐，打开编辑弹窗 -->
             <view class="alert-card-editbtn" data-id="{{item.id}}" catchtap="onEdit">编辑</view>

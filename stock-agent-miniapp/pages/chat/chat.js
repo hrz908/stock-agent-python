@@ -43,8 +43,6 @@ const NEW_CHAT_URL = '/pages/chat/chat?new=1';
 
 // 空会话 / 恢复失败时的首屏问候语
 const GREETING = '你好，我是溜来。你可以问我行情、K 线、研报等问题。';
-// 首屏建议问题：空会话里唯一可点的东西，点一下直接发送
-const SUGGESTIONS = ['茅台现在什么位置', '今天主力在买什么', '这票出研报了吗'];
 
 // 触发抽屉开关的最小横向滑动距离（px）
 const SWIPE_MIN = 40;
@@ -543,9 +541,6 @@ Page({
     messages: [
       assistantMsg(GREETING)
     ],
-    suggestions: SUGGESTIONS,
-    // 首屏建议只在「一句话都没说」时出现，发出第一条即撤掉
-    showSuggestions: true,
     // 状态提示（「正在查询…」「重连中」）：挂在消息列表底部，done/error 后清空
     statusText: '',
     // 思考气泡：发送后到首个 token 到达前显示（占位在 AI 回复该出现的位置），
@@ -1043,11 +1038,6 @@ Page({
     this.sendText(this.data.input);
   },
 
-  // 首屏建议问题：与打字发送走同一条链路
-  onSuggestTap(e) {
-    this.sendText((e.currentTarget.dataset || {}).q);
-  },
-
   // 发送一条文本：打字与语音识别结果走同一条链路，
   // 避免「识别出来的话」和「打出来的话」在界面上表现不一致
   sendText(raw) {
@@ -1065,8 +1055,7 @@ Page({
       input: '',
       sending: true,
       thinking: true,
-      statusText: '',
-      showSuggestions: false
+      statusText: ''
     });
     this.scrollToBottom({ force: true });
     this._armSendWatchdog();
@@ -1514,12 +1503,11 @@ Page({
         (m.role === 'user' ? userMsg(m.content) : assistantMsg(m.content))
       );
       this.setData({
-        messages: msgs.length ? msgs : [assistantMsg(GREETING)],
-        showSuggestions: !msgs.length
+        messages: msgs.length ? msgs : [assistantMsg(GREETING)]
       });
       this.scrollToBottom({ force: true });
     }).catch(() => {
-      this.setData({ messages: [assistantMsg(GREETING)], showSuggestions: true });
+      this.setData({ messages: [assistantMsg(GREETING)] });
       this.toast('会话加载失败');
     });
   },

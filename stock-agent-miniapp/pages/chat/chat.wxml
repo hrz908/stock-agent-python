@@ -220,18 +220,6 @@
           </view>
         </block>
 
-        <!-- 首屏建议问题：只在还没发过言时出现，点一下直接发送 -->
-        <view wx:if="{{showSuggestions}}" class="suggest">
-          <view
-            class="suggest-chip"
-            wx:for="{{suggestions}}"
-            wx:for-item="q"
-            wx:key="*this"
-            data-q="{{q}}"
-            bindtap="onSuggestTap"
-          >{{q}}</view>
-        </view>
-
         <!-- 思考气泡：发送后到首个 token 到达前显示，占位在 AI 回复该出现的左侧 -->
         <view wx:if="{{thinking}}" class="msg msg--assistant">
           <view class="bubble bubble--assistant thinking-bubble">

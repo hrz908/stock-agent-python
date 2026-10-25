@@ -1,10 +1,15 @@
-/* 卡片占位（loading / 失败）：外壳与 _card.wxss 的 .fcard 一致——无框、无底色、
-   无内边距，换成真卡时左边缘不跳。token 变量经 CSS 自定义属性继承进来，
+/* 卡片占位（loading / 失败）：外壳规格对齐 components/finance/_card.wxss 的 .fcard，
+   占位卡换成真卡时位置与尺寸不跳。token 变量经 CSS 自定义属性继承进来，
    工具类 class 不再复写（组件样式隔离，见 styles/token.wxss 顶部说明） */
 .cs {
   width: 100%;
   box-sizing: border-box;
-  /* 微光扫过的高光条不溢出到相邻行 */
+  padding: var(--pad-card);
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+  /* 微光扫过的高光条在圆角外不可见 */
   overflow: hidden;
 }
 
@@ -49,10 +54,11 @@
   height: 24rpx;
 }
 
-/* 数据区：两行三列，与金融卡的 .fgrid 同形。
-   这里不加浅底：骨架块本身就是 --surface-2，同色叠加会看不见 */
+/* 数据区：一条顶部分隔线 + 两行三列，与金融卡的 .fgrid 同形 */
 .cs-grid {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-card);
+  padding-top: var(--sp-3);
+  border-top: var(--hairline);
 }
 
 .cs-row {
