@@ -132,7 +132,7 @@ def _simhash_tokens(text: str) -> Counter:
     compact = _NON_WORD_RE.sub("", unicodedata.normalize("NFKC", text or "").lower())
     tokens: list[str] = []
     if len(compact) >= 3:
-        tokens.extend(compact[i:i + 3] for i in range(0, len(compact) - 2))
+        tokens.extend(compact[i:i + 3] for i in range(len(compact) - 2))
     else:
         tokens.append(compact)
     tokens.extend(re.findall(r"[a-z0-9]{2,}", (text or "").lower()))

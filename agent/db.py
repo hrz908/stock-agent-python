@@ -35,7 +35,15 @@ async def get_pool() -> AsyncConnectionPool:
                 kwargs={
                     # 只读语句不需要事务，autocommit 省一次 BEGIN/COMMIT
                     "autocommit": True,
-                    "options": "-c default_transaction_read_only=on",
+                    # ef_search 默认 40 < 检索 SQL 里的 LIMIT 50，ANN 最多只回 40 条；
+                    # 带 stock_code/source_type 过滤时 HNSW 还会提前终止，
+                    # iterative_scan 让它在过滤后继续扫，直到凑够 LIMIT
+                    # （pgvector <0.8 不认识该项，作为未知 GUC 被忽略）
+                    "options": (
+                        "-c default_transaction_read_only=on "
+                        "-c hnsw.ef_search=100 "
+                        "-c hnsw.iterative_scan=relaxed_order"
+                    ),
                     "connect_timeout": 3,
                 },
             )

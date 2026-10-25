@@ -1,10 +1,12 @@
 """分类节点：意图路由。
 
 用 small_llm + prompts/router.xml 输出意图与置信度：优先 with_structured_output，
-失败回退 XML + parse_route；confidence < 0.6 强制降级 clarify（宁可反问，不可乱答），解析失败一律 clarify。
+失败回退 XML + parse_route；confidence < 0.6 强制降级 clarify（宁可反问，不可乱答），
+解析失败一律 clarify。
 
 意图三分：
-- stock: 一切股票相关问题，统一先进 RAG 漏斗——命中带引用作答，未命中由主图改写成 stock_agent 重路由；
+- stock: 一切股票相关问题，统一先进 RAG 漏斗——命中带引用作答，
+  未命中由主图改写成 stock_agent 重路由；
 - chat: 闲聊寒暄，直接陪聊，不挂工具；
 - off_topic: 与股票无关的正经话题，走固定话术婉拒（nodes/refuse.py）；
 - clarify: 问题含糊或低置信度，反问澄清。
@@ -14,18 +16,18 @@
 """
 import re
 from datetime import datetime
-from pydantic import BaseModel, Field
 
 from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
 
 from core.llm import get_small_llm
-from core.template import render, parse_route, load_template
+from core.template import load_template, parse_route, render
 from nodes.rewrite import _format_history
 
 _CONF_MIN = 0.6
 
 # 数据类关键词：中文/混合词直接子串匹配（大小写不敏感，先 lower 再比）
-_MCP_KEYWORDS_SUBSTR = (
+_DATA_KEYWORDS_SUBSTR = (
     # 行情 / 价格类（含「成交量」一族）；查询先 lower 再匹配，故「日K/周K/月K」写成小写形式
     "行情", "报价", "价格", "股价", "多少钱", "啥价", "涨跌", "涨幅", "收盘", "开盘",
     "最高", "最低", "k线", "日k", "周k", "月k", "年k", "走势",
@@ -37,15 +39,17 @@ _MCP_KEYWORDS_SUBSTR = (
     "资金", "主力", "龙虎榜", "流入", "流出",
     "同业", "同行", "竞品", "对比", "新闻", "动态", "消息",
     # 注意：北向/南向/融资融券已移除——对应工具已下线，
-    # 关键词留在表里会把这些问句路由进 MCP 却无工具可调（死路由）
+    # 关键词留在表里会把这些问句路由进取数子图却无工具可调（死路由）
 )
 # 短英文指标整词匹配（词边界），防止 "apple" 命中 "pe"、"space" 命中 "ps"
-_MCP_KEYWORDS_WORD = re.compile(r"(?<![a-zA-Z])(pe|pb|ps)(?![a-zA-Z])", re.IGNORECASE)
+_DATA_KEYWORDS_WORD = re.compile(r"(?<![a-zA-Z])(pe|pb|ps)(?![a-zA-Z])", re.IGNORECASE)
 
 # 指代不明的问句：「那个股票怎么样」「这只股票如何」——rewrite 无历史可消解时原样进入分类。
 # 实测路由 LLM 会判成 stock，白跑一轮漏斗后给出「没有数据」（R-03）。这里加确定性护栏：
 # 命中指代模式、不带 6 位代码、且是短问句 → 直接 clarify 反问。
-_VAGUE_REF_RE = re.compile(r"(那个|这只|这个|那只|这只|这支|那支|这只股|那只股|这个股|那个股)(只|个|支)?(股|股票)?")
+_VAGUE_REF_RE = re.compile(
+    r"(那个|这只|这个|那只|这支|那支|这只股|那只股|这个股|那个股)(只|个|支)?(股|股票)?"
+)
 _VAGUE_MAX_LEN = 24
 
 
@@ -71,6 +75,20 @@ class _RouteDecision(BaseModel):
     date_range: str = Field(default="", description="时间范围描述，可空")
 
 
+# with_structured_output 会现构造一个 RunnableBinding（含 schema 转 JSON Schema），
+# 每轮都构造一次纯属重复劳动；模型实例本身已被 core.llm 缓存
+_route_runnable = None
+
+
+def _get_route_runnable():
+    global _route_runnable
+    if _route_runnable is None:
+        _route_runnable = get_small_llm(
+            streaming=False, temperature=0.0
+        ).with_structured_output(_RouteDecision)
+    return _route_runnable
+
+
 async def _route_decision(prompt: str) -> dict:
     """意图判定：优先结构化输出（with_structured_output），失败回退 XML 解析。
 
@@ -80,9 +98,7 @@ async def _route_decision(prompt: str) -> dict:
     small = get_small_llm(streaming=False, temperature=0.0)
     # 主路径：结构化输出，参数传递更稳、解析更可靠
     try:
-        decision = await small.with_structured_output(_RouteDecision).ainvoke(
-            [HumanMessage(content=prompt)]
-        )
+        decision = await _get_route_runnable().ainvoke([HumanMessage(content=prompt)])
         return {
             "intent": decision.intent,
             "confidence": float(decision.confidence or 0.0),
@@ -110,9 +126,9 @@ async def _route_decision(prompt: str) -> dict:
 def _hit_data_keyword(query: str) -> bool:
     """数据类问句 -> True；短英文指标用词边界，中文/混合词用子串。"""
     q = (query or "").lower()
-    if any(k in q for k in _MCP_KEYWORDS_SUBSTR):
+    if any(k in q for k in _DATA_KEYWORDS_SUBSTR):
         return True
-    return bool(_MCP_KEYWORDS_WORD.search(q))
+    return bool(_DATA_KEYWORDS_WORD.search(q))
 
 
 async def classify(state: dict) -> dict:

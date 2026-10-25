@@ -1,0 +1,23 @@
+# 与 agent/pyproject.toml 的 [tool.ruff] 保持同一套规则：
+# 没有这份配置时 ruff 走工具默认规则集，ingest 会因为「故意捕获宽异常做降级」
+# 报几十条 BLE001，把真正的问题淹没。
+# ingest 多为长 SQL / 长日志串，历史代码按 120 列写；agent 用 100
+line-length = 120
+target-version = "py311"
+extend-exclude = ["__pycache__", "*.pyc", "data", "parsed"]
+
+[lint]
+# ASYNC 抓 async/await 误用；B 抓可变默认参数等 bug；
+# I 做导入排序；UP 提语法现代化。BLE001 不启用：入库管线按单条失败隔离，
+# 宽捕获是刻意设计（失败只跳过该文档，不终止整源）。
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[lint.per-file-ignores]
+# CLI 脚本要先把仓库根塞进 sys.path 才能 import 自家模块
+"ashare/cli.py" = ["E402"]
+# watcher 是轮询式常驻任务（没有事件源）；Path 上的小文件 stat 不值得为它开线程池
+"main.py" = ["ASYNC110", "ASYNC240"]
+"pipeline.py" = ["ASYNC240"]
+
+[format]
+quote-style = "double"

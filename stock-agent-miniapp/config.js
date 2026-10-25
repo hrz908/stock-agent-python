@@ -11,18 +11,15 @@ const ENV_CONFIG = {
   develop: {
     // 远程服务器（ubuntu@tearsinrain.top）：开发版直连 HTTPS，需在开发者工具里
     // 勾选「不校验合法域名、TLS 版本以及 HTTPS 证书」（project.config.json 的 urlCheck 已为 false）
-    apiBase: 'https://tearsinrain.top',
-    wsBase: 'wss://tearsinrain.top'
+    apiBase: 'https://tearsinrain.top'
   },
-  // 体验版/正式版必须用已备案域名 + CA 证书，小程序后台的 request/socket 合法域名
+  // 体验版/正式版必须用已备案域名 + CA 证书，小程序后台的 request 合法域名
   // 也必须是同一个域名（自签 + IP 只能用于 develop）。
   trial: {
-    apiBase: 'https://tearsinrain.top',
-    wsBase: 'wss://tearsinrain.top'
+    apiBase: 'https://tearsinrain.top'
   },
   release: {
-    apiBase: 'https://tearsinrain.top',
-    wsBase: 'wss://tearsinrain.top'
+    apiBase: 'https://tearsinrain.top'
   }
 };
 
@@ -47,11 +44,6 @@ export const apiBase = config.apiBase;
 // 开发版专属能力（卡片画廊这类假数据页、调试入口）用它开闸：
 // 体验版/正式版也会走到同一份代码，靠 IDE 的 urlCheck 之类开关是关不掉入口的。
 export const isDev = envVersion() === 'develop';
-
-// 实时语音识别的 WebSocket 基地址（server 侧 /api/v1/ws/asr）：
-// 小程序录音分片直传网关，网关转发腾讯云实时 ASR，边说边出字。
-// 正式环境必须是 wss，且域名要在小程序后台的 socket 合法域名里登记。
-export const wsBase = config.wsBase;
 
 // AI 对话的 SSE 流式通道（server 侧 agent stream）：每次提问一个独立
 // POST 请求，响应 text/event-stream 逐帧下发，走 Header Bearer 鉴权

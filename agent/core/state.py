@@ -7,7 +7,7 @@ AgentState 贯穿主图与子图，约定：
 所有节点只写自己负责的字段，避免相互踩踏。
 """
 import operator
-from typing import TypedDict, Annotated, Optional
+from typing import Annotated, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph.message import add_messages
@@ -27,7 +27,7 @@ class AgentState(TypedDict, total=False):
     confidence: float
     # 分类节点抽取的实体（symbol / market / date_range），供下游复用
     entities: dict
-    # 工具调用结果（MCP 子图写入，operator.add 跨轮累加）
+    # 工具调用结果（stock 子图写入，operator.add 跨轮累加）
     tool_results: Annotated[list, operator.add]
     # RAG 检索片段
     retrieved: list
@@ -36,7 +36,7 @@ class AgentState(TypedDict, total=False):
     # 引用来源
     citations: list
     # 错误信息：非空时条件边路由到降级节点
-    error: Optional[str]
+    error: str | None
     # token 用量统计
     usage: dict
 
@@ -67,7 +67,7 @@ def recent_turns(state: dict, limit: int = 6, query: str = None) -> list:
     统一剔除 ToolMessage（json 载荷进对话会触发上游 max_seq_len 报错）
     与带 tool_calls 的 AIMessage（残缺配对会让上游接口报错）；
     传入 query 时额外跳过内容等于当前问题的人类消息，避免调用方追加时重复。
-    末尾的当前轮一并排除，保证上下文口径一致；mcp / rag / chat 三个子图共用。
+    末尾的当前轮一并排除，保证上下文口径一致；stock / rag / chat 三个子图共用。
     """
     msgs = list(state.get("messages", []))
     body = msgs[:-1] if msgs else []  # 排除末尾当前轮

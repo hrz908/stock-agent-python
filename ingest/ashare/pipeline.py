@@ -89,9 +89,9 @@ class Pipeline:
                     if raw.pub_time and (stats.last_pub is None or raw.pub_time > stats.last_pub):
                         stats.last_pub = raw.pub_time
                     logger.debug("跳过（%s）：%s", exc, raw.title[:50])
-                except Exception as exc:  # 单条失败不能拖垮整源
+                except Exception:  # 单条失败不能拖垮整源
                     stats.failed += 1
-                    logger.exception("处理失败：%s - %s", raw.title[:50], exc)
+                    logger.exception("处理失败：%s", raw.title[:50])
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             logger.error("采集源 %s 中断：%s", source.name, error)
@@ -121,9 +121,9 @@ class Pipeline:
             except SkipDoc as exc:
                 stats.skipped += 1
                 logger.debug("跳过（%s）：%s", exc, raw.title[:50])
-            except Exception as exc:
+            except Exception:
                 stats.failed += 1
-                logger.exception("入库失败：%s - %s", raw.title[:50], exc)
+                logger.exception("入库失败：%s", raw.title[:50])
         logger.info("spool 完成：%s 入库 %d，跳过 %d，失败 %d，chunk %d",
                     path.name, stats.written, stats.skipped, stats.failed, stats.chunks)
         return stats

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """股票问答 Agent 测试题库。
 
 设计口径：
@@ -18,7 +17,6 @@ expect 字段说明：
 - rationale   : 这个用例想抓住什么失效模式（评估报告里引用）
 """
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass(frozen=True)

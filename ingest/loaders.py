@@ -89,7 +89,7 @@ def _load_docx(path: Path) -> str:
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
         return "\n\n".join(paragraphs)
     except Exception as e:
-        raise RuntimeError(f"无法解析 DOCX 文件: {path} - {e}")
+        raise RuntimeError(f"无法解析 DOCX 文件: {path} - {e}") from e
 
 
 # ------------------------------------------------------------------
@@ -117,10 +117,10 @@ def _load_pptx(path: Path) -> str:
             slide_md = f"## Slide {i}\n\n" + "\n\n".join(texts)
             slides_text.append(slide_md)
         return "\n\n---\n\n".join(slides_text)
-    except ImportError:
-        raise RuntimeError(f"python-pptx 未安装，无法解析 PPTX: {path}")
+    except ImportError as exc:
+        raise RuntimeError(f"python-pptx 未安装，无法解析 PPTX: {path}") from exc
     except Exception as e:
-        raise RuntimeError(f"无法解析 PPTX 文件: {path} - {e}")
+        raise RuntimeError(f"无法解析 PPTX 文件: {path} - {e}") from e
 
 
 # ------------------------------------------------------------------

@@ -2,18 +2,17 @@
 import hashlib
 import logging
 import struct
-from typing import Optional
 
 import redis
 
 from config import (
-    REDIS_URL,
-    OFFLINE_EMBED_MODEL,
-    EMBED_CACHE_TTL,
     EMBED_BATCH_SIZE,
+    EMBED_CACHE_TTL,
+    EMBED_DIM,
+    OFFLINE_EMBED_MODEL,
     OPENAI_API_BASE,
     OPENAI_API_KEY,
-    EMBED_DIM,
+    REDIS_URL,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,7 +49,7 @@ class Embedder:
 
     def __init__(self):
         self.model = None  # 延迟加载
-        self._backend: Optional[str] = None  # "flag" | "openai"
+        self._backend: str | None = None  # "flag" | "openai"
         self.redis: redis.Redis = redis.from_url(REDIS_URL, decode_responses=False)
         self._openai_client = None
 
@@ -87,13 +86,13 @@ class Embedder:
             self._backend = "openai"
             logger.info("使用 OpenAI 兼容 embedding API: model=%s, base=%s",
                         OFFLINE_EMBED_MODEL, OPENAI_API_BASE or "(default)")
-        except ImportError:
+        except ImportError as exc:
             raise RuntimeError(
                 "无法初始化嵌入模型：FlagEmbedding 和 openai 库均不可用。"
                 "请安装 FlagEmbedding 或 openai 并配置 OPENAI_API_BASE / OPENAI_API_KEY。"
-            )
+            ) from exc
         except Exception as e:
-            raise RuntimeError(f"OpenAI embedding 客户端初始化失败: {e}")
+            raise RuntimeError(f"OpenAI embedding 客户端初始化失败: {e}") from e
 
     def _embed_flag(self, texts: list[str], is_query: bool = False) -> list[list[float]]:
         """使用 FlagEmbedding 批量嵌入"""
@@ -142,7 +141,7 @@ class Embedder:
         model_name = OFFLINE_EMBED_MODEL
 
         # 1. 检查缓存
-        cached: list[Optional[list[float]]] = [None] * len(texts)
+        cached: list[list[float] | None] = [None] * len(texts)
         miss_indices: list[int] = []
         miss_texts: list[str] = []
 
@@ -171,7 +170,7 @@ class Embedder:
                 new_vecs = self._embed_openai(miss_texts, is_query)
 
             # 3. 写入缓存（TTL 7天）
-            for idx, vec in zip(miss_indices, new_vecs):
+            for idx, vec in zip(miss_indices, new_vecs, strict=True):
                 cached[idx] = vec
                 key = _cache_key(model_name, texts[idx])
                 try:

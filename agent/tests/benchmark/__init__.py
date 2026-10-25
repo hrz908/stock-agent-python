@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """股票问答 Agent 测试与调优基准（benchmark）包。
 
 模块划分：

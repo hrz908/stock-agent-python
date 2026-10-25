@@ -155,15 +155,3 @@ func secondsToMidnight() int {
 	}
 	return sec
 }
-
-// limitCode 把限流错误映射为回传前端的 error code。
-func limitCode(err error) string {
-	switch {
-	case errors.Is(err, ErrTooManyConcurrent):
-		return "too_many_concurrent"
-	case errors.Is(err, ErrQuotaExceeded):
-		return "quota_exceeded"
-	default:
-		return "rate_limit"
-	}
-}

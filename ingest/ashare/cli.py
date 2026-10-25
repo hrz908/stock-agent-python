@@ -22,13 +22,13 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from ashare import config  # noqa: E402
-from ashare.embedder import Embedder  # noqa: E402
-from ashare.master import ensure_master_schema, sync_master  # noqa: E402
-from ashare.pipeline import Pipeline  # noqa: E402
-from ashare.sources import build_source, source_names  # noqa: E402
-from ashare.store import Store  # noqa: E402
-from ashare.util import (  # noqa: E402
+from ashare import config
+from ashare.embedder import Embedder
+from ashare.master import ensure_master_schema, sync_master
+from ashare.pipeline import Pipeline
+from ashare.sources import build_source, source_names
+from ashare.store import Store
+from ashare.util import (
     now_cn,
     parse_date_arg,
     reconfigure_stdio,

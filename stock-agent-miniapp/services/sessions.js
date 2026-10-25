@@ -32,5 +32,3 @@ export function sessionMessages(sessionId) {
 export function deleteSession(sessionId) {
   return del(`${API}/agent/sessions/${encodeURIComponent(sessionId)}`);
 }
-
-// (触发一次全量重编译：新增模块需重建模块表)

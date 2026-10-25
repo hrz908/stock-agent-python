@@ -22,10 +22,22 @@ x-logging: &default-logging
     max-size: "50m"
     max-file: "3"
 
+# 禁止容器内提权（setuid 二进制 / capabilities 再获取）：这些服务都只跑单进程，
+# 不需要任何提权路径；镜像默认 root，靠这一项兜住「进程被拿走后横向提权」
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+
+# 内存预算（宿主 3GB / 4 vCPU）：不给上限时任一容器暴涨都会把整机拖到失联，
+# 表现为 SSH 卡在 banner exchange、nginx 也不响应。按下面配额封顶：
+#   postgres 768M + redis 320M + server 448M + agent 1088M ≈ 2.6G，其余留给系统与 nginx。
+# 超限只会被 cgroup 杀掉该容器并 restart，不再拖垮整台机器。
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: stock-agent-postgres
+    <<: *hardening
     restart: unless-stopped
     logging: *default-logging
     environment:
@@ -42,10 +54,15 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+    deploy:
+      resources:
+        limits:
+          memory: 768M
 
   redis:
     image: redis:7-alpine
     container_name: stock-agent-redis
+    <<: *hardening
     restart: unless-stopped
     logging: *default-logging
     # maxmemory 是硬约束：embedding 缓存全量攒会涨到 GB 级，且与限流/会话共用同一实例。
@@ -60,6 +77,11 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+    deploy:
+      resources:
+        limits:
+          # maxmemory 256M + 复制缓冲/连接开销
+          memory: 320M
 
   server:
     build:
@@ -68,6 +90,7 @@ services:
       args:
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     container_name: stock-agent-server
+    <<: *hardening
     restart: unless-stopped
     logging: *default-logging
     env_file: .env
@@ -82,6 +105,15 @@ services:
       # agent 容器名（compose 网络内 DNS）
       AGENT_BASE_URL: "http://agent:8000"
       UPLOAD_DIR: "/app/uploads"
+      # nginx 在宿主机、server 在容器里：真实来源是 docker 网桥（172.17.0.1 或 compose 网段），
+      # 只信任 127.0.0.1 会拿不到 X-Forwarded-For，全站共用一个 IP 的限流桶
+      TRUSTED_PROXIES: "127.0.0.1,172.16.0.0/12"
+      # Go 运行时内存闸门：默认 GOGC=100 时堆可涨到存活量 2 倍且不感知宿主上限。
+      # GOMEMLIMIT 是软上限（到点加大 GC 频率），留出非堆内存余量后配 448M 硬上限
+      GOMEMLIMIT: "320MiB"
+      GOGC: "50"
+      # 生产不跑 debug 模式（省掉启动时的路由表打印与 pprof 分支）
+      GIN_MODE: "release"
     ports:
       # 只绑回环：宿主机 nginx 反代用，不对公网暴露
       - "127.0.0.1:8080:8080"
@@ -92,6 +124,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 448M
 
   agent:
     build:
@@ -100,6 +136,7 @@ services:
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     container_name: stock-agent-python
+    <<: *hardening
     restart: unless-stopped
     logging: *default-logging
     env_file: .env
@@ -115,6 +152,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          # 单进程 uvicorn：常驻 250-400M，再留出 akshare/pandas 取数的瞬时峰值
+          memory: 1088M
+
 
   # 可选：文档 ingest watcher。需要时加 --profile ingest 启动
   ingest:
@@ -124,6 +167,7 @@ services:
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     container_name: stock-agent-ingest
+    <<: *hardening
     restart: unless-stopped
     logging: *default-logging
     env_file: .env
@@ -157,6 +201,7 @@ services:
         # 1 = 镜像内装 torch/sentence-transformers（离线必需）
         INSTALL_EMBED: ${ASHARE_INSTALL_EMBED:-1}
     container_name: stock-agent-ashare
+    <<: *hardening
     restart: unless-stopped
     logging: *default-logging
     env_file: .env

@@ -4,7 +4,28 @@
 """
 from langchain_openai import ChatOpenAI
 
-from config import LLM_TIMEOUT, LLM_MODEL, OPENAI_API_BASE, OPENAI_API_KEY, SMALL_MODEL
+from config import LLM_MODEL, LLM_TIMEOUT, OPENAI_API_BASE, OPENAI_API_KEY, SMALL_MODEL
+
+# 进程内复用模型实例：ChatOpenAI 每次实例化都会新建一个 httpx 客户端（含连接池），
+# 而一轮对话至少经过 rewrite / classify / 生成三次调用——每次重建 TLS 纯属浪费。
+# 实例是无状态的（消息都通过 invoke 传入），按 (模型, streaming, temperature) 缓存即可。
+_LLM_CACHE: dict = {}
+
+
+def _cached(model: str, streaming: bool, temperature: float) -> ChatOpenAI:
+    key = (model, bool(streaming), round(float(temperature), 2))
+    llm = _LLM_CACHE.get(key)
+    if llm is None:
+        llm = ChatOpenAI(
+            model=model,
+            openai_api_base=OPENAI_API_BASE,
+            openai_api_key=OPENAI_API_KEY,
+            streaming=streaming,
+            temperature=temperature,
+            timeout=LLM_TIMEOUT,
+        )
+        _LLM_CACHE[key] = llm
+    return llm
 
 
 def get_llm(streaming: bool = True, temperature: float = 0.7) -> ChatOpenAI:
@@ -13,48 +34,72 @@ def get_llm(streaming: bool = True, temperature: float = 0.7) -> ChatOpenAI:
     timeout 是单次请求硬上限：工具链有 8s 兜底，LLM 生成之前没有，
     不设会让整个事件流无限期挂住（Go 网关 runTimeout 到点砍流，用户只看到断流、没有解释）。
     """
-    return ChatOpenAI(
-        model=LLM_MODEL,
-        openai_api_base=OPENAI_API_BASE,
-        openai_api_key=OPENAI_API_KEY,
-        streaming=streaming,
-        temperature=temperature,
-        timeout=LLM_TIMEOUT,
-    )
+    return _cached(LLM_MODEL, streaming, temperature)
 
 
 def get_small_llm(streaming: bool = False, temperature: float = 0.0) -> ChatOpenAI:
     """小模型：用于指代消解、意图分类、滚动摘要，温度 0 追求确定性。"""
-    return ChatOpenAI(
-        model=SMALL_MODEL,
-        openai_api_base=OPENAI_API_BASE,
-        openai_api_key=OPENAI_API_KEY,
-        streaming=streaming,
-        temperature=temperature,
-        timeout=LLM_TIMEOUT,
-    )
+    return _cached(SMALL_MODEL, streaming, temperature)
+
+
+# tiktoken 编码器首次构建要读完整词表，进程内复用同一个实例；
+# 未安装或加载失败时保持 None，走字符估算
+_ENCODER = None
+_ENCODER_READY = False
+
+
+def _encoder():
+    global _ENCODER, _ENCODER_READY
+    if not _ENCODER_READY:
+        _ENCODER_READY = True
+        try:
+            import tiktoken
+
+            _ENCODER = tiktoken.get_encoding("cl100k_base")
+        except Exception:  # noqa: BLE001 - 没装 tiktoken 是允许的
+            _ENCODER = None
+    return _ENCODER
 
 
 def estimate_tokens(text: str) -> int:
     """粗略估算 token 数：优先 tiktoken，失败按字符数估算。"""
     if not text:
         return 0
+    enc = _encoder()
+    if enc is None:
+        # 中英混合下 ~2 char/token 的保守估计
+        return max(1, len(text) // 2)
     try:
-        import tiktoken
-        enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))
     except Exception:  # noqa: BLE001
-        # 中英混合下 ~2 char/token 的保守估计
         return max(1, len(text) // 2)
 
 
-def count_message_tokens(messages: list) -> int:
-    """统计一组消息的 token 总量（发送前的上下文预算用）。"""
-    text = ""
+def message_chars(messages: list) -> int:
+    """消息正文的字符总数，用作 token 的廉价下界。
+
+    最坏情况（生僻字/emoji）约 3 token 一个字，所以 chars < 阈值 × 0.3 时
+    可以确定没超预算，直接跳过 tiktoken 编码——预算判定每轮要跑好几次，
+    省下的都是纯 CPU。
+    """
+    total = 0
     for m in messages:
         c = getattr(m, "content", "")
-        text += c if isinstance(c, str) else str(c)
-    return estimate_tokens(text)
+        total += len(c) if isinstance(c, str) else len(str(c))
+    return total
+
+
+def count_message_tokens(messages: list) -> int:
+    """统计一组消息的 token 总量（发送前的上下文预算用）。
+
+    用 join 一次拼好再编码：逐条 += 在长会话里是 O(n²) 的字符串拷贝，
+    而预算判定在 guardrail / synthesize / post 里每轮都要跑。
+    """
+    parts = []
+    for m in messages:
+        c = getattr(m, "content", "")
+        parts.append(c if isinstance(c, str) else str(c))
+    return estimate_tokens("".join(parts))
 
 
 def is_context_overflow(exc: Exception) -> bool:

@@ -114,10 +114,7 @@ def split_csv(text: str) -> list[str]:
 def cell(row, *names: str) -> str:
     """按候选列名取单元格，兼容 akshare 各版本改列名与 NaN。"""
     for name in names:
-        try:
-            value = row.get(name)
-        except Exception:
-            continue
+        value = row.get(name)
         if value is None:
             continue
         text = str(value).strip()

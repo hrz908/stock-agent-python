@@ -16,9 +16,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 不拉起 MCP stdio 子进程：本套用例只验进程内工具与仓储
-os.environ["STOCK_MCP_ENABLED"] = "0"
-
 import repo.stock as repo_stock  # noqa: E402
 import tools.compare as compare  # noqa: E402
 from repo.stock import industry_peers  # noqa: E402

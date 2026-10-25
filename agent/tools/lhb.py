@@ -81,8 +81,10 @@ async def _summary_level(sym: str) -> dict | None:
     """兜底：龙虎榜列表接口（较稳），给「合计」一行（买入额/卖出额，元->万元）。"""
     import akshare as ak
 
+    # 兜底接口一次拉全市场逐日明细：窗口开 30 天会把上万行 DataFrame 读进内存，
+    # 压到 5 天够覆盖「最近一次上榜」，长假后可临时调大
     end = datetime.now()
-    start = end - timedelta(days=30)
+    start = end - timedelta(days=5)
     try:
         df = await run_ds(
             ak.stock_lhb_detail_em,

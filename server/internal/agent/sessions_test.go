@@ -57,7 +57,8 @@ func startFakeAgent(t *testing.T, behavior http.HandlerFunc) (*httptest.Server, 
 }
 
 // newTestEngine 造一个注入了 user_id 的 gin 引擎（Auth 中间件在单测里被跳过，
-//  handlers 只依赖 c.GetInt64("user_id")）
+//
+//	handlers 只依赖 c.GetInt64("user_id")）
 func newTestEngine() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

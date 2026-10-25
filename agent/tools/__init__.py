@@ -1,21 +1,29 @@
-"""工具层公共能力：安全 HTTP 调用 + Go 网关响应解包。
+"""工具层公共能力：安全 HTTP 调用 + Go 网关响应解包 + 进程内结果缓存。
 
-call_tool_safe 统一封装「8s 超时 + 重试 1 次 + 失败降级」，工具的网络/解析异常不会冒泡到图里，
-而是返回 {"ok": False, "error": ...}；go_get 复用共享 httpx.AsyncClient（连接池 + keep-alive）并自解 Go 信封。
+call_tool_safe 统一封装「8s 超时 + 重试 1 次 + 失败降级」，
+工具的网络/解析异常不会冒泡到图里，而是返回 {"ok": False, "error": ...}；
+go_get 复用共享 httpx.AsyncClient（连接池 + keep-alive）并自解 Go 信封。
 
 数据源：Go 网关（实时行情/搜索）、akshare（东财/新浪：估值/资金流/财报/资讯/龙虎榜/研报）、
 baostock（历史日 K）、PG 主数据表（股票清单/行业/概念，只读），均免 token，工具全部无条件注册。
-本模块同时是 MCP 工具源（mcp/stock_server.py 经 tools/mcp_loader.py 加载）的兜底来源：
-MCP 子进程失败时整段回退到这里，工具名 / 参数 / 返回契约保持一致。
+所有工具都是进程内 @tool 对象，由 LLM 的 tool_calls 直接驱动，无子进程、无协议层。
 """
 import asyncio
-from typing import Any, Callable, Awaitable, Optional
+import copy
+import json
+import time
+from collections import OrderedDict
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 
 from config import (
-    GO_SERVER_URL,
     GO_SERVER_TOKEN,
+    GO_SERVER_URL,
+    TOOL_CACHE_MAX,
+    TOOL_CACHE_TTL,
+    TOOL_CACHE_TTL_REALTIME,
     TOOL_TIMEOUT,
 )
 
@@ -23,7 +31,7 @@ from config import (
 _CODE_OK = 0
 
 # 共享 HTTP 客户端：避免每次工具调用都新建连接
-_client: Optional[httpx.AsyncClient] = None
+_client: httpx.AsyncClient | None = None
 
 
 def get_http_client() -> httpx.AsyncClient:
@@ -55,14 +63,14 @@ async def call_tool_safe(
 
     若 fn 本身已返回 {"ok": ...} 信封（如 go_get），直接透传不重复包裹。
     """
-    last_err: Optional[str] = None
+    last_err: str | None = None
     for attempt in range(retries + 1):
         try:
             result = await asyncio.wait_for(fn(*args, **kwargs), timeout=timeout)
             if isinstance(result, dict) and "ok" in result:
                 return result
             return {"ok": True, "data": result}
-        except asyncio.TimeoutError:
+        except TimeoutError:
             last_err = "timeout"
         except Exception as e:  # noqa: BLE001 - 工具失败必须被吞掉转降级
             last_err = f"{type(e).__name__}: {e}"
@@ -79,7 +87,7 @@ def _auth_headers() -> dict:
     return h
 
 
-async def go_get(path: str, params: Optional[dict] = None) -> dict:
+async def go_get(path: str, params: dict | None = None) -> dict:
     """GET Go 网关：拼 base_url、带鉴权头、解包 { code, data } 信封。
 
     返回 {"ok": True, "data": ...} 或 {"ok": False, "error": ...}；
@@ -96,6 +104,58 @@ async def go_get(path: str, params: Optional[dict] = None) -> dict:
             return {"ok": False, "error": data.get("message", "unknown error")}
         return {"ok": True, "data": data.get("data")}
     return {"ok": True, "data": data}
+
+
+# ===== 工具结果缓存（进程内 TTL + LRU）=====
+# 取数工具全部只读、按日更新，同一只股票在几分钟内被反复问很常见（前端重试、多轮追问）；
+# akshare 单次 1-3s，命中缓存直接把这段延迟省掉。
+_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
+
+# 盘中随价格变的工具：缓存时长必须短，否则用户会看到旧价
+_REALTIME_TOOLS = frozenset({"get_quote", "get_valuation", "get_money_flow", "get_peer_compare"})
+
+
+def tool_cache_ttl(name: str) -> int:
+    return TOOL_CACHE_TTL_REALTIME if name in _REALTIME_TOOLS else TOOL_CACHE_TTL
+
+
+def _cache_key(name: str, args: dict) -> str:
+    return name + ":" + json.dumps(args or {}, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def tool_cache_get(name: str, args: dict) -> dict | None:
+    """命中返回结果副本，未命中/已过期返回 None。"""
+    # 必须按工具档位判断：全局 TTL=0（关闭）时，盘口类仍按 30s 写入，
+    # 用全局值先返回 None 会让这些缓存永远命中不了
+    if tool_cache_ttl(name) <= 0:
+        return None
+    key = _cache_key(name, args)
+    item = _cache.get(key)
+    if item is None:
+        return None
+    expire_at, value = item
+    if time.monotonic() >= expire_at:
+        _cache.pop(key, None)
+        return None
+    _cache.move_to_end(key)
+    return copy.deepcopy(value)
+
+
+def tool_cache_put(name: str, args: dict, value: Any) -> None:
+    """写入缓存；失败结果不缓存——上游限流/抖动是瞬时的，
+    缓存住会把一次失败放大成整个 TTL 都不可用。"""
+    ttl = tool_cache_ttl(name)
+    if ttl <= 0 or not isinstance(value, dict) or not value.get("ok"):
+        return
+    key = _cache_key(name, args)
+    _cache[key] = (time.monotonic() + ttl, copy.deepcopy(value))
+    _cache.move_to_end(key)
+    while len(_cache) > max(1, TOOL_CACHE_MAX):
+        _cache.popitem(last=False)
+
+
+def tool_cache_clear() -> None:
+    _cache.clear()
 
 
 def to_ts_code(code: str) -> str:

@@ -1,6 +1,6 @@
 package util
 
-// Unique 去重并保持原有顺序，替代此前各处重复的 uniqueStrings / uniqueCodes。
+// Unique 去重并保持原有顺序。
 func Unique[T comparable](in []T) []T {
 	seen := make(map[T]struct{}, len(in))
 	out := make([]T, 0, len(in))

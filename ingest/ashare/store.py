@@ -40,6 +40,10 @@ class Store:
         self.conn = psycopg.connect(self.dsn, row_factory=dict_row)
         # 批量入库时 WAL 同步不是瓶颈；崩溃最多丢一批可重跑的数据
         self.conn.execute("SET synchronous_commit = off")
+        # 检索入口同样受 HNSW 默认 ef_search=40 限制（CLI 里 LIMIT 8，影响有限，
+        # 但带过滤时提前终止会让结果变少）；pgvector <0.8 时 iterative_scan 是空操作
+        self.conn.execute("SET hnsw.ef_search = 100")
+        self.conn.execute("SET hnsw.iterative_scan = relaxed_order")
         self.conn.commit()
 
     def close(self) -> None:
@@ -96,7 +100,7 @@ class Store:
         bands: list[int],
         content_bytes: int,
         source_type: str,
-        max_hamming: int = None,
+        max_hamming: int | None = None,
     ) -> str | None:
         """候选召回（共享任一 16bit 段）+ 汉明距离与长度比双条件确认。
 

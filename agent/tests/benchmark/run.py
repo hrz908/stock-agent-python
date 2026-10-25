@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """股票问答 Agent 测试与调优流水线 CLI。
 
 用法（Windows 控制台务必带 -X utf8，否则中文输出触发 cp1252 报错）：
@@ -36,8 +35,10 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))  # agent/ 进 sys.path（与 tests/test_regression.py 一致）
 sys.path.insert(0, str(HERE.parents[0]))  # agent/tests/ 进 sys.path（benchmark 包所在）
 
-from benchmark.cases import select_cases, CASES  # noqa: E402
-from benchmark import runner, evaluate as ev, report as rp  # noqa: E402
+from benchmark import evaluate as ev  # noqa: E402
+from benchmark import report as rp  # noqa: E402
+from benchmark import runner  # noqa: E402
+from benchmark.cases import CASES, select_cases  # noqa: E402
 
 RUNS_DIR = HERE / "runs"
 

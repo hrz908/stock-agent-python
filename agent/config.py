@@ -47,25 +47,37 @@ RAG_TOP_K = int(os.getenv("RAG_TOP_K", "6"))
 RAG_PER_DOC = int(os.getenv("RAG_PER_DOC", "3"))
 # 重排后按 RERANK_THRESHOLD 再裁一次上下文。默认关：历史行为是「只判是否命中，
 # 不裁剪片段」，开启后低分片段不再进 prompt/sources，代价是可能裁到 <2 条触发升级
-RAG_RERANK_FILTER = os.getenv("RAG_RERANK_FILTER", "false").strip().lower() in ("1", "true", "yes", "on")
+RAG_RERANK_FILTER = os.getenv("RAG_RERANK_FILTER", "false").strip().lower() in (
+    "1", "true", "yes", "on",
+)
 # Go 网关地址（工具调用回现有后端获取行情）
 GO_SERVER_URL = os.getenv("GO_SERVER_URL", "http://127.0.0.1:8080")
 # 调 Go 网关受保护接口用的服务间 token（Agent 作为可信内部服务）
 GO_SERVER_TOKEN = os.getenv("GO_SERVER_TOKEN", "")
 
-# ===== MCP 工具源 =====
-# 取数工具可由 mcp/stock_server.py（FastMCP，stdio 子进程）暴露；
-# 加载失败自动回退进程内直连（tools.get_tools），上层无感知。
-# 注意 mcp python-sdk 必须钉 1.x（2.x 与 langchain-mcp-adapters 0.3.x 不兼容）
-STOCK_MCP_ENABLED = os.getenv("STOCK_MCP_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
-STOCK_MCP_SERVER_PATH = os.getenv(
-    "STOCK_MCP_SERVER_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp", "stock_server.py"),
-)
+# ===== 工具层 =====
+# 同一工具 + 同一参数的进程内缓存时长（秒），0 表示关闭。
+# 取数工具都是只读且按日更新，akshare 单次 1-3s，短 TTL 只省「同一天被反复问」
+TOOL_CACHE_TTL = int(os.getenv("TOOL_CACHE_TTL", "300"))
+# 盘口类（行情/估值/资金流/同业快照）单独一档：这几项盘中随价格变，
+# 套 5 分钟缓存会让用户看到旧价；30s 与 Go 网关侧行情缓存对齐
+TOOL_CACHE_TTL_REALTIME = int(os.getenv("TOOL_CACHE_TTL_REALTIME", "30"))
+# 缓存条目上限（LRU）：防止长时间运行把不同股票的结果都攒在内存里
+TOOL_CACHE_MAX = int(os.getenv("TOOL_CACHE_MAX", "256"))
+# 同一轮内并发执行几个工具：akshare 走线程池，全放开会让多个 DataFrame 同时驻留
+TOOL_CONCURRENCY = int(os.getenv("TOOL_CONCURRENCY", "4"))
 
 # 数据源：卡片数据来自 akshare（东财/新浪）+ baostock（历史日 K），均免 token。
 # TUSHARE_TOKEN / TUSHARE_API 已废弃删除——原 token 对 moneyflow/top_list 等接口无权限（40203）。
 # akshare 抓公开页面，Docker 内直连即可；本机调试若走系统代理失败，进程内设 NO_PROXY=* 绕过。
+
+# ===== LangGraph checkpoint 连接池 =====
+# 单 worker 最多占这么多条 PG 连接。并发上限只有 3（Go 网关限流），
+# 池子开大既用不上，又会在 3GB 机器上白占服务端内存
+CHECKPOINT_POOL_MAX = int(os.getenv("CHECKPOINT_POOL_MAX", "4"))
+# 应用表（chat_sessions / agent_runs）写连接池：与 checkpoint 池分开，
+# 避免会话列表查询和 saver 抢同一条连接
+APP_POOL_MAX = int(os.getenv("APP_POOL_MAX", "4"))
 
 # 对话 token 超过该值触发滚动摘要
 SUMMARY_TOKEN_LIMIT = int(os.getenv("SUMMARY_TOKEN_LIMIT", "6000"))

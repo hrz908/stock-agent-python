@@ -6,7 +6,13 @@ from pathlib import Path
 
 import redis
 
-from config import DATABASE_URL, OFFLINE_EMBED_MODEL, REDIS_URL, SUPPORTED_EXTENSIONS, WATCH_DIR
+from config import (
+    DATABASE_URL,
+    OFFLINE_EMBED_MODEL,
+    REDIS_URL,
+    SUPPORTED_EXTENSIONS,
+    WATCH_DIR,
+)
 from embedder import Embedder
 from pipeline import delete_file, process_file, reembed_document
 from store import Store

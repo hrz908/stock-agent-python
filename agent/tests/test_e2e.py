@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """AI 对话冒烟测试：向 agent /run/stream 逐条发送股票相关问题，
 保存完整 ndjson 流到 agent_out_N.txt，并把可读摘要写到 agent_summary.md（UTF-8）。
 控制台只打印 ASCII 状态，避免 Windows cp1252 报错。
 注意：agent 在 localhost，禁用代理避免被本机 7897 代理拦截。"""
 import json
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 
 URL = "http://localhost:8000/run/stream"
 

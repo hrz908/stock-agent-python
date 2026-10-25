@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """质量评估：规则断言 + LLM 评委五维打分。
 
 规则断言（确定性，不调 LLM）：
@@ -101,6 +100,7 @@ def _judge_model():
 async def llm_judge(case, result: dict) -> dict:
     """LLM 评委：五维打分 + issues + suggestion。异常时返回全 None 的占位。"""
     from langchain_core.messages import HumanMessage, SystemMessage
+
     from core.llm import get_llm
 
     final = result.get("final", {})

@@ -13,6 +13,7 @@
 
 #env: "dev"          # prod 下强制要求 JWT_SECRET 与微信凭据
 #allow_origins: "*"
+#trusted_proxies: "127.0.0.1"   # 可信反代地址/CIDR，逗号分隔；决定是否采信 X-Forwarded-For
 #upload_dir: "./uploads"
 
 #quote_api: ""       # 自建行情源；留空用内置腾讯源
@@ -23,19 +24,6 @@
 #wecom_agent_id: 0
 
 #agent_base_url: "http://127.0.0.1:8000"
-#asr_base_url: "https://api.siliconflow.cn/v1"
-#asr_api_key: ""     # 留空回退 OPENAI_API_KEY
-#asr_model: "FunAudioLLM/SenseVoiceSmall"
-
-# 腾讯云实时语音识别（流式）：小程序录音分片直传网关，网关转发到腾讯云 WebSocket。
-# app_id / secret_id / secret_key 三项缺一不可；未配置时 /ws/asr 返回 503，
-# 小程序会自动回退成整段录音上传识别（/asr/transcribe），不会报错阻断输入。
-#tencent_asr:
-#  app_id: ""
-#  secret_id: ""
-#  secret_key: ""
-#  engine: "16k_zh"   # 中文通用；电话场景用 8k_zh
-#  max_conns: 64      # 进程内同时存活的流式连接上限
 
 server:
   read_header_timeout: 5s
@@ -57,31 +45,24 @@ ratelimit:           # 每分钟次数（Redis 滑动窗口）
   ip_per_min: 100
   login_per_min: 10
   market_per_min: 120
-  asr_per_min: 10
 
 agent:
   qps: 2
   concurrent: 3
   daily_quota: 500
   proxy_concurrency: 64
-  ws_max_conns: 512
   run_timeout: 120s
   ttft_timeout: 8s
-  max_line_mb: 4
+  max_line_mb: 1
 
 http:
   quote_timeout: 3s
   search_timeout: 5s
   wechat_timeout: 5s
   wecom_timeout: 5s
-  asr_timeout: 20s
   quote_cache_ttl: 30s
   quote_fetch_limit: 5
   quote_batch_size: 20
   quote_mget_chunk: 100
-
-hub:
-  max_per_user: 5
-  max_total: 2048
 
 watchlist_max_items: 200

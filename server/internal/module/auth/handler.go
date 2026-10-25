@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -40,13 +41,20 @@ type LoginResp struct {
 func Login(c *gin.Context) {
 	ctx := c.Request.Context()
 
+	// 登录是唯一公开的写接口：请求体只该有一个几十字节的 code
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<10)
+
 	var req LoginReq
 	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Code) == "" {
 		resp.Fail(c, resp.CodeBadRequest, "缺少登录 code")
 		return
 	}
+	if len(req.Code) > 128 {
+		resp.Fail(c, resp.CodeBadRequest, "登录 code 不合法")
+		return
+	}
 
-	openid, err := openIDOf(req.Code)
+	openid, err := openIDOf(ctx, req.Code)
 	if err != nil {
 		log.Printf("login resolve openid failed: %v", err)
 		resp.Fail(c, resp.CodeBadGateway, "微信登录失败，请重试")
@@ -79,17 +87,16 @@ func Login(c *gin.Context) {
 // openIDOf code → openid。
 // 配了 AppID/Secret 就走微信；没配则退化为固定演示账号，
 // 保证本地没接微信时也能把链路（登录 → 建号 → 存资料）跑通
-func openIDOf(code string) (string, error) {
+func openIDOf(ctx context.Context, code string) (string, error) {
 	if wechat.Enabled() {
-		session, err := wechat.Code2Session(strings.TrimSpace(code))
+		session, err := wechat.Code2Session(ctx, strings.TrimSpace(code))
 		if err != nil {
 			return "", err
 		}
 		return session.OpenID, nil
 	}
-	// 演示账号：所有人共用同一个 openid，方便本地联调。
-	// 旧实现把 code 哈希成 uid，每次登录都是新账号、资料会丢；
-	// prod 环境由 main 强制要求微信凭据，不会走到这里
+	// 演示账号：所有人共用同一个 openid，方便本地联调；
+	// prod 由 main 强制要求微信凭据，不会走到这里
 	return "demo", nil
 }
 

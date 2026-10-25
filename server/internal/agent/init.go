@@ -13,7 +13,6 @@ type Options struct {
 	Concurrent       int           // 单用户并发运行数
 	DailyQuota       int           // 单用户每日请求配额
 	ProxyConcurrency int           // 打向 Python Agent 的并发上限
-	WSMaxConns       int           // 进程内 WS 连接上限
 	RunTimeout       time.Duration // 单次运行整体超时
 	TTFTTimeout      time.Duration // 首字节等待上限
 	MaxLineBytes     int           // ndjson 单行上限
@@ -42,9 +41,6 @@ func Init(redisClient *redis.Client, opts Options) {
 	if opts.ProxyConcurrency <= 0 {
 		opts.ProxyConcurrency = 64
 	}
-	if opts.WSMaxConns <= 0 {
-		opts.WSMaxConns = 512
-	}
 	if opts.RunTimeout <= 0 {
 		opts.RunTimeout = 120 * time.Second
 	}
@@ -57,6 +53,4 @@ func Init(redisClient *redis.Client, opts Options) {
 
 	limiter = NewLimiter(redisClient, Limits{QPS: opts.QPS, Concurrent: opts.Concurrent, DailyQuota: opts.DailyQuota})
 	proxy = NewAgentProxy(opts)
-	// 包级变量无法在声明处读配置，故在此按配置重建连接闸门
-	globalSem = make(chan struct{}, opts.WSMaxConns)
 }

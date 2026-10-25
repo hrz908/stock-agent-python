@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// pingTimeout 启动探活超时
 const pingTimeout = 3 * time.Second
 
 // PoolParams 连接池参数，由 config.db.* 注入。

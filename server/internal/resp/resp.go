@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 业务码：0 表示成功，其余与 HTTP 状态码对齐，前端一眼能看出性质
+// 业务码：0 表示成功，其余与 HTTP 状态码对齐
 const (
 	CodeOK              = 0
 	CodeBadRequest      = 400

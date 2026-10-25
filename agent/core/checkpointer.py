@@ -2,33 +2,40 @@
 
 用连接池而非单连接，避免并发请求争抢一条连接；首次使用时惰性建池并 setup 表结构。
 """
+import asyncio
 import logging
-from typing import Optional
 
-from psycopg_pool import AsyncConnectionPool
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
 
-from config import DATABASE_URL
+from config import CHECKPOINT_POOL_MAX, DATABASE_URL
 
 logger = logging.getLogger("stocka.agent")
 
-_pool: Optional[AsyncConnectionPool] = None
-_checkpointer: Optional[AsyncPostgresSaver] = None
+_pool: AsyncConnectionPool | None = None
+_checkpointer: AsyncPostgresSaver | None = None
+# 预热失败后首个请求会重试；两个请求同时进来不能各建一套池（连接泄漏且互相看不见）
+_lock = asyncio.Lock()
 
 
 async def get_checkpointer() -> AsyncPostgresSaver:
     """返回全局单例 checkpointer（惰性初始化连接池 + 建表）。"""
     global _pool, _checkpointer
-    if _checkpointer is None:
-        _pool = AsyncConnectionPool(
-            conninfo=DATABASE_URL,
-            max_size=20,
-            kwargs={"autocommit": True, "prepare_threshold": 0},
-        )
-        # 等待池中至少一条连接可用
-        await _pool.wait()
-        _checkpointer = AsyncPostgresSaver(_pool)
-        await _checkpointer.setup()
+    if _checkpointer is not None:
+        return _checkpointer
+    async with _lock:
+        if _checkpointer is None:
+            # min_size 默认是 4，启动即占满；这里压到 1，按并发按需增长
+            _pool = AsyncConnectionPool(
+                conninfo=DATABASE_URL,
+                min_size=1,
+                max_size=CHECKPOINT_POOL_MAX,
+                kwargs={"autocommit": True, "prepare_threshold": 0},
+            )
+            # 等待池中至少一条连接可用
+            await _pool.wait()
+            _checkpointer = AsyncPostgresSaver(_pool)
+            await _checkpointer.setup()
     return _checkpointer
 
 

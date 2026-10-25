@@ -28,9 +28,8 @@ var unicodeEscape = regexp.MustCompile(`\\u[0-9a-fA-F]{4}`)
 // 用正则而非 Index(`="`) + LastIndex(`"`)，后者在响应出现多余引号时会截错范围。
 var varAssignRe = regexp.MustCompile(`v_[a-z0-9]+="([^"]*)"`)
 
-// searchHTTP 与行情接口分开建 client（超时不同，见 quote.Init）。
-// 搜索是高频操作，每次新建 client 都要重走 DNS + TLS 握手，是此前偶发超时的根源；
-// 超时比行情宽 2s：首次请求要算上握手，搜索是体验加分项，宁可多等也不要假超时返回空列表。
+// searchHTTP 与行情接口分开建 client（超时不同，见 quote.Init）：
+// 搜索高频，复用连接避免重复握手；超时比行情宽 2s，宁可多等也不要假超时返回空列表。
 var searchHTTP = httpclient.New(5 * time.Second)
 
 // SearchResult 单条搜索结果：只给前端真正需要的字段，

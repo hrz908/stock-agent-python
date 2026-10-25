@@ -2,12 +2,12 @@ package router
 
 import (
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"stock-agent-server/internal/agent"
-	"stock-agent-server/internal/asr"
 	"stock-agent-server/internal/config"
 	"stock-agent-server/internal/middleware"
 	"stock-agent-server/internal/module/alert"
@@ -17,20 +17,16 @@ import (
 	"stock-agent-server/internal/module/watchlist"
 	"stock-agent-server/internal/resp"
 	"stock-agent-server/internal/upload"
-	"stock-agent-server/internal/ws"
 )
 
-// New 组装路由：
-//   - 全局中间件按序执行：Recovery → RequestID → CORS → RateLimit → AccessLog；
-//   - /api/v1 下的 authorized 组统一挂 auth 中间件；
-//   - /ws 系列用允许 ?token= 的鉴权变体（握手无法带自定义请求头）。
-//
-// 各业务模块自带 Register(g *gin.RouterGroup)，新增接口只需在此 import 并调一次。
+// New 组装路由：全局中间件按序执行（Recovery → RequestID → CORS → RateLimit → AccessLog），
+// /api/v1 业务路由统一挂 auth；各模块自带 Register，新增接口在此 import 并注册一次。
 func New(cfg config.Config) *gin.Engine {
 	r := gin.New()
 
-	// 只信任本机反代：gin 默认信任所有代理的 X-Forwarded-For，否则按 IP 限流可被伪造头绕过
-	if err := r.SetTrustedProxies([]string{"127.0.0.1"}); err != nil {
+	// 只信任配置里的反代：gin 默认信任所有代理的 X-Forwarded-For，否则按 IP 限流可被伪造头绕过；
+	// 生产 nginx 在宿主机、server 在容器里，需把 docker 网桥网段一并配进来
+	if err := r.SetTrustedProxies(trustedProxies(cfg.TrustedProxies)); err != nil {
 		panic(err)
 	}
 
@@ -51,17 +47,12 @@ func New(cfg config.Config) *gin.Engine {
 	// 且读写共用同一个 upload.Dir，不会出现「写到 A、从 B 读」的错位
 	r.Static("/uploads/avatars", filepath.Join(upload.Dir, "avatars"))
 
-	api := r.Group("/api/v1")
+	// 业务接口的请求体都是小 JSON（头像上传 2MB、对话 64KB 各自另有上限），
+	// 4MB 兜住 ShouldBindJSON 把超大 body 读进内存的情况
+	api := r.Group("/api/v1", middleware.BodyLimit(4<<20))
 
 	// 公开路由：登录（内部另挂了更严的限流）
 	authapi.Register(api, cfg.RateLimit.LoginPerMin)
-
-	// WS 长连接必须挂在 authorized 组之外：该组的 Auth() 只认 Header Bearer，
-	// 握手没有 Header，挂在组内会先被 401 拦下，到不了允许 query token 的中间件
-	api.GET("/ws", middleware.AuthAllowQueryToken(), ws.Serve)
-	api.GET("/ws/agent", middleware.AuthAllowQueryToken(), agent.ServeWS)
-	// 实时语音识别：小程序把录音分片以二进制帧直传，这里转发腾讯云并回传结果
-	api.GET("/ws/asr", middleware.AuthAllowQueryToken(), asr.ServeStream)
 
 	// 受保护路由：统一挂 auth（Header Bearer），user_id 由中间件注入
 	authorized := api.Group("")
@@ -76,7 +67,7 @@ func New(cfg config.Config) *gin.Engine {
 		market.Use(middleware.UserRateLimit(cfg.RateLimit.MarketPerMin, time.Minute))
 		stock.Register(market)
 
-		// Agent 对话 SSE 兜底（H5 / 不支持 WS 的环境），走 Header 鉴权，留在组内
+		// Agent 对话 SSE：小程序与 H5 共用同一条链路，走 Header 鉴权
 		authorized.POST("/agent/stream", agent.ServeSSE)
 
 		// 会话历史：列表 / 注册 / 恢复消息 / 删除；注册表与 checkpoint 由 Agent 侧持有，网关只转发
@@ -84,11 +75,21 @@ func New(cfg config.Config) *gin.Engine {
 		authorized.POST("/agent/sessions", agent.ServeCreateSession)
 		authorized.GET("/agent/sessions/:sid/messages", agent.ServeSessionMessages)
 		authorized.DELETE("/agent/sessions/:sid", agent.ServeDeleteSession)
-
-		// 语音转文字：每次识别都消耗上游付费额度，不能匿名调用，再叠一层用户级限流
-		authorized.POST("/asr/transcribe",
-			middleware.UserRateLimit(cfg.RateLimit.ASRPerMin, time.Minute), asr.Transcribe)
 	}
 
 	return r
+}
+
+// trustedProxies 解析逗号分隔的反代地址；空配置回落到仅本机。
+func trustedProxies(raw string) []string {
+	out := make([]string, 0, 4)
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"127.0.0.1"}
+	}
+	return out
 }

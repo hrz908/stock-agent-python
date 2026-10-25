@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """批量执行器：把题库逐条发给 Agent，收集回答与全过程事件。
 
 两种模式：
@@ -46,7 +45,7 @@ def apply_inproc_env(env_file=None, verbose=False) -> dict:
     2. 覆盖只在宿主机 direct 跑时才成立的项：
        - GO_SERVER_URL -> 127.0.0.1:8080（.env 里是 host.docker.internal，宿主不可解析）
        - NO_PROXY=*（本机系统代理会拦 akshare/东财直连；LLM 走 SiliconFlow 实测直连可用）
-       - STOCK_MCP_ENABLED=0（基准不走 MCP 子进程，工具契约与直连完全一致，启动更快）
+       - TOOL_CACHE_TTL=0（基准要测真实上游延迟，关掉工具结果缓存）
     3. DATABASE_URL 若指向 docker 内网主机名（postgres），改回 localhost。
     """
     env = load_env_file(env_file or (REPO_DIR / "server" / ".env"))
@@ -59,7 +58,7 @@ def apply_inproc_env(env_file=None, verbose=False) -> dict:
         "GO_SERVER_URL": "http://127.0.0.1:8080",
         "NO_PROXY": "*",
         "no_proxy": "*",
-        "STOCK_MCP_ENABLED": "0",
+        "TOOL_CACHE_TTL": "0",
     }
     for k, v in overrides.items():
         os.environ[k] = v
@@ -92,8 +91,9 @@ def _tool_digest(tool_results: list, max_chars: int = 1200) -> list:
 
 async def run_case_inproc(case: Case, graph, run_id: str) -> dict:
     """进程内跑一个用例（含多轮），返回结构化结果。"""
-    from core.state import initial_state
     from langchain_core.messages import HumanMessage
+
+    from core.state import initial_state
 
     thread_id = f"bench-{run_id}-{case.id}"
     config = {"configurable": {"thread_id": thread_id}}
@@ -208,8 +208,8 @@ async def run_case_inproc(case: Case, graph, run_id: str) -> dict:
 
 async def run_case_http(case: Case, base_url: str, run_id: str, timeout: float = 180.0) -> dict:
     """HTTP 模式跑一个用例（事件按 ndjson 解析）。"""
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     thread_id = f"bench-{run_id}-{case.id}"
@@ -315,12 +315,12 @@ async def run_batch(cases: list, mode: str = "inproc", run_id: str = None,
 
     if mode == "inproc":
         from langgraph.checkpoint.memory import MemorySaver
+
         from core.graph import build_graph
         graph = build_graph(MemorySaver())
 
     async def _one(case: Case):
         async with sem:
-            t0 = time.monotonic()
             if mode == "inproc":
                 res = await run_case_inproc(case, graph, run_id)
             else:

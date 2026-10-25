@@ -16,8 +16,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/encoding/simplifiedchinese"
 
-	"stock-agent-server/internal/httpclient"
 	"stock-agent-server/internal/domain/stockcode"
+	"stock-agent-server/internal/httpclient"
 )
 
 // quoteAPIBase 自建行情服务基地址（配置项 quote_api），为空时走内置腾讯源。
@@ -74,8 +74,8 @@ const (
 	tecPercent = 32 // 涨跌幅（%）
 )
 
-// tencentVarRe 匹配腾讯响应里的 v_sh600519="..."；
-// 此前用 Index(`="`) + LastIndex(`"`) 的写法在响应出现多余引号时会截错范围。
+// tencentVarRe 匹配腾讯响应里的 v_sh600519="..."；不能用 Index/LastIndex 截取，
+// 响应出现多余引号时会截错范围。
 var tencentVarRe = regexp.MustCompile(`v_[a-z0-9]+="([^"]*)"`)
 
 // fetchStockQuote 取一只股票的行情快照。
@@ -215,7 +215,8 @@ func fetchFromCustomAPI(ctx context.Context, codes []string) []*StockSnapshot {
 			snap, err := requestCustomQuote(gctx, code)
 			if err != nil || snap == nil {
 				log.Printf("fetch quote %s failed: %v", code, err)
-				return err
+				// 单只失败不取消同批其它请求：失败集合由调用方求差集得到
+				return nil
 			}
 			mu.Lock()
 			defer mu.Unlock()

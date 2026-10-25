@@ -1,7 +1,6 @@
 """数据库操作层：使用 psycopg async 操作 PostgreSQL。"""
 import json
 import logging
-from typing import Optional
 
 import psycopg
 import psycopg.errors
@@ -21,7 +20,7 @@ class Store:
 
     def __init__(self, database_url: str):
         self.database_url = database_url
-        self._pool: Optional[AsyncConnectionPool] = None
+        self._pool: AsyncConnectionPool | None = None
 
     async def connect(self):
         """初始化连接池"""
@@ -102,7 +101,7 @@ class Store:
         content_hash: str,
         embed_model: str,
         chunks: list[dict],
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         单事务写入：upsert document -> delete old chunks -> insert new chunks。
         

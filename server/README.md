@@ -1,13 +1,13 @@
 # 溜来 · 后端服务（server）
 
-技术栈：**Gin + GORM + PostgreSQL + go-redis/v9 + gorilla/websocket**
+技术栈：**Gin + GORM + PostgreSQL + go-redis/v9**（对话走 SSE，不保留 WebSocket）
 
 **仓库定位**：本目录与小程序工程 `stock-agent-miniapp` **平级**，是一个独立的 Go 后端服务，
 不属于任何单个小程序工程。后续其它页面（或其它端）需要后端能力时，一律在**本目录内按模块扩展**，
 不要再新建第二个后端工程。
 
 当前已实现「自选股」页面所需接口：添加自选（带成本价 / 持股数量）、查询列表（含浮动盈亏与涨跌排序）、
-手动刷新行情（含提醒检查与 WebSocket 推送）、提醒规则 CRUD（条件类型 / 阈值 / 基准周期 / 检查频率，
+手动刷新行情（含提醒检查与企业微信推送）、提醒规则 CRUD（条件类型 / 阈值 / 基准周期 / 检查频率，
 与「新增提醒」弹窗字段一致）、用户资料与头像。
 
 ---
@@ -54,12 +54,6 @@ curl -s http://127.0.0.1:8080/healthz
 | `UPLOAD_DIR` | `./uploads` | 上传根目录；头像存 `avatars/`，静态路由只暴露 `/uploads/avatars` |
 | `ENV` | `dev` | `dev` / `prod`。`prod` 下强制要求 JWT 与微信凭据 |
 | `ALLOW_ORIGINS` | `*` | CORS 允许的 Origin，逗号分隔；`*` 表示全部 |
-| `ASR_BASE_URL` | `https://api.siliconflow.cn/v1` | 语音转文字上游（OpenAI 兼容的 `/audio/transcriptions`） |
-| `ASR_API_KEY` | 回退 `OPENAI_API_KEY` | 上游密钥；两者都为空时 `/api/v1/asr/transcribe` 直接报「未配置」 |
-| `ASR_MODEL` | `FunAudioLLM/SenseVoiceSmall` | 上游 ASR 模型 |
-| `TENCENT_ASR_APP_ID` / `TENCENT_ASR_SECRET_ID` / `TENCENT_ASR_SECRET_KEY` | 空 | 腾讯云实时语音识别凭据；三项全配才启用 `/api/v1/ws/asr` 流式识别，否则该路由返回 503。小程序语音已改用微信同声传译插件，这两条 ASR 路由目前没有前端调用方 |
-| `TENCENT_ASR_ENGINE` | `16k_zh` | 实时识别引擎（电话场景可用 `8k_zh`） |
-| `TENCENT_ASR_MAX_CONNS` | `64` | 进程内同时存活的实时识别连接上限 |
 
 数值型配置（`REDIS_DB` 等）解析失败会直接终止启动：写错环境变量时静默回退默认值，
 问题会藏到运行期才暴露，不如启动时就报错。
@@ -84,8 +78,7 @@ server/
     quote/source.go             # fetchStockQuote（内置腾讯真实源 / 自建源，可替换）
     resp/resp.go                # 统一响应体 + resp() / JSONBytes 辅助函数
     model/user.go               # 跨模块共享的模型（User：登录与用户资料共用）
-    middleware/middleware.go    # Recovery / RequestID / CORS / Auth / AuthAllowQueryToken / RateLimit / AccessLog
-    ws/hub.go                   # WebSocket 连接中心 + Push
+    middleware/middleware.go    # Recovery / RequestID / CORS / Auth / RateLimit / AccessLog
     hook/hook.go                # 模块间事件（行情已更新）
     domain/stockcode/code.go    # 股票代码归一化 / 展示格式
     util/amount.go              # 金额与涨跌幅格式化
@@ -146,7 +139,6 @@ server/
 | GET | `/api/v1/alerts` | 本人提醒列表 | 是 |
 | PUT | `/api/v1/alerts/:id` | 修改提醒 | 是 |
 | DELETE | `/api/v1/alerts/:id` | 删除提醒 | 是 |
-| GET | `/api/v1/ws` | WebSocket 长连接 | 是 |
 
 ### 主数据（迁移 008）
 
@@ -161,7 +153,7 @@ server/
 - **行情与估值不在这两张表里**：它们是每日变动的快照，走 `/stock/quote` 的实时源 + 30s 缓存。
 - 这两张表刻意不进 `AutoMigrate`：结构与索引由 SQL 迁移持有，避免 GORM 与迁移脚本分叉。
 
-### Agent WS 事件契约（`/api/v1/ws/agent`）
+### Agent SSE 事件契约（`POST /api/v1/agent/stream`）
 
 网关只做透传，`data` 结构由 Python Agent（`agent/subgraphs/stock.py` 的 `_emit_structured`）约定；
 改卡片类型必须同步 `stock-agent-miniapp/pages/chat/chat.js` 的卡片工厂与本文本表。

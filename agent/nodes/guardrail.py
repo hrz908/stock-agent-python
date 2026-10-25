@@ -9,7 +9,7 @@ import re
 from langchain_core.messages import ToolMessage
 from langgraph.types import Overwrite
 
-from core.llm import count_message_tokens
+from core.llm import estimate_tokens
 
 # 常见注入/越权话术（中英），大小写不敏感
 _INJECTION_PATTERNS = [
@@ -36,6 +36,11 @@ _MSG_WINDOW = 40
 _MSG_TOKEN_BUDGET = 12000
 
 
+def _msg_tokens(msg) -> int:
+    c = getattr(msg, "content", "")
+    return estimate_tokens(c if isinstance(c, str) else str(c))
+
+
 def _trim_history(messages: list) -> list:
     """把 messages 裁到窗口内，返回可直接 Overwrite 的列表。
 
@@ -46,12 +51,17 @@ def _trim_history(messages: list) -> list:
     out = list(messages or [])
     if len(out) > _MSG_WINDOW:
         out = out[-_MSG_WINDOW:]
+    # 逐条算一次再从头丢：原实现在 while 里反复全量重算，
+    # 长会话每轮都要多编码几千 token，纯 CPU 浪费
+    costs = [_msg_tokens(m) for m in out]
+    total = sum(costs)
+    drop = 0
+    while drop < len(out) - 2 and total > _MSG_TOKEN_BUDGET:
+        total -= costs[drop]
+        drop += 1
+    out = out[drop:]
     while out and isinstance(out[0], ToolMessage):
         out = out[1:]
-    while len(out) > 2 and count_message_tokens(out) > _MSG_TOKEN_BUDGET:
-        out = out[1:]
-        while out and isinstance(out[0], ToolMessage):
-            out = out[1:]
     return out
 
 

@@ -3,3 +3,6 @@
 # 生产编排与 SQL 迁移同理，避免在 Windows 上编辑后带 CRLF 进去
 *.yml text eol=lf
 *.sql text eol=lf
+# Go 文件必须 LF：gofmt/golangci-lint 只认 LF，Windows 检出成 CRLF 会让 36 个文件
+# 全部报「not properly formatted」，把真正的 lint 问题淹没
+*.go text eol=lf

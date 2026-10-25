@@ -3,36 +3,36 @@ import logging
 import re
 import time
 from datetime import datetime
-from typing import List, Optional
 
-from langchain_core.callbacks import CallbackManagerForRetrieverRun, AsyncCallbackManagerForRetrieverRun
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForRetrieverRun,
+    CallbackManagerForRetrieverRun,
+)
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from langchain_openai import OpenAIEmbeddings
 
-import psycopg
-
 from config import (
-    DATABASE_URL,
+    EMBED_DIM,
+    ONLINE_EMBED_MODEL,
     OPENAI_API_BASE,
     OPENAI_API_KEY,
-    ONLINE_EMBED_MODEL,
-    EMBED_DIM,
-    RERANK_ENABLED,
-    RERANK_CANDIDATES,
-    RERANK_THRESHOLD,
-    RAG_RERANK_FILTER,
     RAG_PER_DOC,
+    RAG_RERANK_FILTER,
+    RERANK_CANDIDATES,
+    RERANK_ENABLED,
+    RERANK_THRESHOLD,
 )
+from db import get_pool
 from rag.reranker import rerank_scores
 
 logger = logging.getLogger("stocka.agent")
 
 # 混合检索 SQL 模板（RRF k=60），用 psycopg 命名参数：
 # 查询向量/全文 query 在模板里各出现多次，命名参数只传一份。
-# {join}/{where_vec}/{where_lex} 由 _build_search_sql 按过滤条件拼装；
-# 无过滤时两段为空，执行计划与旧版一致（不动 chunks 全表扫描的路径）。
-# similarity = 1 - 余弦距离，与 RAG_THRESHOLD 同尺度，供相关性判定（RRF 分只用于排序融合）。
+# {join}/{where_vec}/{where_lex} 由 _build_search_sql 按过滤条件拼装，无过滤时为空。
+# similarity 必须按 chunk 自身向量算：只在 lex 命中的行不在 vec CTE 里，
+# 若从 vec 取 dist 会得到 NULL→0，被 _clean_docs 的 sim_floor 整批丢掉。
 SEARCH_SQL = """
 WITH vec AS (
   SELECT c.id, (c.embedding <=> %(vec)s::vector) AS dist,
@@ -54,12 +54,11 @@ fused AS (
   FROM (SELECT id,rk FROM vec UNION ALL SELECT id,rk FROM lex) u GROUP BY id
 )
 SELECT c.id, c.content, d.title, d.source_path, d.id AS doc_id,
-       f.score, (1 - v.dist) AS similarity
+       f.score, (1 - (c.embedding <=> %(vec)s::vector)) AS similarity
 FROM fused f
 JOIN chunks c USING(id)
 JOIN documents d ON d.id=c.document_id
-LEFT JOIN vec v ON v.id = c.id
-ORDER BY f.score DESC LIMIT %(limit)s;
+ORDER BY f.score DESC, c.id LIMIT %(limit)s;
 """
 
 # 与 ingest/ashare/types.py 的 SOURCE_TYPE_LABELS 对齐；agent 不挂载 ingest 目录，故本地维护
@@ -104,13 +103,15 @@ def _normalize_since(value) -> str:
     return f"{text} 00:00:00+08:00"
 
 
-def _build_search_sql(stock_code: str = "", source_type: str = "", since: str = "") -> tuple[str, dict]:
+def _build_search_sql(
+    stock_code: str = "", source_type: str = "", since: str = ""
+) -> tuple[str, dict]:
     """按过滤条件拼 SQL；过滤列都在 ashare_documents 上，文件 ingest 的文档不会被选中。
 
     过滤必须下推到 vec/lex 两个 CTE 内：先过滤再取 Top50，否则特定股票/类型的
     片段可能根本进不了候选池，外层再过滤只会得到空结果。
     """
-    conditions: List[str] = []
+    conditions: list[str] = []
     params: dict = {}
     if stock_code:
         conditions.append("a.stock_codes && ARRAY[%(code)s]::text[]")
@@ -129,9 +130,27 @@ def _build_search_sql(stock_code: str = "", source_type: str = "", since: str = 
     return sql, params
 
 
-def _vec_literal(embedding: List[float]) -> str:
+def _vec_literal(embedding: list[float]) -> str:
     """list[float] -> pgvector 文本字面量 '[v0,v1,...]'。"""
     return "[" + ",".join(f"{x:.8f}" for x in embedding) + "]"
+
+
+# 进程级 embedder 单例：主图检索与 search_knowledge_base 工具各有一个 retriever 实例，
+# 但底层的 OpenAIEmbeddings 客户端（含连接池）没有理由建两份
+_embedder: OpenAIEmbeddings | None = None
+
+
+def get_embedder() -> OpenAIEmbeddings:
+    global _embedder
+    if _embedder is None:
+        _embedder = OpenAIEmbeddings(
+            model=ONLINE_EMBED_MODEL,
+            openai_api_base=OPENAI_API_BASE,
+            openai_api_key=OPENAI_API_KEY,
+            # 必须显式指定：Qwen3-4B 默认输出 2560 维，与库里的 1536 不匹配
+            dimensions=EMBED_DIM,
+        )
+    return _embedder
 
 
 class HybridRetriever(BaseRetriever):
@@ -151,24 +170,18 @@ class HybridRetriever(BaseRetriever):
 
     def _get_embedder(self) -> OpenAIEmbeddings:
         if self.embedder is None:
-            self.embedder = OpenAIEmbeddings(
-                model=ONLINE_EMBED_MODEL,
-                openai_api_base=OPENAI_API_BASE,
-                openai_api_key=OPENAI_API_KEY,
-                # 必须显式指定：Qwen3-4B 默认输出 2560 维，与库里的 1536 不匹配
-                dimensions=EMBED_DIM,
-            )
+            self.embedder = get_embedder()
         return self.embedder
 
     async def _run_candidates(
         self,
         query: str,
-        timings: Optional[dict] = None,
+        timings: dict | None = None,
         *,
         stock_code: str = "",
         source_type: str = "",
         since: str = "",
-    ) -> List[Document]:
+    ) -> list[Document]:
         """召回 + 重排打分，返回未截断的候选池。
 
         保持 RRF 序而非重排分序：线上 limit=N 拿到的是 RRF 前 N 条，
@@ -189,13 +202,15 @@ class HybridRetriever(BaseRetriever):
         )
         params = {**filter_params, "vec": vl, "q": query, "limit": limit}
         t1 = time.monotonic()
-        async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+        # 复用只读池：一轮对话里 RAG 漏斗和知识库工具会各触发一次检索
+        pool = await get_pool()
+        async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(sql, params)
                 rows = await cur.fetchall()
         if timings is not None:
             timings["sql_ms"] = int((time.monotonic() - t1) * 1000)
-        docs: List[Document] = []
+        docs: list[Document] = []
         for cid, content, title, source_path, doc_id, score, similarity in rows:
             docs.append(Document(
                 page_content=content,
@@ -213,7 +228,7 @@ class HybridRetriever(BaseRetriever):
             t2 = time.monotonic()
             try:
                 scores = await rerank_scores(query, [d.page_content for d in docs])
-                for d, s in zip(docs, scores):
+                for d, s in zip(docs, scores, strict=True):
                     d.metadata["rerank_score"] = s
             except Exception as e:  # noqa: BLE001 - 重排是增强项，挂了不能拖垮检索
                 logger.warning("重排失败，回退 RRF 排序: %s", e)
@@ -221,7 +236,7 @@ class HybridRetriever(BaseRetriever):
                 timings["rerank_ms"] = int((time.monotonic() - t2) * 1000)
         return docs
 
-    async def _run_search(self, query: str, **filters) -> List[Document]:
+    async def _run_search(self, query: str, **filters) -> list[Document]:
         docs = await self._run_candidates(query, **filters)
         # 重排关闭时全为 0 分，stable sort 保持 RRF 序，与旧行为一致
         docs.sort(key=lambda d: d.metadata.get("rerank_score", 0.0), reverse=True)
@@ -236,7 +251,7 @@ class HybridRetriever(BaseRetriever):
         stock_code: str = "",
         source_type: str = "",
         since: str = "",
-    ) -> List[Document]:
+    ) -> list[Document]:
         """带过滤的检索入口（工具层用）；非法过滤值会被忽略而不是报错。"""
         return await self._run_search(
             query, stock_code=stock_code, source_type=source_type, since=since
@@ -244,14 +259,20 @@ class HybridRetriever(BaseRetriever):
 
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
-    ) -> List[Document]:
-        # 检索本质是异步 IO，同步入口用 asyncio 桥接
+    ) -> list[Document]:
+        # 检索本质是异步 IO（httpx + psycopg 池），同步入口只在没有运行中事件循环时桥接；
+        # 在图里 asyncio.run 会直接抛 "cannot be called from a running event loop"
         import asyncio
-        return asyncio.run(self._run_search(query))
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._run_search(query))
+        raise RuntimeError("HybridRetriever 只支持异步调用，请使用 ainvoke()/asearch()")
 
     async def _aget_relevant_documents(
         self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
-    ) -> List[Document]:
+    ) -> list[Document]:
         return await self._run_search(query)
 
 
@@ -268,7 +289,9 @@ def _content_key(text: str) -> str:
     return _WS_RE.sub(" ", text or "").strip()
 
 
-def _clean_docs(docs: List[Document], sim_floor: float = 0.05, per_doc: int = RAG_PER_DOC) -> List[Document]:
+def _clean_docs(
+    docs: list[Document], sim_floor: float = 0.05, per_doc: int = RAG_PER_DOC
+) -> list[Document]:
     """对融合后的候选片段做轻量后处理，提升送入生成的质量。
 
     - 丢弃余弦相似度过低（< sim_floor）的噪声片段，避免无关资料污染回答；
@@ -282,7 +305,7 @@ def _clean_docs(docs: List[Document], sim_floor: float = 0.05, per_doc: int = RA
     seen_ids: set = set()
     seen_text: set = set()
     per_doc_count: dict = {}
-    out: List[Document] = []
+    out: list[Document] = []
     for d in docs:
         sim = d.metadata.get("similarity", 0.0) or 0.0
         if sim < sim_floor:
@@ -304,8 +327,8 @@ def _clean_docs(docs: List[Document], sim_floor: float = 0.05, per_doc: int = RA
     return out
 
 
-def _apply_rerank_filter(docs: List[Document], threshold: float = None,
-                         enabled: bool = None) -> List[Document]:
+def _apply_rerank_filter(docs: list[Document], threshold: float = None,
+                         enabled: bool = None) -> list[Document]:
     """按重排分再裁一次上下文（RAG_RERANK_FILTER 开关）。
 
     命中闸只看最高分，过线后低分片段照样进 prompt 和 sources；开启后

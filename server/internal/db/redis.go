@@ -8,8 +8,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// redisPingTimeout 启动探活超时；不复用 main 的 signal context，
-// 避免 Redis 挂起时拖住启动。与 postgres.go 的 pingTimeout 同名会冲突，故加前缀。
+// redisPingTimeout 启动探活超时；独立于 main 的 signal context，避免 Redis 挂起拖住启动。
 const redisPingTimeout = 3 * time.Second
 
 // NewRedis 建立 Redis 连接；poolSize > 0 时显式设置池大小（<= 0 用 go-redis 默认 10×CPU）。

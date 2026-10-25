@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -20,11 +21,18 @@ import (
 // 这里借用 ResponseController 把本连接放宽到「单次运行上限 + 余量」。
 const sseWriteTimeoutExtra = 15 * time.Second
 
-// ServeSSE 处理 POST /api/v1/agent/stream（H5 / 不支持 WS 的兜底）。
+// maxQueryRunes 单次提问字符上限：超过后每次 LLM 调用都要为同样的长文本付费，
+// 且 64KB 请求体上限挡不住「一条 6 万字问题」把上下文顶爆。
+const maxQueryRunes = 2000
+
+// ServeSSE 处理 POST /api/v1/agent/stream（小程序与 H5 共用）。
 // 请求体 {"query":"...","session_id":"..."}，响应 text/event-stream，
 // 每帧 event: {type}\ndata: {json}\n\n 并立即 Flush。
 func ServeSSE(c *gin.Context) {
 	userID := c.GetInt64("user_id")
+
+	// 这里只该收到一条提问的 JSON：不设上限时 20MB 的请求体会被整段读进内存
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 
 	var req RunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -35,12 +43,24 @@ func ServeSSE(c *gin.Context) {
 		resp.Fail(c, resp.CodeBadRequest, "query 不能为空")
 		return
 	}
+	if utf8.RuneCountInString(strings.TrimSpace(req.Query)) > maxQueryRunes {
+		resp.Fail(c, resp.CodeBadRequest, fmt.Sprintf("提问过长，最多 %d 字", maxQueryRunes))
+		return
+	}
 
 	ctx := c.Request.Context()
 
-	// 流尚未开始，可直接回标准 429，便于前端与监控区分「被限流」与「流内错误」
+	// 流尚未开始，可直接回标准 429，便于前端与监控区分「被限流」与「流内错误」；
+	// 对外只给中文提示，内部错误串留在服务端
 	if err := limiter.Allow(ctx, userID); err != nil {
-		resp.Fail(c, resp.CodeTooManyRequests, err.Error())
+		switch {
+		case errors.Is(err, ErrTooManyConcurrent):
+			resp.Fail(c, resp.CodeTooManyRequests, "当前同时进行的对话过多，请稍后再试")
+		case errors.Is(err, ErrQuotaExceeded):
+			resp.Fail(c, resp.CodeTooManyRequests, "今日提问次数已用完，明天再来吧")
+		default:
+			resp.Fail(c, resp.CodeTooManyRequests, "请求过于频繁，请稍后再试")
+		}
 		return
 	}
 	defer limiter.ReleaseConcurrent(ctx, userID)

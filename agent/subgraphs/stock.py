@@ -1,4 +1,4 @@
-r"""炒股 agent 子图（有界 ReAct 循环，经 MCP 工具集 / 直连工具取数）。
+r"""炒股 agent 子图（有界 ReAct 循环，进程内工具直连取数）。
 
 流程:
     tool_call --(有 tool_calls 且未超轮次)--> tool_execute --┐
@@ -16,7 +16,7 @@ tool_execute 完回到 tool_call，让模型看到结果再决定「继续调」
 - synthesize: 用 prompts/stock.xml + 累计 tool_results 流式生成回答，
   并把行情/K线/估值等结构化数据以 card/table 事件独立发射。
 
-工具源：数据工具经 tools/mcp_loader 优先从 MCP Server 加载，失败自动回退进程内直连；
+工具源：12 个取数 @tool 全部进程内构造，由 LLM 的 tool_calls 直接驱动（无子进程、无协议层）；
 另挂 search_knowledge_base 供模型补充研报/概念检索。
 卡片发射前过 pydantic 校验（subgraphs/cards.py），失败降级为纯文本。
 """
@@ -32,13 +32,13 @@ from typing import Literal
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
-from config import MAX_INPUT_TOKENS
-from core.llm import count_message_tokens, get_llm, is_context_overflow
-from core.template import render, load_template
+from config import MAX_INPUT_TOKENS, TOOL_CONCURRENCY
+from core.llm import estimate_tokens, get_llm, is_context_overflow, message_chars
 from core.state import AgentState, recent_turns
+from core.template import load_template, render
 from subgraphs import emit, emit_card, emit_table
 from subgraphs.cards import validate_card, validate_table
-from tools import get_tools
+from tools import get_tools, tool_cache_get, tool_cache_put
 from tools.rag_tool import search_knowledge_base
 
 logger = logging.getLogger("stocka.agent")
@@ -107,25 +107,28 @@ _TOOLS = None
 
 
 async def _ensure_tools() -> None:
-    """懒加载工具集：MCP Server 优先，失败回退进程内直连，再挂上知识库检索工具。
+    """懒加载工具集：进程内 @tool 直连 + 知识库检索工具。
 
-    工具源决策在 tools/mcp_loader（MCP FastMCP stdio 子进程 vs 直连 @tool），
-    两条路径的工具名 / 参数 / 返回契约完全一致；知识库检索工具恒为进程内 @tool。
+    全部是 LangChain 工具对象，由 LLM 的 tool_calls 直接驱动，不经过子进程或协议层。
     """
     global _TOOLS
     if _TOOLS is not None:
         return
-    try:
-        from tools import mcp_loader
-        base = await mcp_loader.aload_stock_tools()
-    except Exception:  # noqa: BLE001 - loader 内部已兜底，这里再保一层
-        base = get_tools()
-    tools = list(base)
+    tools = list(get_tools())
     try:
         tools.append(search_knowledge_base)
     except Exception:  # noqa: BLE001 - 检索工具构造失败不阻断取数工具
         pass
     _TOOLS = tools
+
+
+async def warm_tools() -> int:
+    """启动时预热工具集，返回工具数量；失败返回 0 由首请求重试。"""
+    try:
+        await _ensure_tools()
+        return len(_tools())
+    except Exception:  # noqa: BLE001 - 预热失败不影响启动
+        return 0
 
 
 def _tools() -> list:
@@ -137,6 +140,18 @@ def _tools() -> list:
 
 def _tools_by_name():
     return {t.name: t for t in _tools()}
+
+
+# 绑定工具后的模型（进程级缓存）：bind_tools 每次都要把 13 个工具的 schema 转一遍，
+# 而一轮对话里 tool_call 最多跑 3 次，重复构造纯属浪费
+_bound_llm = None
+
+
+def _tool_bound_llm():
+    global _bound_llm
+    if _bound_llm is None:
+        _bound_llm = get_llm(streaming=False, temperature=0.2).bind_tools(_tools())
+    return _bound_llm
 
 
 def _recent_history(state: dict, limit: int = 6) -> list:
@@ -407,7 +422,7 @@ def _normalize_tool_call(ai: AIMessage) -> AIMessage:
 
 
 async def tool_call(state: dict) -> dict:
-    # 首轮先懒加载工具集（MCP 优先、直连兜底，见 _ensure_tools）
+    # 首轮先懒加载工具集（进程内 @tool，见 _ensure_tools）
     await _ensure_tools()
     # 只喂本轮消息（含本轮已取到的工具结果），逐条截断正文，防止上下文膨胀
     run_msgs = [_shrink(m) for m in _current_run_messages(state)]
@@ -419,7 +434,7 @@ async def tool_call(state: dict) -> dict:
     nudge = _pending_nudge(state)
     if nudge:
         msgs.append(SystemMessage(content=nudge))
-    llm = get_llm(streaming=False, temperature=0.2).bind_tools(_tools())
+    llm = _tool_bound_llm()
     try:
         ai = await llm.ainvoke(msgs)
     except Exception as e:  # noqa: BLE001
@@ -474,6 +489,9 @@ async def tool_execute(state: dict) -> dict:
         return {}
 
     by_name = _tools_by_name()
+    # 并发闸门：模型一轮可能给出多个 tool_calls，akshare 走线程池，
+    # 全放开会让多个 DataFrame 同时驻留（3GB 机器上没必要为省几十毫秒冒这个险）
+    sem = asyncio.Semaphore(max(1, TOOL_CONCURRENCY))
 
     async def _run(tc):
         tool = by_name.get(tc["name"])
@@ -484,14 +502,23 @@ async def tool_execute(state: dict) -> dict:
             return tc["id"], name, {"ok": False, "error": f"unknown tool {name}"}
         # 调用前：通知前端开始取数（emit 为同步函数，内部拿不到 writer 时静默降级）
         emit("tool_start", {"tool": name, "label": f"正在获取{label}"})
+
+        cached = tool_cache_get(name, args)
+        if cached is not None:
+            # 命中缓存也要补一条 tool_end：前端靠它把 tool_start 插的占位卡收尾
+            emit("tool_end", {"tool": name, "ok": bool(cached.get("ok")), "ms": 0})
+            return tc["id"], name, cached
+
         t0 = time.monotonic()
-        try:
-            result = await tool.ainvoke(args)
-        except Exception as e:  # noqa: BLE001 - 工具本身已降级，这里再兜一层
-            result = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        async with sem:
+            try:
+                result = await tool.ainvoke(args)
+            except Exception as e:  # noqa: BLE001 - 工具本身已降级，这里再兜一层
+                result = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         # 调用后：回传成功与否及耗时
         emit("tool_end", {"tool": name, "ok": bool(result.get("ok")), "ms": elapsed_ms})
+        tool_cache_put(name, args, result)
         return tc["id"], name, result
 
     outcomes = await asyncio.gather(*[_run(tc) for tc in ai.tool_calls])
@@ -874,24 +901,65 @@ _OVERFLOW_REPLY = (
 )
 
 
+def _msg_tokens(msg) -> int:
+    c = getattr(msg, "content", "")
+    return estimate_tokens(c if isinstance(c, str) else str(c))
+
+
 def _fit_context(messages: list) -> list:
     """按 token 预算裁剪上下文：先丢历史，再截提示词。
 
     上游模型上下文 163840，超了直接 400（整条回答为空）。这里留足余量提前裁，
     避免再出现「问一句、答一句空」的故障。
     """
-    if count_message_tokens(messages) <= MAX_INPUT_TOKENS:
+    # 廉价下界：字符数不到预算的 30% 时必然没超（最坏 3 token/字），跳过整段编码
+    if message_chars(messages) < MAX_INPUT_TOKENS * 0.3:
         return messages
+    # 逐条算一次再决定丢几条：原实现在 while 里反复全量重算，每次都重新编码几万 token
+    costs = [_msg_tokens(m) for m in messages]
+    total = sum(costs)
+    if total <= MAX_INPUT_TOKENS:
+        return messages
+    # 1) 丢最老的历史（0 是系统提示、末尾是本轮问题，都保留）
     out = list(messages)
-    # 1) 先丢最老的历史（index 1 起是历史，末尾是本轮问题，两者都保留）
-    while len(out) > 2 and count_message_tokens(out) > MAX_INPUT_TOKENS:
-        del out[1]
+    idx = 1
+    while idx < len(out) - 1 and total > MAX_INPUT_TOKENS:
+        total -= costs[idx]
+        idx += 1
+    out = [out[0]] + out[idx:]
     # 2) 还超就截提示词正文（工具结果段在最前面，截尾保留取数结论）
-    if count_message_tokens(out) > MAX_INPUT_TOKENS:
-        sys_msg = out[0]
-        text = sys_msg.content if isinstance(sys_msg.content, str) else str(sys_msg.content)
+    if total > MAX_INPUT_TOKENS:
+        text = out[0].content if isinstance(out[0].content, str) else str(out[0].content)
         out[0] = SystemMessage(content=text[:max(2000, len(text) // 2)] + "\n…[上下文已裁剪]")
     return out
+
+
+# 进 prompt 前的字段级瘦身参数：资讯正文/研报摘要动辄上千字，
+# 整段截尾会把后面有用的取数结论一起挤掉
+_SLIM_STR_CHARS = 300
+_SLIM_LIST_ITEMS = 20
+
+
+def _slim_value(value):
+    if isinstance(value, str):
+        return value if len(value) <= _SLIM_STR_CHARS else value[:_SLIM_STR_CHARS] + "…"
+    if isinstance(value, list):
+        return [_slim_value(v) for v in value[:_SLIM_LIST_ITEMS]]
+    if isinstance(value, dict):
+        return {k: _slim_value(v) for k, v in value.items()}
+    return value
+
+
+def _slim_tool_results(tool_results: list) -> list:
+    """只影响进 prompt 的文本；卡片发射仍用原始 tool_results。"""
+    slim = []
+    for item in tool_results:
+        r = item.get("result") or {}
+        entry = {"tool": item.get("tool"), "ok": r.get("ok"), "data": _slim_value(r.get("data"))}
+        if r.get("error"):
+            entry["error"] = r["error"]
+        slim.append(entry)
+    return slim
 
 
 async def synthesize(state: dict) -> dict:
@@ -903,7 +971,8 @@ async def synthesize(state: dict) -> dict:
         emit("token", {"delta": fallback})
         return {"messages": [AIMessage(content=fallback)]}
     # 无工具结果（模型直接回答）时也给一个空上下文
-    tr_text = json.dumps(tool_results, ensure_ascii=False, default=str) if tool_results else "（无工具数据）"
+    tr_text = (json.dumps(_slim_tool_results(tool_results), ensure_ascii=False, default=str)
+               if tool_results else "（无工具数据）")
     # 同样防超限：用户要长区间 K 线时这段 JSON 会很大，截尾保留取数结论足够作答
     if len(tr_text) > _MAX_TOOL_CHARS:
         tr_text = tr_text[:_MAX_TOOL_CHARS] + "\n…[工具结果已截断]"
@@ -965,4 +1034,6 @@ def build_stock_subgraph():
     # 执行完工具回到 tool_call：让模型基于工具结果决定「继续调」还是「收尾作答」（多跳 ReAct）
     g.add_edge("tool_execute", "tool_call")
     g.add_edge("synthesize", END)
-    return g.compile()
+    # 子图不单独做 checkpoint：无 interrupt、也不跨调用记忆状态，
+    # 关掉后省掉每个 superstep 一份全量 state 的落库（父图仍记录整体状态）
+    return g.compile(checkpointer=False)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """检索评测集生成：抽样 chunk → small_llm 反向出题 → retrieval_cases.jsonl。
 
 用法（Windows 控制台务必带 -X utf8）：
@@ -147,7 +146,11 @@ async def main_async(args) -> None:
     out_path = Path(args.out)
     existing = []
     if args.append and out_path.exists():
-        existing = [json.loads(l) for l in out_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        existing = [
+            json.loads(line)
+            for line in out_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         print(f"[append] 已有 {len(existing)} 条")
 
     chunks = _sample_chunks(DATABASE_URL, args.chunks)

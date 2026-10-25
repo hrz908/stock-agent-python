@@ -15,12 +15,11 @@ import (
 	"gorm.io/gorm"
 
 	"stock-agent-server/internal/deps"
+	"stock-agent-server/internal/domain/stockcode"
 	"stock-agent-server/internal/quote"
 	"stock-agent-server/internal/resp"
-	"stock-agent-server/internal/domain/stockcode"
 	"stock-agent-server/internal/util"
 	"stock-agent-server/internal/wecom"
-	"stock-agent-server/internal/ws"
 )
 
 // 提醒防抖锁 TTL（秒）
@@ -359,7 +358,7 @@ func DeleteAlert(c *gin.Context) {
 
 /* ===================== 刷新后的提醒检查 ===================== */
 
-// checkAlerts 检查该用户的提醒规则，命中就推送（WebSocket 实时 + 企业微信应用消息，两条通道并存）。
+// checkAlerts 检查该用户的提醒规则，命中就推送企业微信（应用消息 + 群机器人两条通道）。
 // 防重复：SetNX alert:lock:{user_id}:{stock_code}:{condition_type}，TTL 60 秒，
 // 写不进去说明 60 秒内已经推过
 func checkAlerts(userID int64, ctx context.Context) {
@@ -406,20 +405,7 @@ func checkAlerts(userID int64, ctx context.Context) {
 			}
 		}
 
-		ws.Push(userID, map[string]any{
-			"type":            "alert",
-			"stock_code":      r.StockCode,
-			"stock_name":      snap.Name,
-			"price":           util.Money(snap.Price),
-			"change_percent":  snap.ChangePercent.StringFixed(2),
-			"condition_type":  r.ConditionType,
-			"threshold":       r.Threshold.StringFixed(2),
-			"volume_base":     r.VolumeBase,
-			"check_frequency": r.CheckFrequency,
-			"time":            now.Format(time.RFC3339),
-		})
-
-		// 企业微信两条通道与 WS 提醒并存：应用消息（@all，需可信 IP）与群机器人（Webhook）。
+		// 企业微信两条通道：应用消息（@all，需可信 IP）与群机器人（Webhook）。
 		// 异步发送避免同步 HTTP 阻塞刷新循环，失败只记日志
 		if wecom.Enabled() || wecom.WebhookEnabled() {
 			content := buildWecomText(snap, r, now)
@@ -576,7 +562,7 @@ func normalizeCondition(t string) string {
 	return strings.ToLower(strings.TrimSpace(t))
 }
 
-// buildWecomText 组装企业微信文本消息；字段与 WS 推送一致，text 类型不渲染 markdown，故用纯文本
+// buildWecomText 组装企业微信文本消息；text 类型不渲染 markdown，故用纯文本
 func buildWecomText(snap *quote.StockSnapshot, r AlertRule, t time.Time) string {
 	name := r.StockName
 	if name == "" {

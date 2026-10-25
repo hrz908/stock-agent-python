@@ -6,8 +6,8 @@ token 在 astream 循环里显式 emit("token", ...) 经 main.py 的 custom 模�
 """
 from datetime import datetime
 
-from langchain_core.messages import SystemMessage, AIMessage
-from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import AIMessage, SystemMessage
+from langgraph.graph import END, START, StateGraph
 
 from core.llm import get_llm
 from core.state import AgentState, recent_turns
@@ -42,4 +42,5 @@ def build_chat_subgraph():
     g.add_node("llm_stream", llm_stream)
     g.add_edge(START, "llm_stream")
     g.add_edge("llm_stream", END)
-    return g.compile()
+    # 单节点子图，无需 checkpoint
+    return g.compile(checkpointer=False)

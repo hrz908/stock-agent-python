@@ -108,7 +108,7 @@ async def _ingest(
         logger.error("嵌入失败: %s - %s", source_path, e)
         return "failed", doc_hash
 
-    for chunk, emb in zip(chunks, embeddings):
+    for chunk, emb in zip(chunks, embeddings, strict=True):
         chunk["embedding"] = emb
 
     doc_id = await store.transactional_upsert(
@@ -182,8 +182,8 @@ async def process_file(
 
         return status == "written"
 
-    except Exception as e:
-        logger.error("处理文件异常: %s - %s", path, e, exc_info=True)
+    except Exception:
+        logger.exception("处理文件异常: %s", path)
         return False
 
     finally:

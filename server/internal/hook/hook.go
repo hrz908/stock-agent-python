@@ -22,7 +22,7 @@ func RegisterQuoteUpdated(fn QuoteUpdatedFunc) {
 	quoteUpdated = append(quoteUpdated, fn)
 }
 
-// EmitQuoteUpdatedAsync 异步触发：提醒检查含 DB 查询、Redis SetNX、WS 推送，
+// EmitQuoteUpdatedAsync 异步触发：提醒检查含 DB 查询、Redis SetNX、企业微信推送，
 // 同步跑完会明显拖慢 refresh 的响应。
 // 用 WithoutCancel 脱离请求 ctx，否则请求结束 ctx 被取消会让检查中途死掉。
 func EmitQuoteUpdatedAsync(userID int64, ctx context.Context) {

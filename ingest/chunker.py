@@ -1,7 +1,6 @@
 """文本分块器：按 Markdown 标题层级切分，超长块滑动窗口再切。"""
 import logging
 import re
-from typing import Optional
 
 import tiktoken
 
@@ -34,7 +33,7 @@ def _sliding_window(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
-def _heading_level(line: str) -> Optional[int]:
+def _heading_level(line: str) -> int | None:
     """解析 Markdown 标题级别，非标题返回 None"""
     m = re.match(r'^(#{1,6})\s+(.+)$', line)
     if m:
@@ -65,9 +64,10 @@ def chunk_markdown(content: str, chunk_size: int = 512, overlap: int = 64) -> li
     for line in lines:
         level = _heading_level(line)
         if level is not None:
-            # 保存之前的 section
             if current_lines:
-                path = " > ".join(f"{'#' * l} {t}" for l, t in zip(heading_levels, heading_stack))
+                path = " > ".join(
+                    f"{'#' * lv} {t}" for lv, t in zip(heading_levels, heading_stack, strict=True)
+                )
                 sections.append({"heading_path": path, "lines": current_lines})
                 current_lines = []
 
@@ -85,7 +85,9 @@ def chunk_markdown(content: str, chunk_size: int = 512, overlap: int = 64) -> li
 
     # 最后一个 section
     if current_lines:
-        path = " > ".join(f"{'#' * l} {t}" for l, t in zip(heading_levels, heading_stack))
+        path = " > ".join(
+            f"{'#' * lv} {t}" for lv, t in zip(heading_levels, heading_stack, strict=True)
+        )
         sections.append({"heading_path": path, "lines": current_lines})
 
     # 对每个 section 做 token 级别的切分

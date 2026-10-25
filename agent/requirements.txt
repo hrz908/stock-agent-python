@@ -19,9 +19,8 @@ akshare>=1.17.0
 baostock>=0.8.9
 # 两者共同依赖，显式声明锁定下限
 pandas>=2.2.0
-# ===== MCP 工具源（LangGraph 架构 2026-10-23）=====
-# 取数工具经 FastMCP server 暴露（mcp/stock_server.py），由 adapters 加载；
-# 加载失败自动回退进程内直连（tools.get_tools）。mcp 必须钉 1.x：
-# 2.x 移除了 RequestContext，langchain-mcp-adapters 0.3.x 导入即报错。
-mcp>=1.2,<2
-langchain-mcp-adapters>=0.3,<0.4
+# ===== 工具层 =====
+# 取数工具全部是进程内 LangChain @tool，由 LLM 的 tool_calls 直接调用。
+# 原先的 MCP 通道（FastMCP stdio 子进程 + langchain-mcp-adapters）已移除：
+# 它会让容器里多跑一个 Python 进程（+250~450MB）、多装两个包，
+# 而 stdio 序列化往返比进程内直调更慢，没有任何收益。

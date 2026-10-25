@@ -1,5 +1,4 @@
-// Package upload 管理上传文件的落盘目录：目录由 main 启动时注入，
-// router 用同一个变量挂静态路由，保证「存到哪」和「从哪读」始终是同一个地方
+// Package upload 管理上传目录：main 注入一次，router 用同一个变量挂静态路由。
 package upload
 
 import (

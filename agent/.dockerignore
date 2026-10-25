@@ -11,5 +11,10 @@ venv/
 # 联调产物（tests/test_e2e.py 生成，不进镜像）
 agent_out_*.txt
 e2e_report.md
+# 测试与开发期入口不进生产镜像：benchmark 脚本还直连 DATABASE_URL，
+# 没必要随镜像分发（约 20 个文件 / 120KB）
+tests/
+pyproject.toml
+app/dev_server.py
 Dockerfile
 .dockerignore

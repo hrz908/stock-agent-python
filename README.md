@@ -1,12 +1,12 @@
 # 溜来 · stock-agent-rag
 
-股票问答 Agent 多服务仓库（monorepo）。微信小程序提问 → Go 网关鉴权/限流/代理 → Python Agent（LangGraph + RAG + MCP 工具）检索与生成 → pgvector / Redis 持久化。
+股票问答 Agent 多服务仓库（monorepo）。微信小程序提问 → Go 网关鉴权/限流/代理 → Python Agent（LangGraph + RAG + 进程内工具）检索与生成 → pgvector / Redis 持久化。
 
 ## 仓库结构
 
 | 目录 | 技术栈 | 职责 |
 |---|---|---|
-| `agent/` | Python (FastAPI + LangGraph) | 问答核心：意图路由、RAG 漏斗、子图（stock/chat/rag）、工具与 MCP |
+| `agent/` | Python (FastAPI + LangGraph) | 问答核心：意图路由、RAG 漏斗、子图（stock/chat/rag）、进程内工具层 |
 | `server/` | Go (gin + gorm) | API 网关：JWT 鉴权、限流、行情/自选/预警/用户、A股主数据（搜索兜底/资料）等业务模块、Agent 流式代理 |
 | `ingest/` | Python | 文档入库管线：加载 → 切分 → 向量化 → 写入 pgvector；`ashare/` 为 A股语料采集与主数据同步（股票清单/行业/概念） |
 | `stock-agent-miniapp/` | 微信小程序 | 前端：对话、行情、自选、预警、语音输入 |

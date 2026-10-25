@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -24,6 +25,10 @@ const quoteCacheTTL = 30 * time.Second
 // maxLimit 单次最多返回 10 条，避免前端渲染过多、防恶意参数拖慢后端
 const maxLimit = 10
 
+// maxSearchRunes 搜索词长度上限：q 会拼进 Redis key（每个新 query 一条缓存），
+// 不限制时几 KB 的 query 就能把内存和上游请求一起放大
+const maxSearchRunes = 32
+
 // SearchStock GET /api/v1/stocks/search?q=<query>&limit=5
 // 股票模糊搜索，用于添加自选时的下拉联想。
 // 走 Redis 缓存：搜索高频但实时性低（同 query 一小时内结果稳定）；
@@ -32,6 +37,10 @@ func SearchStock(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	if q == "" {
 		resp.OK(c, []quote.SearchResult{})
+		return
+	}
+	if utf8.RuneCountInString(q) > maxSearchRunes {
+		resp.Fail(c, resp.CodeBadRequest, "搜索词过长")
 		return
 	}
 

@@ -12,6 +12,27 @@ from config import OPENAI_API_BASE, OPENAI_API_KEY, RERANK_MODEL, RERANK_TIMEOUT
 
 logger = logging.getLogger("stocka.agent")
 
+# 共享客户端：重排是每次检索都走的高频旁路，每次新建 client 都要重新握 TLS
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(
+            timeout=RERANK_TIMEOUT,
+            limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
+        )
+    return _client
+
+
+async def close_rerank_client() -> None:
+    """进程退出时关闭共享客户端（可选调用）。"""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
 
 async def rerank_scores(query: str, texts: list[str]) -> list[float]:
     """返回与 texts 等长的相关性分数（0~1，越大越相关）。
@@ -32,10 +53,9 @@ async def rerank_scores(query: str, texts: list[str]) -> list[float]:
     }
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
 
-    async with httpx.AsyncClient(timeout=RERANK_TIMEOUT) as client:
-        resp = await client.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+    resp = await _get_client().post(url, json=payload, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
 
     # 接口只回 results 数组，按 index 回填，避免依赖其返回顺序
     scores = [0.0] * len(texts)

@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	"stock-agent-server/internal/agent"
-	"stock-agent-server/internal/asr"
 	"stock-agent-server/internal/auth"
 	"stock-agent-server/internal/config"
 	"stock-agent-server/internal/db"
@@ -22,13 +21,11 @@ import (
 	"stock-agent-server/internal/upload"
 	"stock-agent-server/internal/wechat"
 	"stock-agent-server/internal/wecom"
-	"stock-agent-server/internal/ws"
 )
 
 func main() {
 	cfg := config.Load()
 
-	// 退出信号：收到后走优雅关闭
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -63,16 +60,13 @@ func main() {
 	deps.Init(pg, rdb)
 
 	auth.Init(cfg.JWTSecret, cfg.JWTTTL)
-	// 行情源与批量参数：超时 / 并发 / 缓存 TTL 统一由配置注入
 	quote.Init(cfg.QuoteAPI,
 		cfg.HTTP.QuoteTimeout, cfg.HTTP.SearchTimeout, cfg.HTTP.QuoteCacheTTL,
 		cfg.HTTP.QuoteFetchLimit, cfg.HTTP.QuoteBatchSize, cfg.HTTP.QuoteMgetChunk)
 	// 小程序凭据：两个都有值时登录走微信 code2session，否则退化为演示账号
 	wechat.Init(cfg.WechatAppID, cfg.WechatSecret, cfg.HTTP.WechatTimeout)
-	// 企业微信：应用消息（@all，需可信 IP）与群机器人 Webhook 两条旁路通道，均与 WS 提醒并存
+	// 企业微信：应用消息（@all，需可信 IP）与群机器人 Webhook 两条提醒通道
 	wecom.Init(cfg.WeComCorpID, cfg.WeComSecret, cfg.WeComAgentID, cfg.WeComWebhook, cfg.HTTP.WecomTimeout)
-	// 行情提醒 WS hub 连接上限（每用户 / 全局）
-	ws.Configure(cfg.Hub.MaxPerUser, cfg.Hub.MaxTotal)
 	if err := upload.Init(cfg.UploadDir); err != nil {
 		log.Fatalf("init upload dir: %v", err)
 	}
@@ -85,17 +79,10 @@ func main() {
 		Concurrent:       cfg.Agent.Concurrent,
 		DailyQuota:       cfg.Agent.DailyQuota,
 		ProxyConcurrency: cfg.Agent.ProxyConcurrency,
-		WSMaxConns:       cfg.Agent.WSMaxConns,
 		RunTimeout:       cfg.Agent.RunTimeout,
 		TTFTTimeout:      cfg.Agent.TTFTTimeout,
 		MaxLineBytes:     cfg.Agent.MaxLineMB << 20,
 	})
-
-	// 语音转文字：同样要在 router.New 之前注入，否则 handler 读到空配置
-	asr.Init(cfg.ASRBaseURL, cfg.ASRAPIKey, cfg.ASRModel, cfg.HTTP.ASRTimeout)
-	// 实时语音识别：腾讯云凭据与连接闸门（未配置时该路由返回 503）
-	asr.InitStream(cfg.TencentASR.AppID, cfg.TencentASR.SecretID, cfg.TencentASR.SecretKey,
-		cfg.TencentASR.Engine, cfg.TencentASR.MaxConns)
 
 	srv := &http.Server{
 		Addr:    cfg.Addr,
@@ -126,10 +113,6 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
-
-	// 长连接先关：srv.Shutdown 不会等待被 hijack 的 WebSocket，
-	// 不主动关会一直等到上面的超时才被硬断
-	ws.CloseAll()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("shutdown: %v", err)

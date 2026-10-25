@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """会话历史接口（/sessions*）契约测试 —— 「新对话」按钮的后端链路。
 
 Go 网关的单测见 server/internal/agent/sessions_test.go，那里覆盖「鉴权 + 转发」；
@@ -23,16 +22,14 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 关掉 MCP 通道：它会拉起 stdio 子进程（akshare 导入慢），与会话接口无关
-os.environ["STOCK_MCP_ENABLED"] = "0"
 # TestClient 会把每次请求打成 INFO 日志，淹掉测试结果
 logging.disable(logging.INFO)
 
 from fastapi.testclient import TestClient  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage  # noqa: E402
 
-from core import checkpointer  # noqa: E402
 from app import main  # noqa: E402
+from core import checkpointer  # noqa: E402
 from core import sessions as sessions_mod  # noqa: E402
 
 USER = "u_42"
@@ -193,7 +190,7 @@ def test_delete_session_invalid_id():
 
 
 def test_thread_id_contract():
-    """thread_id 口径必须与 Go 网关（ws_agent.go / sse_agent.go）一致。"""
+    """thread_id 口径必须与 Go 网关 sse_agent.go 一致。"""
     assert sessions_mod.thread_id_of(USER, SID) == f"default:{USER}:{SID}"
     # 冒号只允许出现在拼接里：session_id 自身含冒号会伪造出他人的 thread
     assert not sessions_mod.valid_session_id("a:b")

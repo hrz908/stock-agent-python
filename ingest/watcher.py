@@ -3,8 +3,8 @@ import asyncio
 import logging
 import threading
 import time
+from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Callable, Coroutine, Optional
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -34,7 +34,7 @@ class IngestHandler(FileSystemEventHandler):
         self.process_callback = process_callback
         self.delete_callback = delete_callback
         self._pending: dict[str, float] = {}  # path -> last_event_time
-        self._timers: dict[str, Optional[threading.Timer]] = {}
+        self._timers: dict[str, threading.Timer | None] = {}
         self._lock = threading.Lock()
 
     def _is_supported(self, path: str) -> bool:

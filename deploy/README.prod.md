@@ -72,13 +72,12 @@ sudo bash scripts/deploy.sh ps              # 四个容器全部 Up
 
 ```js
 develop: {
-  apiBase: 'https://<服务器IP>',
-  wsBase:  'wss://<服务器IP>'
+  apiBase: 'https://<服务器IP>'
 },
 ```
 
 2. `project.config.json` 的 `setting.urlCheck` 已是 `false`（等价于开发者工具勾选「不校验合法域名、TLS 版本以及 HTTPS 证书」），**自签名证书 + IP 直连**可以正常调试。
-3. 开发者工具编译预览 / 真机调试，验证：登录、行情卡、AI 对话（WebSocket）、语音、提醒。
+3. 开发者工具编译预览 / 真机调试，验证：登录、行情卡、AI 对话（SSE）、语音、提醒。
 
 > 注意：此配置只能用于开发版/调试。正式版提交审核必须用**已备案域名 + CA 证书**（见阶段二）。
 
@@ -163,7 +162,7 @@ ssl_certificate_key /etc/nginx/ssl/stock-agent.key;
   （代码里的默认值已删，现在三项必须来自 `.env`）。收尾动作：
   1. 企业微信管理后台 → 应用管理 → 自建应用 →「查看」→ **重置 Secret**（旧值立即作废）；
   2. 把新的 `WECOM_CORP_ID / WECOM_SECRET / WECOM_AGENT_ID` 填进 `deploy/.env`——`wecom.Enabled()` 要求三项齐全，只填 secret 不生效；
-  3. `sudo bash scripts/deploy.sh restart`。不填的后果：企业微信推送失效，小程序内 WebSocket 提醒不受影响。
+  3. `sudo bash scripts/deploy.sh restart`。不填的后果：企业微信推送失效；小程序内提醒仍靠刷新行情时触发检查，不受影响。
 - **自签名证书只用于阶段一调试**，别用于正式版。
 - `.env` 含全部生产密钥，只在服务器上存在；仓库里只有 `.env.production.example` 模板。
 - **模板不会自动同步到 `.env`**：`.env` 仅在首次部署时从模板复制一次，之后 `update` 只做 `git pull + 重建`，模板里新增的配置项不会自己出现在生产。`deploy` / `update` 会顺手跑一次 `env-check` 打印差异，确认后执行 `sudo bash scripts/deploy.sh env-append` 补齐（先备份，补的是模板默认值）。

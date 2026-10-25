@@ -4,7 +4,6 @@ import { get, post, del } from '../utils/request';
 
 const API = '/api/v1';
 
-// 查询自选股列表
 // filter: all | up | down；order: 可选 asc | desc（仅 filter=all 时生效）
 // 返回：{ list, total_profit, total_profit_rate, up_count, down_count }
 export function fetchList(filter = 'all', order = '') {
@@ -13,14 +12,13 @@ export function fetchList(filter = 'all', order = '') {
   return get(`${API}/watchlist`, data);
 }
 
-// 添加 / 更新自选股
 // payload: { stock_code, cost_price?, quantity? }
 // 重复添加时后端只更新成本与数量（Upsert），并返回原记录 id
 export function add(payload) {
   return post(`${API}/watchlist`, payload);
 }
 
-// 手动刷新行情（含提醒检查与 WebSocket 推送）
+// 手动刷新行情（后端顺带检查提醒规则，命中走企业微信推送）
 // 返回结构与 fetchList 一致，便于前端直接替换列表与统计
 export function refresh(filter = 'all', order = '') {
   const data = { filter };

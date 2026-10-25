@@ -30,9 +30,8 @@ type AgentProxy struct {
 	maxLineSize int
 }
 
-// NewAgentProxy 创建代理。
-// 不设 http.Client.Timeout：流读取时长不可预估，超时统一由 runCtx 控制，避免长流被掐断。
-// 共享 Transport 并放宽空闲连接（MaxIdleConnsPerHost=64），避免每次运行重走握手。
+// NewAgentProxy 创建代理。不设 http.Client.Timeout：流读取时长不可预估，
+// 超时统一由 runCtx 控制，避免长流被掐断；Transport 复用空闲连接，避免每次运行重走握手。
 func NewAgentProxy(opts Options) *AgentProxy {
 	return &AgentProxy{
 		baseURL:     strings.TrimRight(opts.BaseURL, "/"),
@@ -48,12 +47,14 @@ func NewAgentProxy(opts Options) *AgentProxy {
 // （goroutine 结束时两者均关闭，errs 至多一个值）；取消 ctx 会提前终止并取消上游请求。
 // sessionID 仅用于会话注册（registerSession），失败不阻断主流程。
 func (p *AgentProxy) StreamRun(ctx context.Context, threadID, sessionID, query, userID string) (<-chan Event, <-chan error) {
-	events := make(chan Event, cap(p.sem))
+	// 缓冲取小值：背压本来就是期望行为，缓冲越大越容易把大卡片事件堆在内存里
+	events := make(chan Event, 8)
 	errs := make(chan error, 1)
 
-	// 会话注册是旁路逻辑，超时/失败只记日志；
-	// 放在占槽之前，避免与推理抢配额、被 429 挡住
-	p.registerSession(ctx, sessionID, userID, query)
+	// 会话注册是旁路逻辑：异步执行并脱离请求 ctx。
+	// 同步跑会让每个提问在首个 token 前多等一次上游往返（最多 2s），
+	// 用 WithoutCancel 则客户端断开也能把标题写进去
+	go p.registerSession(context.WithoutCancel(ctx), sessionID, userID, query)
 
 	go func() {
 		// 关闭顺序 LIFO：先 errs 后 events，

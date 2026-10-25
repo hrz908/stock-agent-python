@@ -9,12 +9,12 @@ log_agent_run 供 main.py 在 done 事件前调用，把一轮运行写入 agent
 """
 import logging
 
-import psycopg
-import redis.asyncio as aioredis
 from langchain_core.messages import AIMessage, HumanMessage
 
-from config import DATABASE_URL, REDIS_URL, SUMMARY_TOKEN_LIMIT
-from core.llm import get_small_llm, count_message_tokens
+from config import SUMMARY_TOKEN_LIMIT
+from core.llm import count_message_tokens, get_small_llm, message_chars
+from core.pg import get_pool
+from core.redis import get_redis
 
 logger = logging.getLogger("stocka.agent")
 
@@ -23,16 +23,6 @@ _DISCLAIMER = "\n\n> 以上信息仅供参考，不构成任何投资建议。�
 # 个股相关意图：这些回答需要挂免责声明。
 # stock = 经 RAG 漏斗直接作答；stock_agent = 漏斗未命中后由炒股 agent 取数作答
 _STOCK_INTENTS = {"stock", "stock_agent"}
-
-_redis = None
-
-
-def _get_redis():
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
-    return _redis
-
 
 def _collect_usage(messages: list) -> dict:
     """从消息的 usage_metadata 聚合 token 用量。"""
@@ -49,6 +39,9 @@ def _collect_usage(messages: list) -> dict:
 async def _roll_summary(state: dict) -> None:
     """超阈值时做滚动摘要写 Redis；失败静默。"""
     messages = state.get("messages", [])
+    # 先用字符数做廉价下界：短会话完全不必惊动 tiktoken
+    if message_chars(messages) < SUMMARY_TOKEN_LIMIT * 0.3:
+        return
     if count_message_tokens(messages) <= SUMMARY_TOKEN_LIMIT:
         return
     lines = []
@@ -63,13 +56,16 @@ async def _roll_summary(state: dict) -> None:
         return
     try:
         llm = get_small_llm(streaming=False, temperature=0.0)
-        resp = await llm.ainvoke([HumanMessage(
-            content="请把以下对话压缩成简洁的中文摘要，保留关键实体、结论与用户偏好：\n" + "\n".join(lines)
-        )])
+        prompt = (
+            "请把以下对话压缩成简洁的中文摘要，保留关键实体、结论与用户偏好：\n"
+            + "\n".join(lines)
+        )
+        resp = await llm.ainvoke([HumanMessage(content=prompt)])
         summary = (resp.content or "").strip()
         if summary:
-            r = _get_redis()
-            await r.set(f"agent:summary:{state.get('thread_id','')}", summary, ex=7 * 24 * 3600)
+            await get_redis().set(
+                f"agent:summary:{state.get('thread_id','')}", summary, ex=7 * 24 * 3600
+            )
     except Exception:  # noqa: BLE001
         pass
 
@@ -87,8 +83,14 @@ async def log_agent_run(
     error_code: str = None,
 ) -> None:
     """写一行 agent_runs 审计记录；失败只记日志，绝不阻断响应流。"""
+    # user_id 列是 BIGINT NOT NULL：非数字身份（调试请求）直接跳过，
+    # 否则每次插入都会因约束失败，审计行静默丢失
+    if user_id is None:
+        logger.debug("skip agent_runs insert: non-numeric user_id")
+        return
     try:
-        async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+        pool = await get_pool()
+        async with pool.connection() as conn:
             await conn.execute(
                 """
                 INSERT INTO agent_runs (user_id, thread_id, intent, confidence,

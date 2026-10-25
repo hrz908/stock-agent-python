@@ -25,12 +25,6 @@ linters:
       - legacy
       - std-error-handling
     rules:
-      # WS 写失败 / 心跳写失败是有意忽略的：客户端已断开，停止转发即可，
-      # 每次都判错只会淹没真问题。单引号包住，反斜杠才是字面量
-      - path: internal/agent/ws_agent.go
-        linters: [errcheck]
-        text: 'writeJSON|writePing|ws\.Close|SetWriteDeadline'
-
       # 限流是旁路逻辑：Redis 故障时放行业务请求（代码里已注明 fail-open）
       - path: internal/middleware/middleware.go
         linters: [errcheck]

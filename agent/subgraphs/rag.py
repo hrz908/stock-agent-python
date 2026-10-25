@@ -14,15 +14,15 @@ import logging
 from datetime import datetime
 from typing import Literal
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
+from config import RAG_THRESHOLD, RAG_TOP_K, RERANK_THRESHOLD
 from core.llm import get_llm, get_small_llm
 from core.state import AgentState, recent_turns
-from config import RAG_THRESHOLD, RERANK_THRESHOLD, RAG_TOP_K
-from rag.retriever import build_retriever
 from core.template import render
+from rag.retriever import build_retriever
 from subgraphs import emit
 
 logger = logging.getLogger("stocka.agent")
@@ -67,6 +67,18 @@ class _Judge(BaseModel):
 # 判读上下文上限（字符）：只取片段开头，够判主题与信息量即可
 _JUDGE_MAX_CHARS = 4000
 
+# 结构化判读的 runnable 缓存：with_structured_output 每次都会重新包装 schema
+_judge_runnable = None
+
+
+def _get_judge_runnable():
+    global _judge_runnable
+    if _judge_runnable is None:
+        _judge_runnable = get_small_llm(
+            streaming=False, temperature=0.0
+        ).with_structured_output(_Judge)
+    return _judge_runnable
+
 
 async def _judge_can_answer(query: str, retrieved: list) -> bool:
     """LLM 判读检索片段能否回答用户问题。
@@ -81,8 +93,7 @@ async def _judge_can_answer(query: str, retrieved: list) -> bool:
         for i, r in enumerate(retrieved, 1)
     )[:_JUDGE_MAX_CHARS]
     try:
-        small = get_small_llm(streaming=False, temperature=0.0)
-        verdict = await small.with_structured_output(_Judge).ainvoke([
+        verdict = await _get_judge_runnable().ainvoke([
             HumanMessage(content=render("rag_judge.xml", query=query, passages=passages))
         ])
         return bool(verdict.can_answer)
@@ -187,4 +198,5 @@ def build_rag_subgraph():
     })
     g.add_edge("escalate", END)
     g.add_edge("generate", END)
-    return g.compile()
+    # 无 interrupt、无跨调用记忆：不单独落 checkpoint，省一次全量 state 写库
+    return g.compile(checkpointer=False)

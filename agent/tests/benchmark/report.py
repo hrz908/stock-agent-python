@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """报告生成：单次测试报告 + A/B 对比报告（markdown）。"""
 from datetime import datetime
 from pathlib import Path

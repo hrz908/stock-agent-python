@@ -13,11 +13,11 @@ prune_thread_checkpoints 每轮 run 前删旧版本、补回最新一份（行�
 import logging
 import re
 
-import psycopg
-import redis.asyncio as aioredis
 from langchain_core.messages import AIMessage, HumanMessage
 
-from config import DATABASE_URL, REDIS_URL, SESSION_KEEP_MAX, SESSION_LIST_MAX
+from config import SESSION_KEEP_MAX, SESSION_LIST_MAX
+from core.pg import get_pool
+from core.redis import get_redis
 
 logger = logging.getLogger("stocka.agent")
 
@@ -49,7 +49,7 @@ def valid_session_id(session_id: str) -> bool:
 
 
 def thread_id_of(user_id: str, session_id: str) -> str:
-    """与 Go 网关（ws_agent.go / sse_agent.go）一致的 thread_id 拼装口径。"""
+    """与 Go 网关 sse_agent.go 一致的 thread_id 拼装口径。"""
     return f"default:{user_id}:{session_id}"
 
 
@@ -58,7 +58,8 @@ async def ensure_sessions_table() -> None:
     global _ensured
     if _ensured:
         return
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_pool()
+    async with pool.connection() as conn:
         await conn.execute(_TABLE_SQL)
         await conn.execute(_INDEX_SQL)
         await conn.commit()
@@ -75,7 +76,9 @@ async def _ensure() -> None:
             logger.warning("ensure chat_sessions table failed: %s", e)
 
 
-async def upsert_session(user_id: str, session_id: str, title: str, auto_title: bool = False) -> None:
+async def upsert_session(
+    user_id: str, session_id: str, title: str, auto_title: bool = False
+) -> None:
     """注册/刷新会话。auto_title=true 表示这是「新对话」占位行。
 
     标题口径：只有占位行（或空标题）会被真实提问替换，已有真实标题的只更新 updated_at，
@@ -86,7 +89,8 @@ async def upsert_session(user_id: str, session_id: str, title: str, auto_title: 
         title = (title or "").strip()[:40]
         if not title:
             title = "新对话"
-        async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+        pool = await get_pool()
+        async with pool.connection() as conn:
             await conn.execute(
                 """
                 INSERT INTO chat_sessions (user_id, session_id, title, auto_title)
@@ -109,7 +113,8 @@ async def upsert_session(user_id: str, session_id: str, title: str, auto_title: 
 async def list_sessions(user_id: str, limit: int = SESSION_LIST_MAX) -> list:
     """按最近活跃倒序列出会话（不含消息体，切会话时按需拉取）。"""
     await _ensure()
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -164,7 +169,8 @@ async def session_messages(user_id: str, session_id: str) -> list:
 async def delete_session(user_id: str, session_id: str) -> bool:
     """删除会话：注册行 + checkpoints + Redis 滚动摘要；返回是否删过。"""
     await _ensure()
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 "DELETE FROM chat_sessions WHERE user_id = %s AND session_id = %s",
@@ -187,9 +193,7 @@ async def _drop_thread(thread_id: str) -> None:
     except Exception as e:  # noqa: BLE001
         logger.warning("adelete_thread failed (%s): %s", thread_id, e)
     try:
-        r = aioredis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
-        await r.delete(f"agent:summary:{thread_id}")
-        await r.aclose()
+        await get_redis().delete(f"agent:summary:{thread_id}")
     except Exception:  # noqa: BLE001 - 摘要清理失败无关紧要
         pass
 
@@ -200,7 +204,8 @@ async def _evict_old_sessions(user_id: str) -> None:
     没有这道闸，会话数本身也会无限增长。限额取足（默认 50），正常使用碰不到；
     碰到的场景是脚本 / 误用。
     """
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """

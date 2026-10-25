@@ -114,7 +114,7 @@ func parseOrigins(raw string) map[string]bool {
 // user_id 只从这里取，禁止从请求体 / query 读取，防越权。
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		uid, err := auth.ParseToken(bearer(c, false))
+		uid, err := auth.ParseToken(bearer(c))
 		if err != nil || uid <= 0 {
 			resp.Fail(c, resp.CodeUnauthorized, "未登录或登录已失效")
 			c.Abort()
@@ -125,35 +125,17 @@ func Auth() gin.HandlerFunc {
 	}
 }
 
-// AuthAllowQueryToken 同 Auth，额外允许 ?token= 兜底，仅供 WS 握手（无法带自定义请求头）。
-// token 会留在代理日志与浏览器历史，故不对普通接口开放。
-func AuthAllowQueryToken() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		uid, err := auth.ParseToken(bearer(c, true))
-		if err != nil || uid <= 0 {
-			resp.Fail(c, resp.CodeUnauthorized, "未登录或登录已失效")
-			c.Abort()
-			return
-		}
-		c.Set("user_id", uid)
-		c.Next()
-	}
-}
-
-func bearer(c *gin.Context, allowQuery bool) string {
+// bearer 只认 Authorization 头：?token= 会落进代理日志与浏览器历史，不保留 query 传参。
+func bearer(c *gin.Context) string {
 	h := c.GetHeader("Authorization")
 	if len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
 		return strings.TrimSpace(h[7:])
-	}
-	if allowQuery {
-		return strings.TrimSpace(c.Query("token"))
 	}
 	return ""
 }
 
 // windowScript 滑动窗口限流：先清理窗口外记录再计数，「放行才写入」，
-// 被 429 的请求不占窗口容量（旧实现先 ZAdd 后判断，被拒请求仍抬升计数，阈值偏紧）。
-// 读-判-写在一段 Lua 内完成，杜绝并发竞态。
+// 被 429 的请求不占窗口容量；读-判-写在一段 Lua 内完成，杜绝并发竞态。
 var windowScript = redis.NewScript(`
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
@@ -174,8 +156,14 @@ return 1
 `)
 
 // RateLimit 基于 Redis 有序集合的滑动窗口限流。
-// name 区分限流域（"ip" / "login" / "asr" 互不共享窗口），ident 为限流主体（IP 或用户 ID）。
+// name 区分限流域（"ip" / "login" / "user" 互不共享窗口），ident 为限流主体（IP 或用户 ID）。
 func RateLimit(name, ident string, limit int64, window time.Duration) gin.HandlerFunc {
+	return rateLimit(name, limit, window, func(*gin.Context) string { return ident })
+}
+
+// rateLimit 真正的滑动窗口实现：identOf 在请求到达时才求值（IP / 用户 ID 都要等 context）。
+// 处理器在注册阶段构造一次，不能每个请求都新建闭包（会重复分配 seq 与脚本对象）。
+func rateLimit(name string, limit int64, window time.Duration, identOf func(*gin.Context) string) gin.HandlerFunc {
 	var seq int64
 	return func(c *gin.Context) {
 		rdb := deps.RDB
@@ -184,6 +172,7 @@ func RateLimit(name, ident string, limit int64, window time.Duration) gin.Handle
 			c.Next()
 			return
 		}
+		ident := identOf(c)
 		ctx := c.Request.Context()
 		key := "rl:" + name + ":" + ident
 		now := time.Now().UnixMilli()
@@ -215,23 +204,30 @@ func LoginRateLimit(limit int64, window time.Duration) gin.HandlerFunc {
 }
 
 func ipRateLimitNamed(name string, limit int64, window time.Duration) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		RateLimit(name, c.ClientIP(), limit, window)(c)
-	}
+	return rateLimit(name, limit, window, func(c *gin.Context) string { return c.ClientIP() })
 }
 
 // UserRateLimit 按登录用户限流（user_id 由 Auth 注入），取不到时回退按 IP，
 // 保证公开路由挂上也有保护。用于消耗上游资源的接口：行情/搜索、ASR。
 func UserRateLimit(limit int64, window time.Duration) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ident := ""
+	return rateLimit("user", limit, window, func(c *gin.Context) string {
 		if uid, ok := c.Get("user_id"); ok {
-			ident = "u:" + strconv.FormatInt(uid.(int64), 10)
+			if id, ok := uid.(int64); ok {
+				return "u:" + strconv.FormatInt(id, 10)
+			}
 		}
-		if ident == "" {
-			ident = "ip:" + c.ClientIP()
+		return "ip:" + c.ClientIP()
+	})
+}
+
+// BodyLimit 限制请求体字节数：ShouldBindJSON 会把整个 body 读进内存，
+// 不设上限时一个超大 JSON 就能把内存打满；头像上传另有更严的 MaxBytesReader。
+func BodyLimit(maxBytes int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Body != nil && maxBytes > 0 {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
 		}
-		RateLimit("user", ident, limit, window)(c)
+		c.Next()
 	}
 }
 

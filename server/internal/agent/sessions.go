@@ -148,6 +148,11 @@ func ServeDeleteSession(c *gin.Context) {
 // callJSON 非流式代理，供会话 CRUD 使用（StreamRun 负责 ndjson 长流）；
 // out 为 nil 时不解析响应体。
 func (p *AgentProxy) callJSON(ctx context.Context, method, path string, body any, out any) error {
+	// 共享 client 刻意不设 Client.Timeout（流式请求要跑满整轮），
+	// 非流式调用必须自己带上限，否则上游卡住会一直占着连接
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	var reader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -182,7 +187,6 @@ func (p *AgentProxy) callJSON(ctx context.Context, method, path string, body any
 
 // registerSession 把本轮会话 upsert 进注册表，标题取首个问题。
 // 旁路逻辑：2s 超时兜底，失败只记日志，不阻断对话流。
-// WS / SSE 两条入口都经 StreamRun 走到这里，无需各自调用。
 func (p *AgentProxy) registerSession(ctx context.Context, sessionID, userID, query string) {
 	if strings.TrimSpace(sessionID) == "" {
 		return

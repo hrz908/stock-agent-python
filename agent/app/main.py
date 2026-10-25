@@ -5,7 +5,7 @@
 - card    : {"event":"card","data":{"type":..,"payload":..}}   结构化卡片
 - table   : {"event":"table","data":{"type":..,"payload":..}}  结构化表格
 - sources : RAG 引用来源，{"docs":[{title, chunk_id, score}]}
-- tool_start / tool_end : 工具调用进度（MCP 子进程 / 进程内直连）
+- tool_start / tool_end : 工具调用进度（进程内工具，含缓存命中）
 - error   : {"event":"error","data":{"message":"..."}}
 - done    : {"event":"done","data":{"thread_id":..,"usage":{..}}}
 
@@ -21,19 +21,18 @@
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
 
-from core.state import initial_state
-from core.graph import get_graph
 from core.checkpointer import close_checkpointer, prune_thread_checkpoints
-from db import close_pool as close_ro_pool
-from nodes import log_agent_run
+from core.graph import get_graph
+from core.pg import close_pool as close_app_pool
+from core.redis import close_redis
 from core.sessions import (
     delete_session,
     ensure_sessions_table,
@@ -43,6 +42,9 @@ from core.sessions import (
     upsert_session,
     valid_session_id,
 )
+from core.state import initial_state
+from db import close_pool as close_ro_pool
+from nodes import log_agent_run
 from tools import close_http_client
 
 logging.basicConfig(level=logging.INFO)
@@ -56,9 +58,10 @@ def _check_ownership(user_id: str, session_id: str) -> str:
     thread_id 必须等于 default:{user_id}:{session_id}，从结构上杜绝
     用他人 session_id 读写别人会话的可能。
     """
-    if not (user_id or "").strip() or not valid_session_id(session_id):
+    uid = (user_id or "").strip()
+    if not uid or len(uid) > 64 or not valid_session_id(session_id):
         raise HTTPException(status_code=400, detail="invalid user_id or session_id")
-    return thread_id_of(user_id.strip(), session_id)
+    return thread_id_of(uid, session_id)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -72,18 +75,35 @@ async def lifespan(app: FastAPI):
         await ensure_sessions_table()
     except Exception as e:  # noqa: BLE001 - 建表失败不阻断启动，接口侧会懒建重试
         logger.warning("ensure chat_sessions failed: %s", e)
+    # 预热工具集：12 个 @tool 进程内构造（不触发 akshare 导入），
+    # 留到首请求会白等几十毫秒
+    try:
+        from subgraphs.stock import warm_tools
+
+        logger.info("stock tools warmed: %d", await warm_tools())
+    except Exception as e:  # noqa: BLE001 - 预热失败不阻断启动
+        logger.warning("tool warmup failed: %s", e)
     yield
     await close_checkpointer()
-    # 主数据只读池：与 checkpointer 分开收尾，任一失败不影响其它资源释放
+    # 主数据只读池 / 应用写池 / Redis：与 checkpointer 分开收尾，任一失败不影响其它
     try:
         await close_ro_pool()
     except Exception as e:  # noqa: BLE001 - 收尾失败不影响进程退出
         logger.warning("close read-only pool failed: %s", e)
-    await close_http_client()
-    # MCP 工具会话（stdio 子进程）退出时断开，失败静默
     try:
-        from tools.mcp_loader import close_mcp_tools
-        await close_mcp_tools()
+        await close_app_pool()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("close app pool failed: %s", e)
+    try:
+        await close_redis()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("close redis failed: %s", e)
+    await close_http_client()
+    # 重排用的共享客户端
+    try:
+        from rag.reranker import close_rerank_client
+
+        await close_rerank_client()
     except Exception:  # noqa: BLE001 - 收尾失败不影响进程退出
         pass
 
@@ -92,9 +112,10 @@ app = FastAPI(title="StockA Agent", lifespan=lifespan)
 
 
 class RunRequest(BaseModel):
-    thread_id: str
-    query: str
-    user_id: str
+    # 长度约束是第二道闸：Go 网关已按 2000 字拦一次，直连 agent 的调试请求也不能无界
+    thread_id: str = Field(min_length=1, max_length=128)
+    query: str = Field(min_length=1, max_length=2000)
+    user_id: str = Field(min_length=1, max_length=64)
 
 
 def _line(event: str, data: dict) -> str:
@@ -108,7 +129,13 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
     ttft_ms = None
     error_code = None
     graph = None
-    config = {"configurable": {"thread_id": thread_id}}
+    # 审计字段随流收集：正常结束时不再为了它们整份回读 state
+    intent = None
+    confidence = None
+    tool_calls = None
+    # recursion_limit 显式放宽：主图 8 个节点 + stock 子图最多 3 轮 × 2 节点，
+    # 默认 25 在「多跳取数 + 子图事件冒泡」下余量太薄，触顶会直接抛 GraphRecursionError
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
     try:
         graph = await get_graph()
         # 每轮 run 前裁掉该线程的历史 checkpoint 版本：PostgresSaver 不回收旧版本，
@@ -117,9 +144,12 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
         inp = initial_state(user_id=user_id, thread_id=thread_id, query=query)
         inp["messages"] = [HumanMessage(content=query)]
 
+        # 只订阅 custom（token/card/tool 事件）与 updates（审计字段）：
+        # "messages" 模式会把每个 LLM token 再经 channel 抛一遍，而这里从不消费它
+        #（token 由生成节点显式 emit 成 custom 事件），大回答下白扛几千次事件
         async for item in graph.astream(
             inp, config=config,
-            stream_mode=["messages", "custom", "updates"],
+            stream_mode=["custom", "updates"],
             subgraphs=True,
         ):
             # subgraphs=True 时 item 是 (namespace, mode, data) 三元组：只有带上它，
@@ -138,8 +168,7 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
             if mode == "custom":
                 # data 已是 {"event":..,"data":..}（由 subgraphs.emit 产出），直接透传
                 if isinstance(data, dict) and "event" in data:
-                    # 首个对用户可见的事件即 TTFT（首 token 或首张卡片）；
-                    # 该审计字段此前恒为 NULL，在此补齐
+                    # 首个对用户可见的事件即 TTFT（首 token 或首张卡片）
                     if ttft_ms is None:
                         ttft_ms = int((time.monotonic() - t0) * 1000)
                     yield json.dumps(data, ensure_ascii=False) + "\n"
@@ -149,10 +178,21 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
                     post_update = data.get("post")
                     if isinstance(post_update, dict) and post_update.get("usage"):
                         usage = post_update["usage"]
-                    # 护栏/分类节点写入的 error 作为审计错误码
                     for node_update in data.values():
-                        if isinstance(node_update, dict) and node_update.get("error"):
+                        if not isinstance(node_update, dict):
+                            continue
+                        # 护栏/分类节点写入的 error 作为审计错误码
+                        if node_update.get("error"):
                             error_code = str(node_update["error"])[:100]
+                        # intent/confidence 由 classify 写、rag 未命中时覆写为 stock_agent；
+                        # tool_results 是 operator.add 累加，按增量累加即得总数
+                        if node_update.get("intent"):
+                            intent = node_update["intent"]
+                        if node_update.get("confidence") is not None:
+                            confidence = node_update["confidence"]
+                        added = node_update.get("tool_results")
+                        if isinstance(added, list):
+                            tool_calls = (tool_calls or 0) + len(added)
 
     except Exception as e:  # noqa: BLE001 - 任何异常都转成 error 事件，不让流崩掉
         logger.exception("event_generator failed")
@@ -161,16 +201,16 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
 
     finally:
         total_ms = int((time.monotonic() - t0) * 1000)
-        # 审计落库：从 checkpointer 的最终 state 提取字段，失败不阻断 done
+        # 审计落库：字段优先用流里收集到的（省掉一次全量 state 回读），
+        # 只有流中途失败、没收集到 intent 时才回读兜底
         try:
-            intent = confidence = None
-            tool_calls = 0
-            if graph is not None:
+            if graph is not None and intent is None:
                 snapshot = await graph.aget_state(config)
                 values = (snapshot.values if snapshot else None) or {}
                 intent = values.get("intent") or None
                 confidence = values.get("confidence")
-                tool_calls = len(values.get("tool_results") or [])
+                if tool_calls is None:
+                    tool_calls = len(values.get("tool_results") or [])
                 if not usage and isinstance(values.get("usage"), dict):
                     usage = values["usage"]
             # agent_runs.user_id 是 BIGINT，非数字时置空避免插入报错
@@ -211,9 +251,11 @@ async def health():
 # ===== 会话历史（历史对话抽屉）=====
 
 class SessionUpsert(BaseModel):
+    # user_id / session_id 的合法性统一由 _check_ownership 判（回 400 带原因）；
+    # 放进 Pydantic 会变成 422，丢掉「太长/非法字符」这层语义
     user_id: str
     session_id: str
-    title: str = ""
+    title: str = Field(default="", max_length=200)
 
 
 @app.get("/sessions")

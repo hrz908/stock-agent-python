@@ -11,10 +11,10 @@ import (
 	"gorm.io/gorm/clause"
 
 	"stock-agent-server/internal/deps"
+	"stock-agent-server/internal/domain/stockcode"
 	"stock-agent-server/internal/hook"
 	"stock-agent-server/internal/quote"
 	"stock-agent-server/internal/resp"
-	"stock-agent-server/internal/domain/stockcode"
 	"stock-agent-server/internal/util"
 )
 
@@ -25,7 +25,6 @@ const noQuote = "--"
 // 不设上限时一个账号加几千条，refresh 会放大成几百次上游 HTTP 请求
 var maxWatchlist = 200
 
-// 计算常量：具名之后盈亏公式更直白，也免得重复 NewFromInt
 var (
 	zero    = decimal.Zero
 	hundred = decimal.NewFromInt(100)
@@ -478,8 +477,7 @@ func countUp(items []WatchItem) int {
 	return n
 }
 
-// countDown 只数真正下跌的（涨跌幅 < 0）；
-// 此前用 !Up 把平盘（0%）也算进下跌，与前端涨跌榜口径不一致
+// countDown 只数真正下跌的（涨跌幅 < 0），平盘不计入，与前端涨跌榜口径一致
 func countDown(items []WatchItem) int {
 	n := 0
 	for _, it := range items {

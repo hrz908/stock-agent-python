@@ -4,18 +4,17 @@
 
 ```
 微信小程序 (stock-agent-miniapp)
-        │  HTTPS / WSS
+        │  HTTPS
         ▼
 Go 网关 (server/)  ──JWT 鉴权 / 限流 / CORS / 访问日志
    ├─ /api/v1/*      业务模块（user/stock/watchlist/alert/auth）
-   ├─ /ws, /ws/agent  长连接（行情推送 / Agent 对话）
    └─ /api/v1/agent/* 反向代理到 Python Agent（SSE / 会话历史）
         │  HTTP (ndjson 流式)
         ▼
 Python Agent (agent/)  ──LangGraph 主图
    ├─ 意图路由：guardrail → rewrite → classify → route_by_intent
-   ├─ 子图：rag（RAG 漏斗）/ stock（MCP 工具取数）/ chat
-   ├─ 工具层 tools/：行情/搜索/主数据(同业)/财务/资金流/龙虎榜/资讯/历史K线/研报 + MCP
+   ├─ 子图：rag（RAG 漏斗）/ stock（进程内工具取数）/ chat
+   ├─ 工具层 tools/：行情/搜索/主数据(同业)/财务/资金流/龙虎榜/资讯/历史K线/研报（@tool 直连）
    └─ 检索 rag/retriever：pgvector 向量 + 全文 RRF 融合 → 交叉编码器重排
         → sufficiency_check：重排分阈值 + LLM 判读两级（不足则 escalate 到 stock 子图）
         │
@@ -31,13 +30,12 @@ PostgreSQL(pgvector) + Redis  ← ingest/ 写入文档向量；网关/agent 共�
 - `rag/`：检索 `retriever.py` + 纯资源 `prompts/*.xml`
 - `nodes/` `tools/` `subgraphs/`：LangGraph 节点、工具、子图
 - `db.py` + `repo/`：主数据只读连接池（会话级 `default_transaction_read_only`）与固定 SQL 仓储
-- `mcp/`：独立 MCP 服务进程
 - `config.py`：全局配置（被全项目 import）
 
 ### Go 网关 (`server/internal/`)
 - `app/`（可选装配层）、`router/`：路由组装
 - `domain/stockcode/`：纯领域工具（股票代码规范化，**无 IO**）—— 原 `internal/stock`
-- `client/`：外部上游客户端（`quote/` `asr/` `wechat/` `wecom/`）
+- 上游客户端：`quote/`（腾讯行情）`wechat/`（code2session）`wecom/`（企业微信）
 - `module/`：业务 HTTP 模块（`auth/` `stock/` `user/` `watchlist/` `alert/`），每模块自带 `Register(g)`
 - `agent/`：代理 Python Agent（SSE/WS/proxy）
 - 基础设施：`config/` `db/` `middleware/` `util/` `resp/` `deps/` `httpclient/` `upload/` `ws/` `hook/` `model/`

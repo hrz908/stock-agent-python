@@ -26,7 +26,7 @@ def strip_html(html: str) -> str:
     try:
         from bs4 import BeautifulSoup
     except ImportError:
-        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE)
         return re.sub(r"<[^>]+>", "\n", text)
 
     try:

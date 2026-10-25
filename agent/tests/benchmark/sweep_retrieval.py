@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """候选池 × 上线数量 扫描：collect → latency → replay → report。
 
 为什么只打一遍接口就能扫全部组合：SEARCH_SQL 里 vec/lex 各 LIMIT 50 与外层

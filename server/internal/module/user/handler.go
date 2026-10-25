@@ -5,7 +5,9 @@ package user
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,7 +82,8 @@ func UpdateProfile(c *gin.Context) {
 	updates := map[string]any{"nickname": nickname}
 	avatar := u.Avatar
 	if raw := strings.TrimSpace(req.Avatar); raw != "" {
-		if !isSafeAvatar(raw) {
+		// 只能引用自己上传的文件：文件名带 user_id，允许任意路径等于能把别人的头像挂到自己名下
+		if !isSafeAvatar(raw) || !strings.HasPrefix(filepath.Base(raw), fmt.Sprintf("avatar_%d_", u.ID)) {
 			resp.Fail(c, resp.CodeBadRequest, "头像地址不合法")
 			return
 		}
@@ -129,6 +132,13 @@ func UploadAvatar(c *gin.Context) {
 	case ".jpg", ".jpeg", ".png", ".webp":
 	default:
 		ext = ".png"
+	}
+
+	// 扩展名可以随便改，真正的类型看文件头：非图片内容一律拒绝，
+	// 否则任意文件（HTML/脚本）会被当成图片存进公开静态目录
+	if err := checkImageContent(file); err != nil {
+		resp.Fail(c, resp.CodeBadRequest, "头像必须是 JPG/PNG/WebP 图片")
+		return
 	}
 
 	name := fmt.Sprintf("avatar_%d_%d%s", userID, time.Now().UnixNano(), ext)
@@ -187,6 +197,28 @@ func current(c *gin.Context) (*model.User, bool) {
 		return nil, false
 	}
 	return &u, true
+}
+
+// checkImageContent 读文件头判断真实 MIME，只放行三种位图格式。
+// 读完不限速：头像本身受 2MB 上限约束，只读前 512 字节。
+func checkImageContent(f *multipart.FileHeader) error {
+	fh, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer fh.Close()
+
+	head := make([]byte, 512)
+	n, err := io.ReadFull(fh, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return err
+	}
+	switch http.DetectContentType(head[:n]) {
+	case "image/jpeg", "image/png", "image/webp":
+		return nil
+	default:
+		return errors.New("unsupported image type")
+	}
 }
 
 // isSafeAvatar 头像必须是本站 avatars 目录下的路径，且不含 ..

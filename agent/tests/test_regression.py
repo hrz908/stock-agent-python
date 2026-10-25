@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """AI 对话故障的回归测试（纯函数，不依赖 LLM / 数据源 / 网络）。
 
 覆盖 2026-10-22 实测发现的三个问题：
@@ -9,7 +8,7 @@
 2026-10-23 LangGraph 架构改造新增：
   P5 意图三分（stock/chat/off_topic）+ rag 两级命中判读 + 固定话术婉拒
   P6 卡片 pydantic 校验（失败降级纯文本）
-  P7 MCP 工具源禁用/失败时的直连兜底
+  P7 进程内工具集（工具名 / 标签 / 知识库检索工具齐全）
   P8 benchmark 调优新增行为（改写贯通 tool_call / 含糊指判 clarify / 兜底分级 / few-shot）
   P9 会话历史与 checkpoint 增长治理（消息窗口裁剪 / thread_id 口径 / session_id 校验）
 
@@ -20,17 +19,16 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 回归测试固定走「进程内直连工具」：MCP 通道会拉起 stdio 子进程（akshare 导入慢），
-# 且其加载/兜底行为由 P7 用例覆盖。必须在 import config 之前设置。
-os.environ["STOCK_MCP_ENABLED"] = "0"
-
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from config import MAX_INPUT_TOKENS
 from core.llm import count_message_tokens, is_context_overflow
+from nodes.refuse import _REFUSE_TEXT, refuse
+from subgraphs.cards import validate_card, validate_table
 from subgraphs.stock import (
     _DATA_ABBR_RE,
     _OVERFLOW_REPLY,
+    _TOOL_LABELS,
     _asked_for_data,
     _call_rounds,
     _failure_reason,
@@ -45,11 +43,8 @@ from subgraphs.stock import (
     _recent_history,
     route_after_call,
 )
-from subgraphs.stock import _TOOL_LABELS
-from subgraphs.cards import validate_card, validate_table
-from nodes.refuse import _REFUSE_TEXT, refuse
-from tools.rag_tool import search_knowledge_base
 from tools import take_latest
+from tools.rag_tool import search_knowledge_base
 
 _FAILED = []
 
@@ -137,7 +132,7 @@ def test_take_latest():
 
 def test_valuation_window():
     print("\n[P2] 估值工具带日期窗口")
-    from tools.fundamental import _date_window, _MAX_VALUATION_ROWS
+    from tools.fundamental import _MAX_VALUATION_ROWS, _date_window
     s, e = _date_window(30)
     check(f"默认窗口为日期区间（{s}~{e}）", len(s) == 8 and len(e) == 8)
     s2, _ = _date_window(99999)
@@ -279,6 +274,7 @@ def test_data_question_always_fetches():
 def test_graph_wiring_and_retry():
     print("\n[P3] 子图接线：重试路由可用（防 KeyError）")
     import asyncio
+
     from subgraphs import stock as stock_mod
 
     class _FakeLLM:
@@ -395,6 +391,7 @@ def test_off_topic_refusal():
 def test_rag_judge_fallback():
     print("\n[P5] RAG 两级命中判读")
     import asyncio
+
     from subgraphs import rag as rag_mod
 
     out = asyncio.run(rag_mod.sufficiency_check({"retrieved": [], "query": "x"}))
@@ -444,7 +441,8 @@ def test_rag_judge_fallback():
 def test_intent_taxonomy():
     print("\n[P5] 意图三分与漏斗口径")
     import asyncio
-    from nodes.classify import classify, _hit_data_keyword
+
+    from nodes.classify import _hit_data_keyword, classify
 
     check("数据关键词命中", _hit_data_keyword("贵州茅台最新行情"))
     check("研报类不算数据关键词", not _hit_data_keyword("帮我读一下这篇研报的观点"))
@@ -453,27 +451,22 @@ def test_intent_taxonomy():
     check("快路径置信度为 1", st.get("confidence") == 1.0, str(st))
 
 
-def test_mcp_loader_fallback():
-    print("\n[P7] MCP 工具源禁用时的直连兜底")
+def test_direct_tools():
+    print("\n[P7] 进程内工具集（无 MCP 通道）")
     import asyncio
-    from tools import mcp_loader
-    from subgraphs import stock as stock_mod
 
-    tools = asyncio.run(mcp_loader.aload_stock_tools())
-    names = [t.name for t in tools]
-    # 不写死数量：新增取数工具不该每次都改这条断言，对齐 get_tools 才是这条用例的本意
+    from subgraphs import stock as stock_mod
     from tools import get_tools
 
-    check("回退直连工具与 get_tools 一致", names == [t.name for t in get_tools()], str(names))
+    # 不写死数量：新增取数工具不该每次都改这条断言
+    names = [t.name for t in get_tools()]
     check("工具标签表齐全", all(n in _TOOL_LABELS for n in names), str(names))
-
     check("知识库检索工具可构造", search_knowledge_base.name == "search_knowledge_base")
 
     stock_mod._TOOLS = None
     asyncio.run(stock_mod._ensure_tools())
     names2 = [t.name for t in stock_mod._tools()]
     check("子图工具集含知识库检索", "search_knowledge_base" in names2, str(names2))
-    asyncio.run(mcp_loader.close_mcp_tools())
 
 
 # ===== P8：benchmark 调优（2026-10-24）新增行为的回归 =====
@@ -511,7 +504,8 @@ def test_rewrite_into_toolcall():
 def test_vague_reference_guard():
     print("\n[P8] 指代不明问句确定性判 clarify")
     import asyncio
-    from nodes.classify import classify, _is_vague_reference
+
+    from nodes.classify import _is_vague_reference, classify
 
     check("「那个股票怎么样」判含糊", _is_vague_reference("那个股票怎么样"))
     check("「这只股票如何」判含糊", _is_vague_reference("这只股票如何"))
@@ -526,7 +520,7 @@ def test_vague_reference_guard():
 
 def test_graceful_empty_fallback():
     print("\n[P8] 兜底文案区分「客观无数据」与「取数失败」")
-    from subgraphs.stock import _no_data_fallback, _all_failures_graceful_empty
+    from subgraphs.stock import _all_failures_graceful_empty, _no_data_fallback
 
     # 未上榜：客观结论，不应套「请稍后重试」
     tr_lhb = _tool_results("get_top_list", False, "近期未上榜或暂无龙虎榜数据")
@@ -548,7 +542,7 @@ def test_graceful_empty_fallback():
 
 def test_fewshot_examples_wired():
     print("\n[P8] few-shot 示例接入三个提示词")
-    from core.template import render, load_template
+    from core.template import load_template, render
 
     for name in ("stock_examples.xml", "router_examples.xml", "toolcall_examples.xml"):
         text = load_template(name)
@@ -572,8 +566,8 @@ def test_fewshot_examples_wired():
 # ===== P9：会话历史与 checkpoint 增长治理（2026-10-24）=====
 def test_history_trim_and_session_utils():
     print("\n[P9] 消息窗口裁剪与会话注册表工具")
-    from nodes.guardrail import _trim_history
     from core.sessions import thread_id_of, valid_session_id
+    from nodes.guardrail import _trim_history
 
     # 窗口内不裁
     msgs = [HumanMessage(content=f"q{i}") for i in range(10)]
@@ -602,7 +596,7 @@ def test_history_trim_and_session_utils():
     out = _trim_history(msgs)
     check("配对的 tool 消息整体保留", any(isinstance(m, ToolMessage) for m in out))
 
-    # thread_id 口径与 Go 网关（ws_agent.go / sse_agent.go）一致
+    # thread_id 口径与 Go 网关 sse_agent.go 一致
     check("thread_id 拼装口径", thread_id_of("42", "sess_1") == "default:42:sess_1")
     check("合法 session_id 通过", valid_session_id("sess_123_abc"))
     check("非法 session_id 被拒",
@@ -613,15 +607,16 @@ def test_history_trim_and_session_utils():
 def test_retrieval_knobs():
     print("\n[P10] 候选池 N / 上线数量 k 的接线与裁剪")
     from langchain_core.documents import Document
+
     from config import RAG_PER_DOC, RERANK_CANDIDATES
     from rag.retriever import (
-        build_retriever,
         _apply_rerank_filter,
         _build_search_sql,
         _clean_docs,
         _normalize_since,
         _normalize_source_type,
         _normalize_stock_code,
+        build_retriever,
     )
 
     r = build_retriever(k=4, candidates=30)
@@ -711,7 +706,7 @@ def main():
     test_off_topic_refusal()
     test_rag_judge_fallback()
     test_intent_taxonomy()
-    test_mcp_loader_fallback()
+    test_direct_tools()
     test_rewrite_into_toolcall()
     test_vague_reference_guard()
     test_graceful_empty_fallback()

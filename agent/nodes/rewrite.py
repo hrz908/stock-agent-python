@@ -5,11 +5,20 @@
 则拼入 prompt 作为对话背景，与最近历史共同构成完整上下文。
 改写失败 / 无历史无摘要时回退原始 query，绝不阻断主流程。
 """
-import redis.asyncio as aioredis
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+import re
 
-from config import REDIS_URL
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
 from core.llm import get_small_llm
+from core.redis import get_redis
+
+# 依赖上下文的指代词：出现这些才真的需要消解。
+# 反过来说，一个不含指代、且自带 6 位代码的问题（「600519 现在多少钱」）
+# 本身就是独立完整的，绕一圈小模型只会白白多 0.5-1.5s。
+_ANAPHORA_RE = re.compile(
+    r"(它|他|她|其|该股|这只|那只|这个|那个|这家|那家|上述|前面|刚才|继续|再|还)"
+)
+_CODE_RE = re.compile(r"\d{6}")
 
 _SYSTEM = (
     "你是查询改写器。根据对话历史，把用户最新的问题改写成一个"
@@ -37,27 +46,29 @@ def _format_history(messages: list, limit: int = 10) -> str:
     return "\n".join(lines)
 
 
-_redis = None
-
-
-def _get_redis():
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
-    return _redis
-
-
 async def _get_summary(thread_id: str) -> str:
     """读 Redis 中的滚动摘要（post 节点写入）；失败静默返回空。"""
     if not thread_id:
         return ""
     try:
-        summary = await _get_redis().get(f"agent:summary:{thread_id}")
+        summary = await get_redis().get(f"agent:summary:{thread_id}")
     except Exception:  # noqa: BLE001 - 摘要不可用不影响改写
         return ""
     if not summary:
         return ""
     return summary.decode() if isinstance(summary, bytes) else summary
+
+
+def _needs_rewrite(query: str) -> bool:
+    """问题本身是否依赖上下文（保守判据：拿不准就改写）。
+
+    只有「不含任何指代词」且「自带明确标的（6 位代码或 ≥8 字）」才跳过，
+    避免为了省一次调用把「那它呢」这类问题改坏。
+    """
+    q = (query or "").strip()
+    if not q or _ANAPHORA_RE.search(q):
+        return True
+    return not (_CODE_RE.search(q) or len(q) >= 8)
 
 
 async def rewrite(state: dict) -> dict:
@@ -66,6 +77,9 @@ async def rewrite(state: dict) -> dict:
     summary = await _get_summary(state.get("thread_id", ""))
     # 无历史且无摘要则无需改写
     if not history and not summary:
+        return {"rewritten": query}
+    # 有历史，但问题自己就完整（无指代、带代码/足够长）：不惊动小模型
+    if not _needs_rewrite(query):
         return {"rewritten": query}
 
     # 滚动摘要作为对话背景前缀，弥补被裁剪掉的早期历史
