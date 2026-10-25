@@ -538,37 +538,88 @@ async def tool_execute(state: dict) -> dict:
     return {"messages": tool_messages, "tool_results": tool_results}
 
 
-def _emit_validated_card(card_type: str, payload) -> None:
-    """带 schema 校验的卡片发射（双模式输出的结构化闸门）。
+# ===== 卡片选择：一次回复最多一张，且必须对得上用户问的是什么 =====
+#
+# 旧逻辑是「哪个工具取到数据就发哪个的卡」：一次提问里模型常调三四个工具，
+# 于是三张卡并排铺出去（问一句估值 -> 估值卡 + 行情卡 + 资金流卡），
+# 相关性完全没被考虑。现在先收集候选，再按「用户问题的核心意图」只挑一张。
 
-    载荷先过 subgraphs.cards 的 pydantic 校验：通过才发 card 事件；
-    失败只丢弃这张卡并记日志——正文回答仍由 synthesize 的文本兜底，
-    保证用户始终有答案（校验失败降级为纯文本，LangGraph 架构 §4.5）。
+# K 线（蜡烛图）话题：命中即整轮不出卡。
+# 看图去小程序「看个 K 线」页更完整，聊天流里再插一张缩略 K 线卡只会和正文抢位置
+_KLINE_MARKERS = (
+    "k线", "蜡烛", "日k", "周k", "月k", "分钟k", "分时图", "均线", "k线图",
+    "走势图", "技术分析", "技术形态", "macd", "kdj", "boll",
+)
+
+# 每张卡对应的「问题关键词」：命中越多，这张卡越贴合用户真正问的东西。
+# 只用于排序，不下发、也不改变正文口径；同分时按工具调用顺序取第一个。
+_CARD_KEYWORDS = {
+    "compare_card": ("对比", "比较", "同业", "同行", "竞品", "谁更", "哪个好", "哪家", "相比", "vs"),
+    "valuation_card": ("估值", "市盈率", "市净率", "市销率", "股息", "分位", "贵不贵", "便宜"),
+    "fundflow_card": ("资金", "主力", "流入", "流出", "龙虎榜", "席位", "超大单", "大单", "北向"),
+    "report_card": ("财报", "业绩", "营收", "营业收入", "净利润", "毛利", "现金流",
+                    "报告期", "季报", "年报", "中报"),
+    "research_card": ("研报", "机构", "评级", "目标价", "券商", "观点"),
+    "event_card": ("新闻", "动态", "消息", "公告", "事件", "资讯", "利好", "利空"),
+    "quote_card": ("行情", "价格", "股价", "现价", "什么价", "多少钱", "涨跌", "涨幅", "跌幅",
+                   "开盘", "收盘", "最高", "最低", "成交额", "换手", "市值"),
+    "kline_table": ("走势", "区间", "历史", "趋势", "几个交易日", "近几日", "量能"),
+}
+
+# 英文缩写单独匹配（带词边界）：直接做子串匹配会把 "pe" 撞进 "peers" 这类词里
+_ABBR_CARDS = {
+    "pe": "valuation_card", "pb": "valuation_card", "ps": "valuation_card",
+    "peg": "valuation_card", "roe": "report_card", "eps": "report_card",
+    "macd": "kline_table", "kdj": "kline_table", "boll": "kline_table",
+    "ma5": "kline_table", "ma10": "kline_table", "ma20": "kline_table",
+}
+_ABBR_RE = re.compile(
+    r"(?<![a-z0-9])(pe|pb|ps|peg|roe|eps|macd|kdj|boll|ma5|ma10|ma20)(?![a-z0-9])"
+)
+
+
+def _intent_text(state: dict) -> tuple:
+    """取「用于判断意图」的问题文本，返回 (原样小写, 去空白小写)。
+
+    原始问题与指代消解后的问题都算（「它的估值」改写后才有主语）。
+    中文关键词用去空白版匹配（让「日 K」也能命中「日k」），
+    英文缩写用原样版做词边界匹配（去空白会把「PE PB」粘成「pepb」）。
     """
-    if not validate_card(card_type, payload):
-        logger.warning("card %s payload failed validation, skip emit: %s",
-                       card_type, str(payload)[:200])
-        return
-    emit_card(card_type, payload)
+    raw = ((state.get("query") or "") + " " + (state.get("rewritten") or "")).lower()
+    return raw, re.sub(r"\s+", "", raw)
 
 
-def _emit_validated_table(table_type: str, payload) -> None:
-    """带 schema 校验的表格发射；校验失败只丢表，正文照常。"""
-    if not validate_table(table_type, payload):
-        logger.warning("table %s payload failed validation, skip emit: %s",
-                       table_type, str(payload)[:200])
-        return
-    emit_table(table_type, payload)
+def _is_kline_question(state: dict) -> bool:
+    """这一轮问的是不是 K 线（蜡烛图）相关话题。"""
+    _, compact = _intent_text(state)
+    return any(mark in compact for mark in _KLINE_MARKERS)
 
 
-def _emit_structured(tool_results: list) -> None:
-    """把行情/估值/资金流/财报等结构化数据以独立 card/table 事件发射
-    （不进入 token 流）。
+def _intent_score(card_type: str, compact: str, abbrs: set) -> int:
+    """这张卡与用户问题的匹配分：中文关键词命中数 + 属于它的英文缩写命中数。"""
+    score = sum(1 for kw in _CARD_KEYWORDS.get(card_type, ()) if kw in compact)
+    score += sum(1 for a in abbrs if _ABBR_CARDS.get(a) == card_type)
+    return score
 
+
+def _rank_cards(state: dict, candidates: list) -> list:
+    """按问题意图给候选卡排序（分高者先，同分保留工具调用顺序）。"""
+    raw, compact = _intent_text(state)
+    abbrs = set(_ABBR_RE.findall(raw))
+    order = {card_type: i for i, (card_type, _) in enumerate(candidates)}
+    return sorted(
+        candidates,
+        key=lambda c: (-_intent_score(c[0], compact, abbrs), order[c[0]]),
+    )
+
+
+def _card_candidates(tool_results: list) -> list:
+    """把本轮工具结果折成候选卡列表 [(card_type, payload)]，保持工具调用顺序。
+
+    这里只收集、不发射：最终发哪张由 _emit_structured 按问题意图挑。
     事件契约（与小程序 chat.js 的卡片工厂一一对应，改这里必须同步那边
-    与 server/README.md 第三节）。八张金融卡全部由此下发：
+    与 server/README.md 第三节）：
     - get_quote            -> card: quote_card（行情速览卡）
-    - symbol_search        -> table: symbol_list（股票搜索候选）
     - get_valuation        -> card: valuation_card（估值卡，最新交易日一行）
     - get_money_flow       -> card: fundflow_card（资金流向卡，最新交易日一行，
                               命中 get_top_list 时并入 lhb 席位区块）
@@ -578,15 +629,15 @@ def _emit_structured(tool_results: list) -> None:
     - get_research_reports -> card: research_card（研报观点卡，最新一篇）
     - get_stock_news       -> card: event_card（公司事件卡，当日资讯折成时间轴）
 
-    一次提问，一种卡片只发一张（防刷屏，前端每张卡是一条独立消息）：
-    - 数据源按「天」返回的（估值 / 资金流）只取最新一天——按天发会把同一只
-      股票的连续交易日并排铺三张（实测问一句估值出三张卡）；
-    - 数据源按「条」返回的（研报 / 资讯）取最新一篇、或整轮合成一张时间轴，
-      多条目之间的差异交给正文转述；
-    - 行情 / 财报 / 对比 / K 线本来就是单对象或整表，天然一张。
+    symbol_search 不出候选：它只是搜代码的中间结果，前端也没有对应卡片。
+
+    数据源按「天」返回的（估值 / 资金流）只取最新一天——按天发会把同一只
+    股票的连续交易日并排铺三张；按「条」返回的（研报 / 资讯）取最新一篇、
+    或整轮合成一张时间轴，多条目之间的差异交给正文转述。
     """
     lhb = _lhb_payload(tool_results)
     quote = _quote_payload(tool_results)
+    out = []
     has_moneyflow = False
     for item in tool_results:
         name = item.get("tool")
@@ -594,27 +645,25 @@ def _emit_structured(tool_results: list) -> None:
         if not result.get("ok"):
             continue
         data = result.get("data")
-        if name == "get_quote" and data:
-            _emit_validated_card("quote_card", data)
-        elif name == "symbol_search" and data:
-            _emit_validated_table("symbol_list", data)
-        elif name == "get_valuation" and data:
+        if not data:
+            continue
+        if name == "get_quote":
+            out.append(("quote_card", data))
+        elif name == "get_valuation":
             # 估值卡是「当日估值快照」：工具按天返回一整段（默认 30 个交易日），
-            # 只取最新一天。按天发多张会把同只股票的连续交易日并排刷屏
-            # （实测问一句估值出三张卡），且与 compare_card 的当日快照口径不一致
+            # 只取最新一天，与 compare_card 的当日快照口径保持一致
             rows = _rows_of(data)
             if rows:
-                _emit_validated_card("valuation_card", rows[0])
-        elif name == "get_money_flow" and data:
-            # 资金流卡同为当日快照，同上只取最新一天；
-            # 一段历史资金流由正文回答，卡片不重复铺三张
+                out.append(("valuation_card", rows[0]))
+        elif name == "get_money_flow":
+            # 资金流卡同为当日快照，一段历史资金流由正文回答
             rows = _rows_of(data)
             has_moneyflow = bool(rows)
             if rows:
                 # 龙虎榜并入这一张卡：同一标的的资金流 + 上榜席位一屏看完
                 extra = {"lhb": lhb["rows"], "lhb_date": lhb["trade_date"]} if lhb else {}
-                _emit_validated_card("fundflow_card", _fundflow_card_payload(rows[0], extra))
-        elif name == "get_history_daily" and data:
+                out.append(("fundflow_card", _fundflow_card_payload(rows[0], extra)))
+        elif name == "get_history_daily":
             rows = _kline_rows(data)
             if rows:
                 payload = {"rows": rows}
@@ -622,29 +671,60 @@ def _emit_structured(tool_results: list) -> None:
                 if quote:
                     payload["code"] = quote.get("code")
                     payload["name"] = quote.get("name")
-                _emit_validated_table("kline_table", payload)
-        elif name == "get_financial_report" and data:
-            _emit_validated_card("report_card", data)
-        elif name == "get_peer_compare" and data:
-            _emit_validated_card("compare_card", data)
-        elif name == "get_research_reports" and data:
-            # 研报卡取最新一篇：多家机构的观点差异由正文转述，
-            # 卡片只承担「最新机构观点速览」，一次提问一张
+                out.append(("kline_table", payload))
+        elif name == "get_financial_report":
+            out.append(("report_card", data))
+        elif name == "get_peer_compare":
+            out.append(("compare_card", data))
+        elif name == "get_research_reports":
+            # 研报卡取最新一篇：多家机构的观点差异由正文转述
             rows = _rows_of(data.get("rows") if isinstance(data, dict) else data)
             if rows:
-                _emit_validated_card("research_card", rows[0])
-        elif name == "get_stock_news" and data:
+                out.append(("research_card", rows[0]))
+        elif name == "get_stock_news":
             # 个股资讯整轮合成一张事件卡：时间轴本身就是多条，不需要一张一条
             payload = _event_card_payload(
                 _rows_of(data.get("rows") if isinstance(data, dict) else data)
             )
             if payload:
-                _emit_validated_card("event_card", payload)
-    # 龙虎榜单独命中、本轮没有资金流数据时：发一张仅龙虎榜的资金流向卡
+                out.append(("event_card", payload))
+    # 龙虎榜单独命中、本轮没有资金流数据时：候选里补一张仅龙虎榜的资金流向卡
     if lhb and not has_moneyflow:
-        _emit_validated_card(
-            "fundflow_card", {"lhb": lhb["rows"], "lhb_date": lhb["trade_date"]}
-        )
+        out.append(("fundflow_card", {"lhb": lhb["rows"], "lhb_date": lhb["trade_date"]}))
+    return out
+
+
+# 走 table 事件的卡（其余都走 card 事件）
+_TABLE_CARDS = {"kline_table"}
+
+
+def _emit_structured(state: dict, tool_results: list) -> None:
+    """按「用户问的是什么」发一张卡（不进入 token 流）；K 线话题一张都不发。
+
+    三条规则，按顺序判定：
+    1. 没有候选（工具全失败 / 只调了 symbol_search）-> 不发；
+    2. 问题涉及 K 线（蜡烛图）-> 一张都不发（看图去「看个 K 线」页，别在聊天里抢位置）；
+    3. 否则只发相关性最高的一张：按问题关键词打分排序，同分按工具调用顺序；
+       载荷校验不过就顺延到下一张，全都不合规才降到纯文本。
+
+    一次只发一张是产品规则：多张卡会与正文并列抢占视线，且卡片之间没有主次。
+    """
+    candidates = _card_candidates(tool_results)
+    if not candidates:
+        return
+    if _is_kline_question(state):
+        logger.info("kline question, suppress cards: %s", [c[0] for c in candidates])
+        return
+    for card_type, payload in _rank_cards(state, candidates):
+        if card_type in _TABLE_CARDS:
+            if validate_table(card_type, payload):
+                emit_table(card_type, payload)
+                return
+        elif validate_card(card_type, payload):
+            emit_card(card_type, payload)
+            return
+        logger.warning("card %s payload failed validation, try next: %s",
+                       card_type, str(payload)[:200])
 
 
 def _lhb_payload(tool_results: list):
@@ -986,8 +1066,8 @@ async def synthesize(state: dict) -> dict:
     prompt = render("stock.xml", now=now, query=query, tool_results=tr_text,
                     examples=load_template("stock_examples.xml"))
 
-    # 结构化数据走独立事件
-    _emit_structured(tool_results)
+    # 结构化数据走独立事件（按问题意图只挑一张卡，K 线话题不出卡）
+    _emit_structured(state, tool_results)
 
     # 带上最近对话历史，让回答能衔接上下文
     messages = [SystemMessage(content=prompt)]

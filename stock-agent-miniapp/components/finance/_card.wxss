@@ -51,12 +51,13 @@
   word-break: break-word;
 }
 
-/* 数据栅格：一条顶部分隔线 + 两行三列（设计稿 3 列 × 2 行） */
+/* 数据栅格：一条顶部分隔线 + 两行三列（设计稿 3 列 × 2 行）。
+   卡内纵向节奏比页面紧一档：栅格与上方数据只隔 sp-2，不再用 --sp-card */
 .fgrid {
   display: flex;
   flex-direction: column;
-  margin-top: var(--sp-card);
-  padding-top: var(--sp-3);
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
   border-top: var(--hairline);
 }
 
@@ -73,7 +74,7 @@
 
 /* 行间距用显式类名，不用兄弟选择器（WXSS 禁用） */
 .fgrid-row--gap {
-  margin-top: var(--gap-grid);
+  margin-top: var(--sp-2);
 }
 
 .fcell {
@@ -92,13 +93,14 @@
   color: var(--ink);
 }
 
-/* 底部说明：数据日期 / 来源 / 备注（口径类文案已按需求全部移除） */
+/* 底部说明：数据日期 / 来源 / 备注（口径类文案已按需求全部移除）。
+   行高收到 1.5：说明多为单行，1.75 只是把每行撑开 */
 .fnote {
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-2);
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-1);
   border-top: var(--hairline-dashed);
   font-size: var(--fs-min);
-  line-height: 1.75;
+  line-height: 1.5;
   color: var(--ink-3);
 }
 

@@ -11,6 +11,9 @@
   P7 进程内工具集（工具名 / 标签 / 知识库检索工具齐全）
   P8 benchmark 调优新增行为（改写贯通 tool_call / 含糊指判 clarify / 兜底分级 / few-shot）
   P9 会话历史与 checkpoint 增长治理（消息窗口裁剪 / thread_id 口径 / session_id 校验）
+2026-10-26 新增：
+  P11 卡片选择（一次回复最多一张，K 线话题不出卡）
+  P12 正文不追加免责声明
 
 用法：python tests/test_regression.py
 """
@@ -377,6 +380,87 @@ def test_card_validation():
     check("搜索候选缺 code 被拦", not validate_table("symbol_list", [{"name": "贵州茅台"}]))
 
 
+# ===== P11：卡片选择（2026-10-26）=====
+def test_card_selection():
+    print("\n[P11] 一次回复只发一张卡，K 线话题不发卡")
+    from subgraphs import stock as stock_mod
+
+    emitted = []
+    orig_card, orig_table = stock_mod.emit_card, stock_mod.emit_table
+    stock_mod.emit_card = lambda t, p: emitted.append(t)
+    stock_mod.emit_table = lambda t, p: emitted.append(t)
+
+    quote = ("get_quote", {"code": "SH600519", "name": "贵州茅台",
+                           "price": 1500.0, "change_percent": 1.2})
+    valuation = ("get_valuation",
+                 [{"ts_code": "600519.SH", "trade_date": "20261023", "pe": 30}])
+    flow = ("get_money_flow",
+            [{"ts_code": "600519.SH", "trade_date": "20261023", "main_net": 1e8,
+              "super_net": 6e7, "large_net": 4e7, "mid_net": -3e7, "small_net": -7e7}])
+    report = ("get_financial_report",
+              {"income": {"revenue": 1}, "indicator": None, "cashflow": None})
+    history = ("get_history_daily",
+               [{"trade_date": "2026-10-23", "open": 1, "high": 2,
+                 "low": 0.5, "close": 1.5, "vol": 100}])
+    news = ("get_stock_news",
+            {"rows": [{"title": "茅台回购公告", "datetime": "2026-10-23 10:00"}]})
+    search = ("symbol_search", [{"code": "600519", "name": "贵州茅台", "market": "SH"}])
+
+    def run(query, tools):
+        emitted.clear()
+        tr = [{"tool": t, "result": {"ok": True, "data": d}} for t, d in tools]
+        stock_mod._emit_structured({"query": query, "rewritten": ""}, tr)
+        return list(emitted)
+
+    try:
+        # K 线（蜡烛图）话题：一张都不发，哪怕同时取到了行情
+        check("K线问句不发卡", run("贵州茅台最近15个交易日的日K走势怎么样？",
+                                [quote, history]) == [])
+        check("K线图/技术形态问句不发卡", run("看一下茅台的 K 线图和技术形态",
+                                        [quote]) == [])
+
+        # 核心意图 -> 只发对应的那一张（候选里即使有行情卡也压掉）
+        check("估值问句只发估值卡", run("贵州茅台现在的估值水平如何？PE 和 PB 大概多少",
+                                  [quote, valuation, flow]) == ["valuation_card"])
+        check("资金问句只发资金流卡", run("最近比亚迪的主力资金流向怎么样？是净流入还是流出",
+                                    [quote, flow]) == ["fundflow_card"])
+        check("财报问句只发财报卡", run("看一下茅台最新的财报主要指标",
+                                  [quote, report]) == ["report_card"])
+        check("行情问句只发行情卡", run("贵州茅台现在什么价", [quote, news]) == ["quote_card"])
+        check("新闻问句只发事件卡", run("茅台最近有什么新闻动态",
+                                  [quote, news]) == ["event_card"])
+
+        # 没有关键词证据：按工具调用顺序取第一个，数量仍然是一张
+        check("无命中时只发一张（工具顺序第一个）",
+              run("贵州茅台", [quote, news]) == ["quote_card"])
+
+        # 搜索候选只是中间结果，不参与发卡
+        check("搜索中间结果不发卡", run("查一下茅台", [search]) == [])
+
+        # 首选卡载荷不合规 -> 顺延到下一张，不空手也不发两张
+        check("首选卡校验失败时顺延",
+              run("茅台估值高不高",
+                  [("get_valuation", [{"ts_code": "600519.SH"}]), quote]) == ["quote_card"])
+    finally:
+        stock_mod.emit_card, stock_mod.emit_table = orig_card, orig_table
+
+
+# ===== P12：正文不再追加免责声明（2026-10-26）=====
+def test_no_disclaimer():
+    print("\n[P12] 收尾节点不改写正文、不追加免责声明")
+    import asyncio
+
+    from nodes.post import post
+
+    ai = AIMessage(content="贵州茅台最新价 1500 元，涨 1.2%。")
+    out = asyncio.run(post({
+        "intent": "stock",
+        "messages": [HumanMessage(content="q"), ai],
+    }))
+    check("post 不再改写 messages", "messages" not in out, str(list(out.keys())))
+    check("只回用量统计", "usage" in out, str(list(out.keys())))
+
+
 def test_off_topic_refusal():
     print("\n[P5] off_topic 固定话术婉拒")
     import asyncio
@@ -703,6 +787,8 @@ def main():
     test_graph_wiring_and_retry()
     test_text_tool_call_restore()
     test_card_validation()
+    test_card_selection()
+    test_no_disclaimer()
     test_off_topic_refusal()
     test_rag_judge_fallback()
     test_intent_taxonomy()

@@ -4,7 +4,6 @@
     "ant-icon": "antd-mini/Icon/index",
     "base-popup": "/components/base/popup/popup",
     "base-toast": "/components/base/toast/toast",
-    "base-card-status": "/components/base/card-status/card-status",
     "finance-quote-card": "/components/finance/quote-card/quote-card",
     "finance-kline-card": "/components/finance/kline-card/kline-card",
     "finance-valuation-card": "/components/finance/valuation-card/valuation-card",

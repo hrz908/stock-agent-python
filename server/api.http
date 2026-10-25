@@ -94,3 +94,14 @@ Authorization: Bearer {{token}}
 ### 搜索股票代码（模糊联想：代码前缀 / 汉字名 / 拼音缩写）
 GET {{host}}/api/v1/stocks/search?q=茅台&limit=5
 Authorization: Bearer {{token}}
+
+### 首屏建议问题（热度池 + 会话去重；连点两次对比是否换票）
+GET {{host}}/api/v1/quick-asks?count=4&session_id=dev-session
+Authorization: Bearer {{token}}
+
+### 建议问题点击上报（行为热度信号）
+POST {{host}}/api/v1/quick-asks/click
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"stock_code":"SH600519","quick_ask_id":"qa_600519_0"}

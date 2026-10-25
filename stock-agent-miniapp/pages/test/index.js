@@ -10,7 +10,6 @@
 // 入口：watchlist 股票行点击、chat 页行情卡点击（原 K 线详情入口，现打开本页）。
 Page({
   data: {
-    titleText: '卡片样式',
     // 与 chat 页消息结构一致：{ role, status, card, content, <cardKey> }
     cards: [
       {
@@ -206,13 +205,7 @@ Page({
     ]
   },
 
-  onLoad(query) {
-    // 兼容旧入口：watchlist / chat 行情卡点击会带 code、name。
-    // 本页是样式测试页，不按代码取数，仅把股票名带到标题上（有则用，无则默认）
-    if (query && query.name) {
-      this.setData({ titleText: decodeURIComponent(query.name) });
-    }
-  },
+  // 旧入口会带 code / name 参数，本页是样式测试页，不按代码取数，参数忽略即可
 
   onBack() {
     // 返回上一页（chat 行情卡入口 或 watchlist 行点击入口）。

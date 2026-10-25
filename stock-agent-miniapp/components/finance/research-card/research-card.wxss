@@ -25,23 +25,25 @@
   max-width: 200rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* 核心观点：左竖线 + 次级文字（视觉稿 .quote） */
+/* 核心观点：左竖线 + 次级文字（视觉稿 .quote）。
+   行高 1.5：摘要多行，1.7 读起来松散 */
 .quote {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
   padding-left: var(--sp-2);
   border-left: 4rpx solid var(--line); /* 第8条例外：摘要引用竖线，不适用 --hairline */
   font-size: var(--fs-aux);
-  line-height: 1.7;
+  line-height: 1.5;
   color: var(--ink-2);
   word-break: break-word;        /* 不裁剪：完整显示核心观点（去掉 2 行 clamp） */
 }
 
-/* 原文链接：可点，复制到剪贴板 */
+/* 原文链接：可点，复制到剪贴板。
+   min-height 从 88rpx 收到 56rpx：它写在说明行里，撑到 88rpx 会把整行顶开 */
 .src-link {
   margin-left: var(--sp-2);
   color: var(--accent);
   text-decoration: underline;
-  display: inline-flex; align-items: center; min-height: 88rpx;
+  display: inline-flex; align-items: center; min-height: 56rpx;
 }
 
 /* 核心观点：标题下方这一整块信息左对齐（取消居中） */

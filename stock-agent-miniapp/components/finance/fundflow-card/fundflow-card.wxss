@@ -40,12 +40,13 @@
   border-top: var(--hairline);
 }
 
+/* 行高 72rpx：单行「标签 + 金额」，48px 一行会把四档拆得太开 */
 .flow-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
-  min-height: 96rpx;
+  min-height: 72rpx;
   border-bottom: var(--hairline);
   font-size: var(--fs-aux);
 }
@@ -151,12 +152,12 @@
   text-align: center;            /* 买入/卖出等距居中：各居其格中央（同数据栅格口径） */
 }
 
-/* 纵向等距：各块顶部间距统一为一档 */
+/* 纵向等距：各块顶部间距统一为一档（卡内比页面紧一档） */
 .flow-hd,
 .flow-list,
 .flow-spark,
 .lhb {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
 }
 
 /* ===== 龙虎榜表格化 ===== */
@@ -165,8 +166,8 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);              /* 与 .lhb-row 的 gap 一致，保证列对齐 */
-  margin-top: var(--sp-2);       /* 与「龙虎榜」标题的间距 */
-  padding-bottom: var(--sp-2);
+  margin-top: var(--sp-1);       /* 与「龙虎榜」标题的间距 */
+  padding-bottom: var(--sp-1);
   border-bottom: var(--hairline);
   font-size: var(--fs-min);
   color: var(--ink-3);
@@ -183,7 +184,7 @@
 /* 数据行：行间发丝分隔线，最后一行不画底线 */
 .lhb-row {
   margin-top: 0;
-  padding: var(--sp-2) 0;        /* 行距改由 padding 给，分隔线之间等距 */
+  padding: var(--sp-1) 0;        /* 行距改由 padding 给，分隔线之间等距 */
   border-bottom: var(--hairline);
 }
 

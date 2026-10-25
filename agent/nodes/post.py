@@ -1,9 +1,8 @@
-"""收尾节点：滚动摘要、免责声明、用量统计；另提供 agent_runs 审计落库能力。
+"""收尾节点：滚动摘要、用量统计；另提供 agent_runs 审计落库能力。
 
 在主图末尾（子图之后、END 之前）执行：
 1. messages token 超阈值 → 小模型滚动摘要，写入 Redis（按 thread_id）；
-2. 涉及个股判断 → 在最后一条 assistant 消息末尾追加免责声明（按 id 覆盖更新）；
-3. 统计 usage 写回 state。
+2. 统计 usage 写回 state。
 log_agent_run 供 main.py 在 done 事件前调用，把一轮运行写入 agent_runs 审计表。
 所有步骤容错，任何一步失败都不阻断响应。
 """
@@ -17,12 +16,6 @@ from core.pg import get_pool
 from core.redis import get_redis
 
 logger = logging.getLogger("stocka.agent")
-
-_DISCLAIMER = "\n\n> 以上信息仅供参考，不构成任何投资建议。市场有风险，投资需谨慎。"
-
-# 个股相关意图：这些回答需要挂免责声明。
-# stock = 经 RAG 漏斗直接作答；stock_agent = 漏斗未命中后由炒股 agent 取数作答
-_STOCK_INTENTS = {"stock", "stock_agent"}
 
 def _collect_usage(messages: list) -> dict:
     """从消息的 usage_metadata 聚合 token 用量。"""
@@ -112,16 +105,5 @@ async def post(state: dict) -> dict:
     await _roll_summary(state)
 
     messages = list(state.get("messages", []))
-    updates: dict = {"usage": _collect_usage(messages)}
-
-    # 2. 免责声明：涉及个股时追加到最后一条 assistant 消息（按 id 覆盖）
-    intent = state.get("intent", "")
-    if intent in _STOCK_INTENTS:
-        for m in reversed(messages):
-            if isinstance(m, AIMessage):
-                content = m.content if isinstance(m.content, str) else str(m.content)
-                if content.strip() and _DISCLAIMER.strip() not in content:
-                    updates["messages"] = [AIMessage(id=m.id, content=content + _DISCLAIMER)]
-                break
-
-    return updates
+    # 2. 统计用量。免责声明已按产品要求整条移除：正文不再追加任何声明块
+    return {"usage": _collect_usage(messages)}

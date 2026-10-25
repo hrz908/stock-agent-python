@@ -14,8 +14,9 @@
     </view>
     <slot name="left" />
 
-    <!-- 标题：铺满整行居中，max-width 避开胶囊，pointer-events 不挡手势 -->
-    <view class="nav-title" style="max-width: {{titleMaxWidth}}px;">
+    <!-- 标题：铺满整行居中，max-width 避开胶囊，pointer-events 不挡手势。
+         只有主页面（chat）传 title，子页面一律不传，此时整块不渲染 -->
+    <view wx:if="{{title}}" class="nav-title" style="max-width: {{titleMaxWidth}}px;">
       <text class="nav-title-text">{{title}}</text>
     </view>
   </view>

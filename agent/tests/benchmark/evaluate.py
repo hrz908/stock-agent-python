@@ -69,15 +69,26 @@ def rule_check(case, result: dict) -> list:
         hit = got & set(expect["cards_any"])
         add("发射了预期卡片", bool(hit), f"got={sorted(got)} want_any={expect['cards_any']}")
 
+    if expect.get("cards_none"):
+        got = set(result.get("all_cards") or [])
+        add("没有发射卡片", not got, f"got={sorted(got)}")
+
+    # 产品规则：一次回复最多一张卡（多张会与正文并列抢视线）
+    over = [t for t in (result.get("turns") or [])
+            if len(t.get("cards") or []) + len(t.get("tables") or []) > 1]
+    add("单轮最多一张卡片", not over,
+        f"超限轮次={[{ 'cards': t.get('cards'), 'tables': t.get('tables') } for t in over]}")
+
     for sub in expect.get("must_contain", []):
         add(f"包含「{sub}」", sub.lower() in low, "")
 
     for sub in expect.get("must_not_contain", []):
         add(f"不含「{sub}」", sub.lower() not in low, "")
 
-    if expect.get("disclaimer"):
-        # 接受标准声明块（post 节点追加）与模型自己的合规变体（如「不构成投资建议」）
-        add("带免责声明", bool(re.search(r"不构成.{0,8}投资建议|仅供参考", text)), "")
+    # 产品规则（2026-10-26）：正文不写免责声明，前端也不再固定挂载声明条。
+    # 这条对所有用例生效——模型最容易在这里回潮
+    add("不含免责声明套话",
+        not re.search(r"不构成.{0,8}投资建议|仅供参考|投资需谨慎|风险自负", text), "")
 
     return checks
 

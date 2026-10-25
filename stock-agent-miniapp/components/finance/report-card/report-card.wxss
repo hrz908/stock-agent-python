@@ -19,14 +19,15 @@
    行间发丝线、末行不画线；没有「龙虎榜」那样的小标题。
    原横向条形图（.bar-track / .bar-fill）按需求移除。 */
 .rep-list {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
 }
 
+/* 行距只留 sp-1：三项数据是同一张表，行与行之间不需要留呼吸感 */
 .rep-row {
   display: flex;
   align-items: center;
   gap: var(--gap-grid);
-  padding: var(--sp-2) 0;
+  padding: var(--sp-1) 0;
   border-bottom: var(--hairline);
 }
 

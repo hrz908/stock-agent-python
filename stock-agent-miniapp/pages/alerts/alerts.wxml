@@ -2,7 +2,7 @@
      选择器用微信原生 picker（mode="selector"）：客户端原生渲染的半屏滚轮，
      触发区是自绘行，视觉完全可控（执行指南 4.3） -->
 <view class="page">
-  <base-navbar title="提醒" left-arrow="{{true}}" bind:back="goBack" />
+  <base-navbar left-arrow="{{true}}" bind:back="goBack" />
 
   <view class="content">
     <!-- 概览宫格：两格（全部提醒 / 今日触发），自绘替代 t-grid -->

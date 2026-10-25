@@ -131,6 +131,8 @@ server/
 | GET | `/api/v1/stocks/search` | 股票搜索（腾讯 smartbox 优先，本地主数据兜底） | 是 |
 | GET | `/api/v1/stocks/profile` | 股票主数据：板块 / 行业 / 概念 / 上市退市 | 是 |
 | GET | `/api/v1/stock/quote` | 单只行情快照（30s Redis 缓存） | 是 |
+| GET | `/api/v1/quick-asks` | 首屏建议问题（热度池加权抽样 + 会话去重） | 是 |
+| POST | `/api/v1/quick-asks/click` | 建议问题点击上报（热度信号） | 是 |
 | GET | `/api/v1/watchlist` | 列表（含盈亏、排序） | 是 |
 | POST | `/api/v1/watchlist` | 添加 / 更新成本与数量 | 是 |
 | POST | `/api/v1/watchlist/refresh` | 手动刷新 + 提醒检查 | 是 |
@@ -153,6 +155,28 @@ server/
 - **行情与估值不在这两张表里**：它们是每日变动的快照，走 `/stock/quote` 的实时源 + 30s 缓存。
 - 这两张表刻意不进 `AutoMigrate`：结构与索引由 SQL 迁移持有，避免 GORM 与迁移脚本分叉。
 
+### 首屏建议问题（Quick Ask，`/quick-asks`）
+
+**热度定候选，加权定概率，状态定维度，模板定语气，去重定新鲜感。**
+模块在 `internal/module/quickask/`，不建表（池子只存 Redis）：
+
+| 环节 | 实现 |
+|---|---|
+| 候选池 | Redis ZSET `stock:hot:pool`（member = `code\|name\|sector\|changePct\|volumeRatio`，score = 热度分），TTL 10 分钟 |
+| 重建时机 | **惰性重建**：请求发现池子为空才建（仓库约定不用 cron），10 分钟内只有第一个请求变慢 |
+| 候选来源 | 全站 `user_watchlist` 加入数（站内关注度）+ 常青股清单，按热度截断到 200 只；`status='listed'`、`is_st=false`、上市满 7 天为硬过滤 |
+| 打分 | 涨跌幅偏离池均值 0.25 / 成交额分位 0.20 / 换手率分位 0.15 / 站内行为 0.15；**新闻、板块资金、龙虎榜与北向在网关无数据源，权重按可用信号重新归一**，不按 0 计入 |
+| 抽样 | 轮盘赌（不放回）；同板块单次 ≤ 2 支（软约束，凑不满时放宽） |
+| 去重 | `quickask:seen:{uid}:{sid}` 会话已见（30 分钟）+ `quickask:last:{uid}:{sid}` 相邻刷新换票；池子快抽干时自动开新一轮 |
+| 模板 | 股票状态 × 市场阶段：大涨大跌 → 盘面；量比 > 2 → 资金；盘后 / 周末 → 基本面；盘中横盘 → 技术 / 观察 / 风险；休市不复用「今天为什么涨」；同批按维度用量轮换，避免四条建议挤在同一个维度 |
+| 缓存 | 同会话同条数 30 秒内复用结果（`X-Cache` 标记 HIT/MISS），防狂点导致建议乱跳 |
+| 降级 | Redis / 主数据 / 上游行情任一不可用 → 常青股兜底，响应 `source` 标 `redis` / `built` / `fallback` |
+
+- `display` 是前端展示的一句话，`query` 是真正发给 Agent 的完整问题（带股票代码与维度），两者刻意不同；
+- 点击上报 `POST /quick-asks/click` 只做 `ZINCRBY stock:ask:heat`：网关没有搜索日志与卡片点击埋点，
+  这是「站内行为」权重唯一的来源，失败不影响发问；
+- 候选池重建会批量拉行情（200 只 ≈ 10 次腾讯批量请求），因此挂在 `market` 用户限流组下。
+
 ### Agent SSE 事件契约（`POST /api/v1/agent/stream`）
 
 网关只做透传，`data` 结构由 Python Agent（`agent/subgraphs/stock.py` 的 `_emit_structured`）约定；
@@ -169,31 +193,42 @@ server/
 | `card` | `compare_card` | `{items, ts_code, peers_source}`；items 为 `[{name, price, changePct, pe, pb, totalMv}]`（**当日快照，元口径**，最多本股 + 2 家同行）；`peers_source` = `explicit`（模型指定）/ `industry`（按行业自动补）/ `none`（只比本股） | 同业对比卡 |
 | `card` | `research_card` | 东财研报单行（org/rating/report_type/publish_date/summary/source_name/source_url/industry/eps_forecast/pe_forecast；**数据源无目标价**，targetPrice 恒空） | 研报观点卡 |
 | `card` | `event_card` | `{events, range, note}`；events 为 `[{type, date, title, desc, important, source_url, source_name}]`（由 `get_stock_news` 当日资讯确定性归纳，不做语义推断） | 公司事件卡 |
-| `table` | `symbol_list` | 股票搜索候选行数组 | 搜索候选列表 |
-| `table` | `kline_table` | `{rows: [{date, open, high, low, close, volume}], code?, name?}`（升序，最多 15 个交易日；`trade_date→date`、`vol→volume` 已映射；本轮查过行情时补 `code`/`name` 供卡片标题用） | K 线卡 |
+| `table` | `kline_table` | `{rows: [{date, open, high, low, close, volume}], code?, name?}`（升序，最多 15 个交易日；`trade_date→date`、`vol→volume` 已映射；本轮查过行情时补 `code`/`name` 供卡片标题用） | K 线卡（仅在 K 线话题以外被选中最相关时才下发） |
+
+> `symbol_list`（股票搜索候选）自 2026-10-26 起**不再下发**：它只是搜代码的中间结果，
+> 前端也没有对应卡片。契约校验（`cards.py`）里仍保留，方便将来复用。
 
 说明：
 
-1. **一次提问，一种卡片只发一张**（防刷屏）。估值 / 资金流的数据源按「天」返回一整段，
-   只取最新一天发一张卡（按天发会把同一只股票的连续交易日并排铺三张）；研报取最新一篇；
-   资讯整轮合成一张事件卡。多条目之间的差异由正文转述，卡片只做速览；
-2. `report_card` 来自组合工具 `get_financial_report`（并发拉新浪财务指标 + 利润表 + 现金流量表），
+1. **一次回复最多只发一张卡**（2026-10-26 起）。候选由 `_card_candidates` 收集，
+   再由 `_emit_structured` 按「用户问题的核心意图」打分挑一张：问题关键词命中越多越优先
+   （估值 / 资金 / 财报 / 研报 / 新闻 / 对比 / 行情各有自己的词表），同分按工具调用顺序；
+   载荷校验不过就顺延到下一张，全都不合规才降级为纯文本。
+   多张卡会与正文并列抢视线，且卡与卡之间没有主次，所以不做「都发出来」；
+2. **K 线（蜡烛图）话题一律不出卡**：命中 `_KLINE_MARKERS`（k线 / 蜡烛 / 日k / 周k / 分钟k /
+   分时图 / 均线 / 走势图 / 技术分析 / 技术形态 / macd 等）时整轮一张都不发——
+   看图去小程序「看个 K 线」页更完整，聊天流里插缩略 K 线卡只会和正文抢位置；
+3. 数据源按「天」返回的（估值 / 资金流）只取最新一天（按天发会把同一只股票的连续交易日
+   并排铺三张）；研报取最新一篇；资讯整轮合成一张事件卡。多条目之间的差异由正文转述；
+4. `report_card` 来自组合工具 `get_financial_report`（并发拉新浪财务指标 + 利润表 + 现金流量表），
    任一子表取不到时对应字段为 `null`，前端渲染 `--`，不影响其它字段；
-3. `kline_table` 由 `get_history_daily` 发射（2026-10-23 复活；Go `/stock/kline` 仍保持下线），
-   产品约定 K 线走势只取 15 个交易日，工具侧窗口收死（days 上限 15）；
-4. 龙虎榜由 `get_top_list`（东财龙虎榜详情）提供，只取席位/买入/卖出三个量；
+5. `kline_table` 由 `get_history_daily` 发射（2026-10-23 复活；Go `/stock/kline` 仍保持下线），
+   产品约定 K 线走势只取 15 个交易日，工具侧窗口收死（days 上限 15）。
+   注意它同样受上面第 2 条约束：问题提到 K 线就不发，只有「问的不是 K 线、但这张卡最相关」
+   时才可能作为那一张卡下发；
+6. 龙虎榜由 `get_top_list`（东财龙虎榜详情）提供，只取席位/买入/卖出三个量；
    近期未上榜时优雅降级（fundflow 卡不带 lhb 区块）。北向/南向/融资融券工具保持下线；
-5. `compare_card` 由 `get_peer_compare` 提供，五个维度全部来自 Go 网关当日行情快照
+7. `compare_card` 由 `get_peer_compare` 提供，五个维度全部来自 Go 网关当日行情快照
    （腾讯源）；历史分位、行业均值、一致预期等字段仍**没有数据源**，
    卡片按缺失降级，不编造。`peers` 留空时会按东财行业自动补两家（`peers_source=industry`），
    只是兜底；要挑规模相近的同行，模型应先调 `get_industry_peers` 再显式传 `peers`。
-6. **数据源（2026-10-23 起）**：卡片数据 = akshare（东财/新浪，免 token）+ baostock（历史日 K，免 token），
+8. **数据源（2026-10-23 起）**：卡片数据 = akshare（东财/新浪，免 token）+ baostock（历史日 K，免 token），
    原 Tushare 通道已删除（实测 token 对 moneyflow/top_list 等接口无权限 40203）；
    quote/search/compare 仍走 Go 网关腾讯快照。
-7. `research_card` 由 `get_research_reports`（东财个股研报）提供，取最新一篇（多家机构的
+9. `research_card` 由 `get_research_reports`（东财个股研报）提供，取最新一篇（多家机构的
    观点差异由正文转述）。东财研报不提供目标价，`targetPrice` / `upside` / `forecastDir` 恒空，
    卡片降级显示 `--`，工具层不编造。
-8. `event_card` 由 `get_stock_news`（东财个股资讯，只保留当日）整轮合成一张卡（不再一条一卡）。
+10. `event_card` 由 `get_stock_news`（东财个股资讯，只保留当日）整轮合成一张卡（不再一条一卡）。
    事件类型按标题关键词确定性归纳（解禁 / 增减持 / 分红 / 回购 / 停复牌 / 诉讼 / 订单 / 财报），
    归纳不出归「资讯」；`important` 只标解禁 / 停复牌 / 诉讼三类。
 

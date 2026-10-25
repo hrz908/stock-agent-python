@@ -24,15 +24,16 @@ type QuoteDetail struct {
 	Open          decimal.Decimal `json:"open"`
 	High          decimal.Decimal `json:"high"`
 	Low           decimal.Decimal `json:"low"`
-	Volume        int64           `json:"volume"`   // 成交量（手）
-	Amount        decimal.Decimal `json:"amount"`   // 成交额（万元）
-	Turnover      decimal.Decimal `json:"turnover"` // 换手率（%）
-	PE            decimal.Decimal `json:"pe"`       // 市盈率（腾讯口径，TTM）
-	PB            decimal.Decimal `json:"pb"`       // 市净率
-	TotalMv       decimal.Decimal `json:"total_mv"` // 总市值（元；上游亿元×1e8）
-	FreeMv        decimal.Decimal `json:"free_mv"`  // 流通市值（元；上游亿元×1e8）
-	Status        string          `json:"status"`   // trading / closed
-	Time          string          `json:"time"`     // 行情时间（腾讯返回的原始串）
+	Volume        int64           `json:"volume"`       // 成交量（手）
+	Amount        decimal.Decimal `json:"amount"`       // 成交额（万元）
+	Turnover      decimal.Decimal `json:"turnover"`     // 换手率（%）
+	VolumeRatio   decimal.Decimal `json:"volume_ratio"` // 量比（当日每分钟均量 / 过去5日每分钟均量）
+	PE            decimal.Decimal `json:"pe"`           // 市盈率（腾讯口径，TTM）
+	PB            decimal.Decimal `json:"pb"`           // 市净率
+	TotalMv       decimal.Decimal `json:"total_mv"`     // 总市值（元；上游亿元×1e8）
+	FreeMv        decimal.Decimal `json:"free_mv"`      // 流通市值（元；上游亿元×1e8）
+	Status        string          `json:"status"`       // trading / closed
+	Time          string          `json:"time"`         // 行情时间（腾讯返回的原始串）
 }
 
 // FetchDetail 拉单只股票的完整行情。
@@ -81,19 +82,20 @@ func parseDecimal(s string) decimal.Decimal {
 // （tecName/tecCode/tecPrice/tecPercent 已在 source.go 定义；
 // 下标已用 sh600519 真实响应核对：39=PE、46=PB、44=流通市值、45=总市值）
 const (
-	tecPrevClose = 4  // 昨收
-	tecOpen      = 5  // 今开
-	tecVolume    = 6  // 成交量（手）
-	tecChange    = 31 // 涨跌额
-	tecHigh      = 33 // 最高
-	tecLow       = 34 // 最低
-	tecAmount    = 37 // 成交额（万元）
-	tecTime      = 30 // 行情时间，形如 20261020150003
-	tecTurnover  = 38 // 换手率（%）
-	tecPE        = 39 // 市盈率（TTM）
-	tecFreeMv    = 44 // 流通市值（亿元）
-	tecTotalMv   = 45 // 总市值（亿元）
-	tecPB        = 46 // 市净率
+	tecPrevClose   = 4  // 昨收
+	tecOpen        = 5  // 今开
+	tecVolume      = 6  // 成交量（手）
+	tecChange      = 31 // 涨跌额
+	tecHigh        = 33 // 最高
+	tecLow         = 34 // 最低
+	tecAmount      = 37 // 成交额（万元）
+	tecTime        = 30 // 行情时间，形如 20261020150003
+	tecTurnover    = 38 // 换手率（%）
+	tecPE          = 39 // 市盈率（TTM）
+	tecFreeMv      = 44 // 流通市值（亿元）
+	tecTotalMv     = 45 // 总市值（亿元）
+	tecPB          = 46 // 市净率
+	tecVolumeRatio = 49 // 量比（49 之后是委差/均价等，本结构不用）
 )
 
 // parseTencentDetails 解析腾讯行情文本为完整快照，字段布局同 parseTencentQuotes
@@ -126,6 +128,12 @@ func parseTencentDetails(body string) []*QuoteDetail {
 			name = symbol
 		}
 
+		// 量比在部分品种（指数 / 停牌股）上缺字段，长度不够时留零，不影响其它字段
+		volumeRatio := decimal.Zero
+		if len(fields) > tecVolumeRatio {
+			volumeRatio = parseDecimal(fields[tecVolumeRatio])
+		}
+
 		out = append(out, &QuoteDetail{
 			Code:          symbol,
 			Name:          name,
@@ -138,6 +146,7 @@ func parseTencentDetails(body string) []*QuoteDetail {
 			Volume:        int64(parseDecimal(fields[tecVolume]).IntPart()),
 			Amount:        parseDecimal(fields[tecAmount]),
 			Turnover:      parseDecimal(fields[tecTurnover]),
+			VolumeRatio:   volumeRatio,
 			PE:            parseDecimal(fields[tecPE]),
 			PB:            parseDecimal(fields[tecPB]),
 			TotalMv:       parseDecimal(fields[tecTotalMv]).Mul(decimal.NewFromInt(100000000)),

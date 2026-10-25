@@ -3,7 +3,7 @@
      components/finance/* 的组件 wxss 与 styles/token.wxss 的 .msg-card，
      所以调这里的效果 = 调 chat 主页面的效果（约定见 DESIGN.md「卡片画廊」节） -->
 <view class="page">
-  <base-navbar title="{{titleText}}" left-arrow="{{true}}" bind:back="onBack" />
+  <base-navbar left-arrow="{{true}}" bind:back="onBack" />
 
   <scroll-view class="gallery" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
     <view class="gallery-hd">

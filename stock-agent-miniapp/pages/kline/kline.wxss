@@ -17,10 +17,14 @@
 }
 
 /* ===== 搜索框 =====
-   联想结果不做绝对定位浮层：下方是 scroll-view，它会盖住同层的定位浮层
-   （实测下拉被卡片切掉一半）。改成在流内展开，卡片整体下移，点击不会被挡 */
+   联想结果是绝对定位浮层：只盖住下方卡片，不把卡片整体往下推。
+   关键是 .search-field 自己建层（position + z-index），否则同层的 scroll-view
+   会后绘制、把浮层切掉一半（早前踩过）。K 线图是 SVG 背景图不是 canvas，
+   view 可以正常压在它上面，不需要 cover-view 那套 */
 .search-field {
   flex: none;
+  position: relative;
+  z-index: 10;
 }
 
 .search-box {
@@ -60,9 +64,14 @@
   border-radius: 50%;
 }
 
-/* 联想结果：在流内展开（见 .search-field 注释） */
+/* 联想结果：浮层，左对齐搜索框、宽度贴合（左右 0），从搜索框底边向下展开 */
 .search-drop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
   margin-top: var(--sp-1);
+  z-index: 10;
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-tag);
@@ -92,16 +101,26 @@
   color: var(--ink-3);
 }
 
-/* ===== 当前股票 ===== */
+/* ===== 当前股票 =====
+   左：名称 + 代码（整体可被压缩出省略号）；右：刷新按钮由 margin-left:auto 顶到最右，
+   名称再长也不会把刷新挤出行外 */
 .picked {
   flex: none;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--sp-2);
   margin-top: var(--sp-3);
 }
 
+.picked-id {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
 .picked-name {
+  min-width: 0;
   font-size: var(--fs-body);
   font-weight: 600;
   color: var(--ink);
@@ -111,8 +130,44 @@
 }
 
 .picked-code {
+  flex: none;
   font-size: var(--fs-aux);
   color: var(--ink-3);
+}
+
+/* 刷新入口：无底色，图标 + 文字，与自选股页的刷新同一个样子 */
+.picked-refresh {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  padding: var(--sp-1);
+}
+
+.picked-refresh-text {
+  font-size: var(--fs-aux);
+  color: var(--ink);
+}
+
+/* ant-icon 渲染成 <text>（行内元素），transform 对行内元素不生效，
+   要旋转必须先把图标变成 inline-block */
+.picked-refresh-icon {
+  display: inline-block;
+}
+
+/* 刷新中：图标旋转（与自选股页同一套节奏） */
+.picked-refresh--spinning .picked-refresh-icon {
+  animation: picked-refresh-spin 800ms linear infinite;
+}
+
+@keyframes picked-refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ===== 五张 K 线卡 =====

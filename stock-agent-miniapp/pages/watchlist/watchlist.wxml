@@ -2,17 +2,20 @@
      左滑删除用触摸事件自绘（替代 t-swipe-cell）：transform 位移由 data 驱动，
      拖动中关过渡、松手时开过渡归位；纵向滚动让位（先判方向再锁定）。 -->
 <view class="page">
-  <base-navbar title="自选股" left-arrow="{{true}}" bind:back="goBack" />
-
+  <base-navbar left-arrow="{{true}}" bind:back="goBack" />
   <view class="content">
     <!-- 总浮动概览：自绘卡片（替代 cell-group card 主题） -->
     <view class="overview-card">
       <view class="overview-head">
-        <text class="overview-title">自选总浮动（今日）</text>
+        <text class="overview-title">自选总浮动</text>
         <!-- 上涨/下跌标签放回标题行右侧 -->
         <view class="overview-tags">
-          <view class="mini-tag mini-tag--up"><text class="num">上涨 {{upCount}}</text></view>
-          <view class="mini-tag mini-tag--down"><text class="num">下跌 {{downCount}}</text></view>
+          <view class="mini-tag mini-tag--up">
+            <text class="num">涨{{upCount}}</text>
+          </view>
+          <view class="mini-tag mini-tag--down">
+            <text class="num">跌{{downCount}}</text>
+          </view>
         </view>
       </view>
       <!-- 盈亏红涨绿跌（A 股习惯），profitClass 由 JS 按符号推导 -->
@@ -25,41 +28,20 @@
         </view>
       </view>
     </view>
-
     <!-- 筛选：占满整行的段式单选（radio）；无槽底色，选中靠字重与字色 -->
     <view class="filter-radio">
-      <view
-        class="filter-radio__item {{item.key === filter ? 'filter-radio__item--on' : ''}}"
-        wx:for="{{filters}}"
-        wx:for-item="item"
-        wx:key="key"
-        data-key="{{item.key}}"
-        bindtap="onFilterTap"
-      >{{item.label}}</view>
+      <view class="filter-radio__item {{item.key === filter ? 'filter-radio__item--on' : ''}}" wx:for="{{filters}}" wx:for-item="item" wx:key="key" data-key="{{item.key}}" bindtap="onFilterTap">
+        {{item.label}}
+      </view>
     </view>
-
     <!-- 自选列表：只有这一个容器内部滚动，底边停在「添加股票」按钮上方 -->
     <scroll-view class="stock-scroll" scroll-y="{{scrollable}}" enhanced="{{true}}" show-scrollbar="{{false}}">
       <view class="stock-inner">
         <view class="stock-list" wx:if="{{filtered.length > 0}}">
-          <view
-            class="stock-row {{swipeDragging ? 'stock-row--dragging' : ''}} {{(index === swipeOpen || (swipeDragging && index === swipeIndex)) ? 'stock-row--action-on' : ''}}"
-            wx:for="{{filtered}}"
-            wx:for-item="item"
-            wx:for-index="index"
-            wx:key="code"
-          >
+          <view class="stock-row {{swipeDragging ? 'stock-row--dragging' : ''}} {{(index === swipeOpen || (swipeDragging && index === swipeIndex)) ? 'stock-row--action-on' : ''}}" wx:for="{{filtered}}" wx:for-item="item" wx:for-index="index" wx:key="code">
             <!-- 主行：绝对定位于操作区之上，位移由 swipeIndex / swipeOpen 决定。
                  点击进卡片画廊（pages/test，静态样式页），code 仅随 URL 透传 -->
-            <view
-              class="stock-row-main {{item.sep ? 'stock-row-main--sep' : ''}}"
-              style="transform: translateX({{index === swipeIndex ? swipeDx : (index === swipeOpen ? -64 : 0)}}px);"
-              data-index="{{index}}"
-              bindtouchstart="onRowTouchStart"
-              bindtouchmove="onRowTouchMove"
-              bindtouchend="onRowTouchEnd"
-              bindtouchcancel="onRowTouchEnd"
-            >
+            <view class="stock-row-main {{item.sep ? 'stock-row-main--sep' : ''}}" style="transform: translateX({{index === swipeIndex ? swipeDx : (index === swipeOpen ? -64 : 0)}}px);" data-index="{{index}}" bindtouchstart="onRowTouchStart" bindtouchmove="onRowTouchMove" bindtouchend="onRowTouchEnd" bindtouchcancel="onRowTouchEnd">
               <view class="stock-info">
                 <view class="stock-name">{{item.name}}</view>
                 <!-- 新增自选只有代码，等待行情时显示占位，不重复显示一遍代码 -->
@@ -77,73 +59,30 @@
             </view>
           </view>
         </view>
-
         <!-- 空态：带下一步动作，不是一句「没有」了事 -->
-        <base-empty
-          wx:else
-          icon="StarOutline"
-          text="这里还没有自选股"
-          sub="点下方「添加股票」，搜索代码或名称"
-        />
+        <base-empty wx:else icon="StarOutline" text="这里还没有自选股" sub="点下方「添加股票」，搜索代码或名称" />
       </view>
     </scroll-view>
   </view>
-
   <!-- 底部主操作：主行动蓝（唯一强调色的合法用途） -->
   <view class="bottom-btn" style="bottom: {{bottomGap}}px;">
     <view class="add-btn" bindtap="onAdd">
       <text class="add-btn-text">添加股票</text>
     </view>
   </view>
-
   <!-- 删除确认（base-popup center，危险色确认） -->
-  <base-popup
-    visible="{{confirmVisible}}"
-    mode="center"
-    title="移出自选"
-    desc="确定将「{{pendingName}}」移出自选吗？"
-    confirm-text="确定"
-    cancel-text="取消"
-    confirm-danger="{{true}}"
-    bind:confirm="confirmDelete"
-    bind:cancel="cancelDelete"
-    bind:mask="cancelDelete"
-  />
-
+  <base-popup visible="{{confirmVisible}}" mode="center" title="移出自选" desc="确定将「{{pendingName}}」移出自选吗？" confirm-text="确定" cancel-text="取消" confirm-danger="{{true}}" bind:confirm="confirmDelete" bind:cancel="cancelDelete" bind:mask="cancelDelete" />
   <!-- 添加自选（base-popup center 承载表单；center 模式纯淡入，原生 input 不错位） -->
-  <base-popup
-    visible="{{addVisible}}"
-    mode="center"
-    title="添加自选股"
-    confirm-text="确定"
-    cancel-text="取消"
-    bind:confirm="onAddConfirm"
-    bind:cancel="onAddCancel"
-    bind:mask="onAddCancel"
-  >
+  <base-popup visible="{{addVisible}}" mode="center" title="添加自选股" confirm-text="确定" cancel-text="取消" bind:confirm="onAddConfirm" bind:cancel="onAddCancel" bind:mask="onAddCancel">
     <view slot="content" class="add-form">
       <!-- 股票代码：模糊搜索，下拉给出最匹配的几条。
            去掉 type="number" 是为了能直接输中文和拼音，不用背 6 位代码 -->
       <view class="search-field">
         <view class="form-label">股票代码</view>
-        <input
-          class="form-input"
-          value="{{addCode}}"
-          placeholder="代码 / 名称 / 拼音"
-          placeholder-class="form-input-placeholder"
-          bindinput="onAddCode"
-        />
+        <input class="form-input" value="{{addCode}}" placeholder="代码 / 名称 / 拼音" placeholder-class="form-input-placeholder" bindinput="onAddCode" />
         <!-- 下拉只在有结果时占位，避免空框挤压表单 -->
         <view class="search-dropdown" wx:if="{{searchVisible && searchResults.length > 0}}">
-          <view
-            class="search-item"
-            wx:for="{{searchResults}}"
-            wx:for-item="item"
-            wx:key="code"
-            data-code="{{item.code}}"
-            data-market="{{item.market}}"
-            bindtap="onPickSearch"
-          >
+          <view class="search-item" wx:for="{{searchResults}}" wx:for-item="item" wx:key="code" data-code="{{item.code}}" data-market="{{item.market}}" bindtap="onPickSearch">
             <text class="search-item-name">{{item.name}}</text>
             <text class="search-item-code num">{{item.market}}{{item.code}}</text>
           </view>
@@ -152,30 +91,15 @@
       <!-- 成本价：type="digit" 带小数点键盘，可留空（还没建仓 / 不想记） -->
       <view class="form-field">
         <view class="form-label">买入单价</view>
-        <input
-          class="form-input"
-          type="digit"
-          value="{{addCost}}"
-          placeholder="元"
-          placeholder-class="form-input-placeholder"
-          bindinput="onAddCost"
-        />
+        <input class="form-input" type="digit" value="{{addCost}}" placeholder="元" placeholder-class="form-input-placeholder" bindinput="onAddCost" />
       </view>
       <!-- 持股数量：整数，可留空 -->
       <view class="form-field">
         <view class="form-label">持股数量</view>
-        <input
-          class="form-input"
-          type="number"
-          value="{{addQty}}"
-          placeholder="股"
-          placeholder-class="form-input-placeholder"
-          bindinput="onAddQty"
-        />
+        <input class="form-input" type="number" value="{{addQty}}" placeholder="股" placeholder-class="form-input-placeholder" bindinput="onAddQty" />
       </view>
       <!-- 行内报错（替代 t-input 的 status/tips） -->
       <view wx:if="{{codeError}}" class="form-error">{{codeError}}</view>
-
       <view class="add-note">
         <view class="note-title">支持这些交易所的代码前缀</view>
         <view class="note-row" wx:for="{{exchanges}}" wx:for-item="ex" wx:key="label">
@@ -185,6 +109,5 @@
       </view>
     </view>
   </base-popup>
-
   <base-toast id="base-toast" />
 </view>

@@ -20,7 +20,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--gap-grid);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
 }
 
 /* 三个数字各占一等份、格内居中 */
@@ -50,7 +50,7 @@
 
 /* 迷你走势线：与栅格之间留一档 */
 .spark {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
   height: 88rpx;
 }
 
@@ -58,7 +58,7 @@
    等距：行间距统一由 .fgrid 的 gap 给，关掉第二行自带的 margin-top 防叠加；
    居中：每格标签与数值居中（规则在 _card.wxss，本卡不另写对齐）。 */
 .fgrid {
-  gap: var(--gap-grid);          /* 两行之间垂直等距 */
+  gap: var(--sp-2);              /* 两行之间垂直等距 */
 }
 .fgrid-row--gap {
   margin-top: 0;                 /* 行间距交给 .fgrid 的 gap，避免与 gap 叠加 */

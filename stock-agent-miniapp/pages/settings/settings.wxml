@@ -1,7 +1,7 @@
 <!-- 页面骨架：自研 navbar + 自绘卡片（替代 TDesign cell-group 体系）。
      浅色专业金融视觉：--surface 卡片 / --line 描边 / --ink 文字层级。 -->
 <view class="page">
-  <base-navbar title="我的" left-arrow="{{true}}" bind:back="goBack" />
+  <base-navbar left-arrow="{{true}}" bind:back="goBack" />
 
   <view class="content">
     <!-- 个人信息：整块可点，打开编辑资料弹窗。

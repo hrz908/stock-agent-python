@@ -12,6 +12,7 @@ import (
 	"stock-agent-server/internal/middleware"
 	"stock-agent-server/internal/module/alert"
 	authapi "stock-agent-server/internal/module/auth"
+	"stock-agent-server/internal/module/quickask"
 	"stock-agent-server/internal/module/stock"
 	"stock-agent-server/internal/module/user"
 	"stock-agent-server/internal/module/watchlist"
@@ -62,10 +63,12 @@ func New(cfg config.Config) *gin.Engine {
 		alert.Register(authorized)
 		user.Register(authorized)
 
-		// 行情与搜索会放大成多个第三方上游请求（腾讯行情 / smartbox），故按用户单独限流
+		// 行情与搜索会放大成多个第三方上游请求（腾讯行情 / smartbox），故按用户单独限流。
+		// Quick Ask 的候选池过期时会批量拉行情，也归到这一档
 		market := authorized.Group("")
 		market.Use(middleware.UserRateLimit(cfg.RateLimit.MarketPerMin, time.Minute))
 		stock.Register(market)
+		quickask.Register(market)
 
 		// Agent 对话 SSE：小程序与 H5 共用同一条链路，走 Header 鉴权
 		authorized.POST("/agent/stream", agent.ServeSSE)

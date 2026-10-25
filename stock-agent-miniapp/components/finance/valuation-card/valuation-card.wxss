@@ -19,9 +19,9 @@
    注：PE 分位进度条（.pct-row / .pct-track / .pct-fill / .pct-label / .pct-value）
    已随分位信息一并移除，样式同步删掉，不留死代码。 */
 .fgrid {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
 }
 
 .fgrid-row--gap {
-  margin-top: var(--sp-3);       /* 与 .fgrid 取同值，保证两块栅格间距一致 */
+  margin-top: var(--sp-2);       /* 与 .fgrid 取同值，保证两块栅格间距一致 */
 }

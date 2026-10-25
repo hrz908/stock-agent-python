@@ -291,86 +291,135 @@
   color: var(--down);
 }
 
-/* ===== 状态提示（正在思考 / 工具查询 / 重连） =====
-   与 AI 回复共用同一条页边线，不单独占一个盒子 */
-.status-tip {
+/* ===== AI 加载态（等待回复 / 取数 / 长耗时 / 重连） =====
+   与 AI 回复共用同一条页边线与左对齐：位置本身就在说「回答会出现这里」，
+   不额外造一个盒子，也不占满一行。
+   主角是一句话（正文字号 + 主色 + 500），动效只留三个点；
+   「这一轮是活的」靠动效表达，不靠彩色底、不靠渐变 */
+/* 间距沿用 .bubble--assistant（sp-1 上下 + sp-3 左），这里只加呼吸 */
+.ai-load {
+  animation: ai-load-breathe 2.4s ease-in-out infinite;
+}
+
+/* 断线重连：等的是网络不是模型。动效停下（静 = 卡住），
+   只把文案提成琥珀色——状态色按语义用，不铺底、不描边 */
+.ai-load--warn {
+  animation: none;
+}
+
+.ai-load--warn .ai-load-dot {
+  animation: none;
+  opacity: 1;
+}
+
+.ai-load--warn .ai-load-text {
+  color: var(--warn);
+}
+
+.ai-load-hd {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+/* 三个点与首行文字光学居中：文字行高 45rpx、点高 12rpx，上留一档 */
+.ai-load-dots {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  width: fit-content;
-  max-width: 80%;
-  margin-top: var(--sp-4);
-  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
-  border-left: 2rpx solid var(--line); /* 例外：页边线是版式标记，不走 --hairline */
-}
-
-.status-tip-text {
-  font-size: var(--fs-aux);
-  color: var(--ink-2);
-}
-
-/* 三个跳动小点：代替 loading 图标，错相延迟形成波浪感 */
-.status-dots {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
   flex: none;
+  margin-top: var(--sp-2);
 }
 
-.status-dot {
-  width: 10rpx;
-  height: 10rpx;
-  border-radius: 50%;
-  background-color: var(--ink-3);
-  animation: status-blink 1.2s infinite ease-in-out;
-}
-
-.status-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.status-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-/* 思考气泡：代替底部小条，作为 AI 回复位置的占位加载态 */
-.thinking-bubble {
-  display: flex;
-  align-items: center;
-  padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
-}
-
-.thinking-dots {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  flex: none;
-}
-
-.thinking-dot {
+.ai-load-dot {
   width: 12rpx;
   height: 12rpx;
   border-radius: 50%;
-  background-color: var(--ink-3);
-  animation: status-blink 1.2s infinite ease-in-out;
+  background-color: var(--ink);
+  animation: ai-load-blink 1.4s infinite ease-in-out;
 }
 
-.thinking-dot:nth-child(2) {
-  animation-delay: 0.2s;
+.ai-load-dot:nth-child(2) {
+  animation-delay: 0.16s;
 }
 
-.thinking-dot:nth-child(3) {
-  animation-delay: 0.4s;
+.ai-load-dot:nth-child(3) {
+  animation-delay: 0.32s;
 }
 
-@keyframes status-blink {
-  0%, 60%, 100% {
-    opacity: 0.35;
-    transform: translateY(0);
+.ai-load-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.ai-load-text {
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* 补充说明只服务长耗时档：弱一档字号与字色，读不读都不影响理解 */
+.ai-load-hint {
+  font-size: var(--fs-aux);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+/* 三点呼吸：只走透明度与缩放，不做位移——位移会带动整块文字视觉抖动 */
+@keyframes ai-load-blink {
+  0%, 70%, 100% {
+    opacity: 0.18;
+    transform: scale(0.78);
   }
-  30% {
+  35% {
     opacity: 1;
-    transform: translateY(-4rpx);
+    transform: scale(1);
+  }
+}
+
+/* 页边线呼吸：只在中性灰之间走，不做彩色分割线 */
+@keyframes ai-load-breathe {
+  0%, 100% {
+    border-left-color: var(--line);
+  }
+  50% {
+    border-left-color: var(--ink-3);
+  }
+}
+
+/* ===== 生成中光标 =====
+   跟在正文末尾，比另挂一条「生成中」横条更贴近「字还在往外走」这件事 */
+.md-caret-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+
+.md-caret {
+  width: 4rpx;
+  height: 30rpx;
+  flex: none;
+  border-radius: 2rpx;
+  background: var(--ink);
+  animation: md-caret-blink 1s infinite;
+}
+
+.md-caret-text {
+  font-size: var(--fs-aux);
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+@keyframes md-caret-blink {
+  0%, 45% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0.15;
   }
 }
 
@@ -402,12 +451,29 @@
   box-shadow: var(--shadow-card);
 }
 
+/* 维度标签（盘面 / 资金 / 基本面…）：纯文字 + 一条发丝分隔线，
+   不加底色，避免四条建议各带一个色块抢走问句本身的注意力 */
+.quick-ask-tag {
+  flex: none;
+  padding-right: var(--sp-2);
+  border-right: var(--hairline);
+  font-size: var(--fs-min);
+  line-height: 1.2;
+  color: var(--ink-3);
+}
+
+/* 问句最多两行：股票名 + 代码 + 上下文一句话，单行放不下时截断会把问句砍半，
+   用户就没法判断点下去会问什么 */
 .quick-ask-text {
   flex: 1;
   min-width: 0;
   font-size: var(--fs-body);
+  line-height: 1.4;
   color: var(--ink);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 /* ===== 免责声明（合规兜底条，所有回答底部固定挂载） =====

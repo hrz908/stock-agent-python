@@ -14,39 +14,57 @@ import {
   deleteSession
 } from '../../services/sessions';
 import { parseMarkdown } from '../../utils/markdown';
+import { list as listQuickAsks, click as reportQuickAskClick } from '../../services/quickAsk';
 import { isDev } from '../../config';
 
 // 侧边抽屉导航项：每行 = 文字 + 右侧箭头（左侧不放图标）
 // 不列「主页」：抽屉本来就只在主页存在，这一项点了没地方去
 const MENUS = [
-  { key: 'watchlist', label: '行情收益' },
-  { key: 'alerts', label: '提醒通知' },
-  { key: 'settings', label: '用户信息' },
-  { key: 'kline', label: '自选K线' },
+  { key: 'kline', label: 'K线卡片' },
+  { key: 'watchlist', label: '自选股浮动' },
+  { key: 'alerts', label: '提醒推送' },
+  { key: 'settings', label: '设置' },
   // 卡片画廊是假数据页，只给开发版：体验版/正式版留着「K线测试」入口
   // 等于把测试内容交付给用户，审核也会被判为内容不完整
   ...(isDev ? [{ key: 'cardtest', label: 'K线测试' }] : [])
 ];
 
-// 首屏引导问题：股票名每次进页面随机抽，避免永远是同一只
-const QUICK_ASK_STOCKS = [
-  '贵州茅台', '宁德时代', '比亚迪', '隆基绿能', '中芯国际', '招商银行',
-  '五粮液', '长江电力', '紫金矿业', '立讯精密', '海康威视', '美的集团'
+// 首屏引导问题：正常走后端 /quick-asks（热度候选池 + 加权抽样 + 状态选模板 +
+// 会话去重），这里只保留本地兜底——接口不可用（离线 / 未登录 / 池子为空）时
+// 首屏仍然有东西可点，不能是一张白纸
+const FALLBACK_STOCKS = [
+  { code: '600519', name: '贵州茅台' },
+  { code: '300750', name: '宁德时代' },
+  { code: '002594', name: '比亚迪' },
+  { code: '600036', name: '招商银行' },
+  { code: '300059', name: '东方财富' },
+  { code: '000858', name: '五粮液' },
+  { code: '601899', name: '紫金矿业' },
+  { code: '002475', name: '立讯精密' }
 ];
-const QUICK_ASK_TEMPLATES = [
-  (name) => name + '现在什么价',
-  (name) => name + '最近的资金流向怎么样',
-  (name) => name + '的估值贵不贵'
+const FALLBACK_TEMPLATES = [
+  { tag: '盘面', build: (s) => `${s.name}现在什么价？` },
+  { tag: '资金', build: (s) => `${s.name}最近的资金流向怎么样？` },
+  { tag: '基本面', build: (s) => `${s.name}的估值贵不贵？` },
+  { tag: '风险', build: (s) => `${s.name}当前最大的风险点是什么？` }
 ];
 
-// 抽三条不重复的股票，逐个套模板。抽完即定，同一次页面里不再变
-function buildQuickAsks() {
-  const pool = QUICK_ASK_STOCKS.slice();
-  const picked = [];
-  for (let i = 0; i < QUICK_ASK_TEMPLATES.length && pool.length; i += 1) {
-    picked.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-  }
-  return picked.map((name, i) => QUICK_ASK_TEMPLATES[i](name));
+// 抽三条不重复的股票，逐个套模板；展示与发送用同一句（兜底态不拼额外限定）
+function buildFallbackQuickAsks() {
+  const pool = FALLBACK_STOCKS.slice();
+  return FALLBACK_TEMPLATES.map((tpl, i) => {
+    const idx = Math.floor(Math.random() * pool.length);
+    const stock = pool.splice(idx, 1)[0] || FALLBACK_STOCKS[0];
+    const display = tpl.build(stock);
+    return {
+      id: `local_${stock.code}_${Date.now()}_${i}`,
+      display,
+      query: display,
+      stock_code: stock.code,
+      stock_name: stock.name,
+      tag: tpl.tag
+    };
+  });
 }
 
 // 抽屉导航项 → 子页面路由，key 与 MENUS 一一对应
@@ -452,62 +470,10 @@ function eventCard(payload) {
   };
 }
 
-// ===== 卡片加载态 =====
-// 八张卡都走「先占位、后换真卡」：tool_start 插一张 loading 占位卡，
-// card / table 事件到了就地替换（卡片位置不跳），取数失败转 error 态留在列表里。
-// 这样长耗时取数期间用户看到的是「这张卡在出数据」，而不是一段空白。
-
-// 后端工具名 -> 它最终会产出哪张卡（与 agent/subgraphs/stock.py 的 _emit_structured 一一对应）
-const CARD_KIND_BY_TOOL = {
-  get_quote: 'quote',
-  get_history_daily: 'kline',
-  get_valuation: 'valuation',
-  get_money_flow: 'fundflow',
-  get_top_list: 'fundflow',
-  get_financial_report: 'report',
-  get_peer_compare: 'compare',
-  get_research_reports: 'research',
-  get_stock_news: 'event'
-};
-
-// 占位卡的加载提示（口径与后端 _TOOL_LABELS 的「正在获取xx」一致）
-const CARD_LOADING_TEXT = {
-  quote: '正在获取实时行情…',
-  kline: '正在获取历史行情…',
-  valuation: '正在获取估值指标…',
-  fundflow: '正在获取资金流向…',
-  report: '正在获取财报数据…',
-  compare: '正在获取同业对比…',
-  research: '正在获取机构研报…',
-  event: '正在获取公司动态…'
-};
-
-// 占位卡失败时的主文案
-const CARD_ERROR_TEXT = {
-  quote: '行情数据获取失败',
-  kline: '历史行情获取失败',
-  valuation: '估值指标获取失败',
-  fundflow: '资金流向获取失败',
-  report: '财报数据获取失败',
-  compare: '同业对比获取失败',
-  research: '机构研报获取失败',
-  event: '公司动态获取失败'
-};
-
-// 占位卡消息：与卡片消息同构（都有 card 字段，好让气泡退让成透明容器），
-// 多出的 pending / loadState 只用来驱动占位组件，真卡到达时整条消息被替换掉
-function cardSlotMsg(kind) {
-  return {
-    role: 'assistant',
-    status: 'loading',
-    card: kind,
-    content: [],
-    pending: true,
-    loadState: 'loading',
-    loadLabel: CARD_LOADING_TEXT[kind] || '正在获取卡片数据…',
-    loadDetail: ''
-  };
-}
+// ===== 卡片 =====
+// 一次回复最多出一张卡（后端按问题意图只挑一张），且一律排在正文之后：
+// card / table 事件先暂存到 _pendingCard，正文逐字打完再由 _drainCards 落位。
+// 不做 loading 占位卡：占位卡要排在正文之前才有意义，而这一版卡片必须在正文之后。
 
 // ===== 语音输入 =====
 // 点一下开始聆听、再点一下把识别结果直接发给 agent（不是「按住说话」）
@@ -521,11 +487,34 @@ const VOICE_TIP_STOP = '正在转写…';
 // 中间结果的视图刷新间隔：识别回调远快于渲染需要，合批后只落最后一次
 const VOICE_TEXT_FLUSH_MS = 100;
 
-// 流式渲染节奏：合批间隔(ms)、不足一整行时至少攒够多少字符才落视图、
-// 滚动跟随的去抖间隔(ms)。三者共同决定「多久重排一次」
-const STREAM_FLUSH_MS = 100;
-const STREAM_MIN_DELTA = 40;
+// 流式渲染节奏：逐字推进的帧间隔(ms)、追赶系数、单帧推进上限、
+// 滚动跟随的去抖间隔(ms)。
+// 逐字而非整段落视图：token 到达速度远快于人的阅读速度，一次性铺满会让
+// 文字「跳」出来；这里按帧揭示，正常节奏下每帧 1 字，服务端一次给一大段时
+// 按积压比例加速，把延迟稳定在半秒左右，既不卡顿也不会拖成长篇打字动画
+const TYPE_TICK_MS = 28;
+const TYPE_CATCHUP = 18;
+const TYPE_MAX_STEP = 12;
 const SCROLL_FOLLOW_MS = 80;
+
+// 加载态节奏：文案跟着真实耗时推进，先给一句轻的，超过阈值才承认「这次慢」。
+// 阈值按用户能忍的节奏定——8 秒内没有任何解释会觉得卡死，20 秒以上必须给台阶
+const LOAD_SEARCH_MS = 1600;   // 理解 → 检索：首个 token 迟迟不来时换成交代动作
+const LOAD_LONG_MS = 12000;    // 检索 → 核对整理：进入「耗时较长」档
+const LOAD_FINAL_MS = 26000;   // 核对 → 仍在整理：超长档，补一句安抚
+// 生成停顿：一帧打完、下一段 token 还没到，隔这么久才补「正在继续生成」，
+// 正常节奏下这句话不会亮，避免全程挂一条多余说明
+const STREAM_STALL_MS = 1200;
+
+// 加载态文案表。只写「我们确实在做的事」，不承诺剩余时间、不催用户等待
+const LOAD_COPY = {
+  think: { text: '正在理解你的问题' },
+  search: { text: '正在查找行情与资料' },
+  read: { text: '正在整理查到的资料' },
+  long: { text: '正在核对数据并组织回答', hint: '这次要查的资料比较多' },
+  final: { text: '还在整理，内容比平时多', hint: '内容较长时会慢一些，请再稍等' },
+  retry: { text: '连接断开了，正在重连', hint: '网络恢复后会自动接着回答' }
+};
 
 Page({
   data: {
@@ -570,16 +559,23 @@ Page({
     // 首屏引导问题：onLoad 里随机生成（行情 / 资金 / 估值三类意图），
     // 点一条即发送，省掉「我能问什么」这一轮思考
     quickAsks: [],
-    // 状态提示（「正在查询…」「重连中」）：挂在消息列表底部，done/error 后清空
-    statusText: '',
-    // 思考气泡：发送后到首个 token 到达前显示（占位在 AI 回复该出现的位置），
-    // 比底部小条更醒目；首个 token 一到即撤销，由流式气泡接管
-    thinking: false
+    // ===== 加载态（发送后到首个 token 到达前）=====
+    // 只用一个块表达：占在 AI 回复该出现的位置，文案随阶段变化。
+    // 拆成「思考气泡 + 底部状态条」两处会出现两套动效同时转的情况
+    loadVisible: false,
+    loadText: '',
+    // 长耗时档才出现的第二行说明；平时为空，块高不会多占一行
+    loadHint: '',
+    // 'warn' = 断线重连：文案与动效都降下来，等网络而不是等模型
+    loadTone: '',
+    // 生成中光标之后的补充说明：只在正文停顿（等服务端下一段）时亮起
+    streamStalled: false,
+    streamStallText: ''
   },
 
   onLoad(options) {
-    // 首屏建议问题每次进页面重抽，股票名不固定
-    this.setData({ quickAsks: buildQuickAsks() });
+    // 先铺本地兜底，再用后端结果替换：接口慢或失败时首屏不留白
+    this.setData({ quickAsks: buildFallbackQuickAsks() });
 
     // 每个对话页实例 = 一条独立会话：
     // - 带 ?session=<id>（新对话注册后压栈 / 历史列表点选）：复用该会话，
@@ -592,6 +588,8 @@ Page({
     // 消息必为空，不需要回拉（回拉还要多等一个请求，且空结果会覆盖首屏）
     const isNewChat = !!(options && String(options.new) === '1');
     this._sessionId = resumeSid || agentSocket.freshSessionId();
+    // 会话 id 定了才能拉后端建议：去重是按 session 分桶的
+    this.loadQuickAsks();
     // 本页发起的最新一轮 rid：agent 单例的请求级事件全带 __rid，
     // 只渲染自己发起的那轮，旧页在途流的 token 不会串进本页
     this._myReqId = 0;
@@ -641,11 +639,23 @@ Page({
     this._sendWatchdog = 0;
     this._kbHeight = 0;
     // 流式输出追踪：当前 streaming 消息在 messages 里的下标（-1 表示无）、
-    // 累计文本、已落到视图层的文本、合批定时器
+    // 已收到的全文、已揭示到第几个字、逐字推进的定时器
     this._streamIndex = -1;
     this._streamText = '';
-    this._streamFlushed = '';
-    this._streamTimer = 0;
+    this._streamShown = 0;
+    this._typeTimer = 0;
+    // 加载态：本轮开始时刻、工具阶段（running/done）、三档定时器、生成停顿定时器
+    this._loadAt = 0;
+    this._toolLabel = '';
+    this._toolPhase = '';
+    this._loadTimers = [];
+    this._stallTimer = 0;
+    // 本轮是否已收到 done（等文字打完才真正收尾）
+    this._streamClosing = false;
+    // 本轮是否已经开始出正文：工具先跑、文字后到时，卡片要压到文字之后
+    this._roundTextStarted = false;
+    // 本轮待落位的卡片（最多一条）：文字没打完前先存着，不插进消息列表
+    this._pendingCard = null;
     // 滚动跟随状态：是否停在底部（用户上翻看历史时不再被拽回去）、
     // 最近一次写入视图的 scroll-top
     this._atBottom = true;
@@ -711,9 +721,8 @@ Page({
     });
 
     // 结构化卡片：八类（事件契约见 agent 的 _emit_structured 与 server/README.md）。
-    // 插入卡片前要把当前流式消息收尾（_finishStreaming）：
-    // 后端常见的节奏是「文字 → 卡片 → 文字」，不断流的话
-    // 卡片之后的 token 会被追加到卡片上方的旧消息里，顺序就乱了
+    // 后端一次回复只发一张，这里先暂存，等正文逐字打完再落位：
+    // 文字还在长、卡片已经蹦出来，注意力会被劈成两半
     on('card', (data) => {
       if (!data || !data.payload) return;
       let msg = null;
@@ -725,9 +734,7 @@ Page({
       else if (data.type === 'research_card') msg = researchCard(data.payload);
       else if (data.type === 'event_card') msg = eventCard(data.payload);
       if (!msg) return;
-      this._flushStream({ force: true });
-      this._finishStreaming();
-      this._placeCard(msg);
+      this._queueCard(msg);
     });
 
     // K 线表格：payload 约定为 { rows: [...] }，兼容直接给数组；
@@ -738,61 +745,69 @@ Page({
       if (!Array.isArray(rows) || !rows.length) return;
       const msg = klineCard(rows, data.payload);
       if (!msg) return;
-      this._flushStream({ force: true });
-      this._finishStreaming();
-      this._placeCard(msg);
+      this._queueCard(msg);
     });
 
-    // 后端主动推的状态提示
+    // 后端主动推的状态提示：当作本阶段的文案（优先级低于长耗时档）
     on('status', (data) => {
-      this.setData({ statusText: (data && data.label) || '' });
+      const label = (data && data.label) || '';
+      if (!label) return;
+      this._toolLabel = label;
+      this._toolPhase = 'running';
+      this._refreshLoad();
     });
 
-    // 工具调用：开始查行情/研报时给个可读的提示，会产出卡片的工具同时插一张
-    // loading 占位卡（用户看得到「这张卡正在出数据」，而不是等一段空白）
+    // 工具调用/结束：只驱动加载态文案。取数进度不再用占位卡表达——
+    // 卡片一律排在正文之后，占位卡没有能站住的位置。
+    // 取数回来到首个 token 之间是模型在组织语言，换成「正在整理」
     on('tool_start', (data) => {
-      this.setData({ statusText: (data && data.label) || '正在查询...' });
-      const kind = data && CARD_KIND_BY_TOOL[data.tool];
-      if (kind) this._pushCardSlot(kind);
+      this._toolLabel = (data && data.label) || '正在获取数据';
+      this._toolPhase = 'running';
+      this._refreshLoad();
     });
 
-    // 工具结束：清掉顶部状态条；失败的那个工具对应的占位卡就地转失败态，
-    // 让用户知道是「没取到」而不是「这张卡本来就空」
-    on('tool_end', (data) => {
-      this.setData({ statusText: '' });
-      if (!data || data.ok !== false) return;
-      const kind = CARD_KIND_BY_TOOL[data.tool];
-      if (kind) this._failCardSlot(kind);
+    on('tool_end', () => {
+      this._toolLabel = '';
+      this._toolPhase = 'done';
+      this._refreshLoad();
     });
 
-    // 错误：复位发送态并提示，不往消息列表里塞错误气泡；
-    // 但仍在加载中的占位卡要转成失败态——否则用户只看到卡片凭空消失
+    // 错误：不再逐字往外吐，已收到的正文一次性显示完再收尾；
+    // 已经暂存的卡仍然放出来（数据是好的），别让用户白等一轮
     on('error', (data) => {
-      this._flushStream({ force: true });
+      this._snapStreamEnd();
       this._finishStreaming();
-      this._failPendingCards((data && data.msg) || '服务异常');
       this._clearSendWatchdog();
-      this.setData({ sending: false, statusText: '', thinking: false });
+      this._endLoad();
+      this.setData({ sending: false });
+      this._drainCards();
       this.toast((data && data.msg) || '服务异常');
     });
 
-    // 本轮回答结束：流式消息转 complete，解锁发送按钮。
-    // 还停在 loading 的占位卡说明「工具取到了数据但没产出卡片」（数据源为空 /
-    // 卡片校验丢弃），此时正文已经作答，占位卡静默撤掉，不留一张永远转圈的卡
+    // 本轮回答结束：先记下「该收尾了」，等逐字打完再真正结束（_endTurn）。
+    // sending 也在那时才解锁——解锁早了，用户能在正文还在打的时候发新问题，
+    // 新一轮 token 会续进上一条气泡里
     on('done', () => {
-      this._flushStream({ force: true });
-      this._finishStreaming();
-      this._dropPendingCards();
       this._clearSendWatchdog();
-      this.setData({ sending: false, statusText: '', thinking: false });
+      this._streamClosing = true;
+      this._endLoad();
+      if (this._streamIndex < 0 || this._streamShown >= this._streamText.length) {
+        this._endTurn();
+        return;
+      }
+      this._startTyping();   // 等新 token 期间定时器会停，这里兜底续上
     });
 
     // 断连：连接级事件（不属于某一轮），不做 rid 过滤；
-    // 只在正在等回答时给个提示，重连由连接层自动完成
+    // 只在正在等回答时给个提示，重连由连接层自动完成。
+    // 文案切到「重连」档并保留在界面上——正文已经开始时也让这行留在末尾，
+    // 否则用户只会看到文字突然不动，不知道发生了什么
     this._agentHandlers.disconnected = () => {
-      if (this.data.sending) {
-        this.setData({ statusText: '连接已断开，正在重连...' });
-      }
+      if (!this.data.sending) return;
+      // 同一时刻只说一件事：断线时撤掉「继续生成」那句，别让两条等待文案叠着
+      this._clearStreamStall();
+      this.setData({ loadTone: 'warn', streamStalled: false, streamStallText: '' });
+      this._refreshLoad();
     };
     agentSocket.on('disconnected', this._agentHandlers.disconnected);
 
@@ -800,173 +815,229 @@ Page({
   },
 
   // 把增量文本积进缓冲；首个 token 到达时确定目标消息（没有 streaming 消息
-  // 就新建一条）并立即刷一帧，后续 token 只积缓冲，由定时器合批刷新
+  // 就新建一条）。token 本身不直接落视图，交给逐字定时器按帧揭示
   _appendToken(delta) {
     // 已经有内容在回来，说明这一轮是活的，撤掉看门狗
     this._clearSendWatchdog();
-    // 首个 token 到达即收起思考气泡，交给流式消息
-    if (this.data.thinking) this.setData({ thinking: false });
+    // 首个 token 到达即收起加载块（断线提示也一并撤），交给流式正文；
+    // 之后每来一段都会清掉「停顿说明」，文字一直在动就不需要那句补充
+    this._endLoad();
     if (this._streamIndex < 0) {
       const messages = this.data.messages;
       const last = messages[messages.length - 1];
       if (last && last.role === 'assistant' && last.status === 'streaming') {
         this._streamIndex = messages.length - 1;
         this._streamText = (last.content[0] && last.content[0].data) || '';
+        this._streamShown = this._streamText.length;
       } else {
         this._streamIndex = messages.length;
         this._streamText = '';
+        this._streamShown = 0;
         this.setData({
           messages: messages.concat([
             {
               role: 'assistant',
               status: 'streaming',
               content: [{ type: 'markdown', data: '' }],
-              // 流式消息同样带 blocks：每批合批刷新时重解析，版式随文本收敛
+              // 流式消息同样带 blocks：每帧重解析，版式随文本逐字收敛
               blocks: []
             }
-          ]),
-          statusText: ''
+          ])
         });
       }
     }
     this._streamText += delta;
-    if (!this._streamTimer) {
-      // 合批：窗口内连续到达的 token 只安排一次刷新。
-      // 滚动交给 _flushStream 在 setData 回调里做 —— 回调触发时新内容已经渲染完，
-      // 量到的是新高度，一次滚到位；若在刷新前就滚，会先按旧高度定位、
-      // 下一帧再补一次，表现出来就是上下跳
-      const first = this._streamFlushed === '';
-      this._streamTimer = setTimeout(() => {
-        this._streamTimer = 0;
-        this._flushStream({ afterRender: true });
-      }, first ? 0 : STREAM_FLUSH_MS);
-    }
+    this._roundTextStarted = true;
+    this._startTyping();
   },
 
-  // 把缓冲区落到视图：只更新目标消息的文本字段（路径级 setData）。
-  // opts.force  = 收尾（done / error / 插卡片）时把缓冲一字不落地渲染完
-  // opts.afterRender = 刷新完成后再跟随滚动，用于流式逐帧刷新
-  _flushStream(opts) {
-    const force = !!(opts && opts.force);
-    const afterRender = !!(opts && opts.afterRender);
-    if (this._streamTimer) {
-      clearTimeout(this._streamTimer);
-      this._streamTimer = 0;
-    }
-    if (this._streamIndex === undefined || this._streamIndex < 0) return;
-    if (this._streamFlushed === this._streamText) return;
+  // 逐字推进的驱动：只在没有定时器时挂下一帧，token 再密也不会越排越多
+  _startTyping() {
+    if (this._typeTimer || this._unloaded) return;
+    this._typeTimer = setTimeout(() => {
+      this._typeTimer = 0;
+      this._typeTick();
+    }, TYPE_TICK_MS);
+  },
 
-    let text = this._streamText;
-    if (!force) {
-      // 只在「行边界」落视图：半行文本、以及未闭合的 markdown 块（表格、代码 fence、
-      // 列表项）都会让气泡高度忽大忽小，已渲染内容因此上下跳。
-      // 把不完整的一行留在缓冲里，等下一批凑齐整行再一起渲染，
-      // 这样气泡高度只会单调递增，视觉上就是平滑长高
-      const cut = text.lastIndexOf('\n');
-      if (cut > this._streamFlushed.length) {
-        text = text.slice(0, cut + 1);
-      } else if (text.length - this._streamFlushed.length < STREAM_MIN_DELTA) {
-        // 一行都没攒完、增量也很小：等下一批，避免每个 token 都触发一次重排
-        return;
+  // 一帧：按积压量决定这一帧揭示几个字，重绘后继续下一帧。
+  // 积压归零即停帧（等下一个 token 拉起）：done 已经来过就收尾整轮，
+  // 否则只放行暂存的那张卡片
+  _typeTick() {
+    if (this._streamIndex < 0) return;
+    const total = this._streamText.length;
+    const backlog = total - this._streamShown;
+    if (backlog <= 0) {
+      if (this._streamClosing) this._endTurn();
+      else {
+        this._drainCards();
+        // 字已经追平、下一段还没来：从这里开始计停顿，真停了才补一句说明
+        this._watchStreamStall();
       }
-      // 兜底：一直等不到换行（超长单行）时，攒够 STREAM_MIN_DELTA 也照常渲染
+      return;
     }
-    if (text === this._streamFlushed) return;
-
-    this._streamFlushed = text;
-    const patch = {};
-    patch['messages[' + this._streamIndex + '].content[0].data'] = text;
-    // 同步重解析 markdown：与文本同一个 setData 落库，避免出现「文本新、版式旧」的一帧
-    patch['messages[' + this._streamIndex + '].blocks'] = parseMarkdown(text);
-    if (afterRender) {
-      // 渲染完成后再跟随滚动：回调里量到的高度是新的，滚动一次到位
-      this.setData(patch, () => this.scrollToBottom());
-    } else {
-      this.setData(patch);
-    }
+    const step = Math.min(TYPE_MAX_STEP, Math.max(1, Math.ceil(backlog / TYPE_CATCHUP)));
+    this._streamShown = Math.min(total, this._streamShown + step);
+    this._renderStream();
+    this._startTyping();
   },
+
+  // 把当前应显示的文本落到视图：文本与 markdown 块同一次 setData 写入，
+  // 避免出现「文字新、版式旧」的一帧；滚动放在渲染回调里，量到的是新高度
+  _renderStream() {
+    const idx = this._streamIndex;
+    if (idx < 0) return;
+    const text = this._streamText.slice(0, this._streamShown);
+    const patch = {};
+    patch['messages[' + idx + '].content[0].data'] = text;
+    patch['messages[' + idx + '].blocks'] = parseMarkdown(text);
+    this.setData(patch, () => this.scrollToBottom());
+  },
+
+  // 立刻把剩下的字全部显示：出错、切会话、新一轮发送这类不能等打字机的场合
+  _snapStreamEnd() {
+    if (this._typeTimer) {
+      clearTimeout(this._typeTimer);
+      this._typeTimer = 0;
+    }
+    if (this._streamIndex < 0) return;
+    if (this._streamShown >= this._streamText.length) return;
+    this._streamShown = this._streamText.length;
+    this._renderStream();
+  },
+
   // 流式消息收尾：status 转 complete，复位流式追踪状态。
-  // done 和卡片插入都走这里：后者是为了让卡片之后的 token 另起一条消息，
-  // 两者都不碰 sending（是否解锁发送按钮只由 done / error 决定）
+  // 不碰 sending：解锁发送只在 _endTurn 里做（正文打完才放开）
   _finishStreaming() {
     const idx = this._streamIndex;
     this._streamIndex = -1;
     this._streamText = '';
-    this._streamFlushed = '';
+    this._streamShown = 0;
     if (idx < 0) return;
     const patch = {};
     patch['messages[' + idx + '].status'] = 'complete';
     this.setData(patch);
   },
 
-  // ===== 卡片加载态三段：插占位 -> 换真卡 -> 收尾（失败态 / 撤掉） =====
+  // ===== 卡片落位时序：暂存 -> 正文打完 -> 插到末尾 =====
 
-  // 插一张 loading 占位卡：追加在末尾，不动在途的流式消息
-  // （_streamIndex 指向的下标不变，后面的 token 照常追加到它那里）
-  _pushCardSlot(kind) {
-    this._flushStream({ force: true });
-    this.setData({ messages: this.data.messages.concat([cardSlotMsg(kind)]) });
-    this.scrollToBottom({ force: true });
+  // 收下后端下发的那张卡。一轮只留一张：真有多张也只用第一张，
+  // 与后端「一次回复最多一张」的产品规则对齐
+  _queueCard(msg) {
+    if (!this._pendingCard) this._pendingCard = msg;
+    this._drainCards();
   },
 
-  // 真卡落位：优先替换同类型还在 loading 的占位卡（就地替换，卡片位置不跳、
-  // 用户视线不丢）；没有占位卡（后端没发 tool_start / 卡片先到）才追加到末尾
+  // 落位。三道闸门，任一未过就继续等着：
+  // 1) 逐字定时器还在跑；2) 正文还有没揭示的积压；
+  // 3) 本轮还没开始出正文、也还没结束（工具先跑了）——此时插卡就是「卡和文字同时出现」
+  _drainCards() {
+    if (!this._pendingCard) return;
+    if (this._typeTimer) return;
+    if (this._streamIndex >= 0 && this._streamShown < this._streamText.length) return;
+    if (this.data.sending && !this._roundTextStarted) return;
+    const msg = this._pendingCard;
+    this._pendingCard = null;
+    this._placeCard(msg);
+  },
+
+  // 一轮真正结束：收尾流式消息、放行暂存的卡片，最后才解锁发送
+  // （解锁早了会把新一轮 token 续进这条旧气泡）
+  _endTurn() {
+    this._streamClosing = false;
+    this._snapStreamEnd();
+    this._finishStreaming();
+    // 先解锁发送（「等正文」那道闸门随之打开），再落卡
+    this._endLoad();
+    this.setData({ sending: false });
+    this._drainCards();
+  },
+
+  // ===== 加载态 =====
+  // 一轮回答只有一处加载提示：AI 回复该出现的左侧（.ai-load）。
+  // 文案按优先级取一档：重连 > 长耗时 > 工具取数 > 整理 > 检索 > 理解
+  _startLoad() {
+    this._loadAt = Date.now();
+    this._toolLabel = '';
+    this._toolPhase = '';
+    this._clearLoadTimers();
+    this._refreshLoad();
+    // 三档定时器只管「到点重算一次」，不做文案队列：
+    // 工具事件随时会插入，队列式推进会与真实阶段打架
+    this._loadTimers = [
+      setTimeout(() => this._refreshLoad(), LOAD_SEARCH_MS),
+      setTimeout(() => this._refreshLoad(), LOAD_LONG_MS),
+      setTimeout(() => this._refreshLoad(), LOAD_FINAL_MS)
+    ];
+  },
+
+  _refreshLoad() {
+    if (this._unloaded || !this.data.sending) return;
+    // 正文已经在出：加载块让给流式消息（断线除外，见下）
+    if (this._roundTextStarted && this.data.loadTone !== 'warn') return;
+    const elapsed = Date.now() - (this._loadAt || Date.now());
+    let copy;
+    if (this.data.loadTone === 'warn') copy = LOAD_COPY.retry;
+    else if (elapsed >= LOAD_FINAL_MS) copy = LOAD_COPY.final;
+    else if (elapsed >= LOAD_LONG_MS) copy = LOAD_COPY.long;
+    else if (this._toolPhase === 'running' && this._toolLabel) copy = { text: this._toolLabel };
+    else if (this._toolPhase === 'done') copy = LOAD_COPY.read;
+    else if (elapsed >= LOAD_SEARCH_MS) copy = LOAD_COPY.search;
+    else copy = LOAD_COPY.think;
+    this.setData({
+      loadVisible: true,
+      loadText: copy.text,
+      loadHint: copy.hint || ''
+    });
+  },
+
+  _endLoad() {
+    this._clearLoadTimers();
+    this._clearStreamStall();
+    if (!this.data.loadVisible && !this.data.streamStalled && !this.data.loadTone) return;
+    this.setData({
+      loadVisible: false,
+      loadText: '',
+      loadHint: '',
+      loadTone: '',
+      streamStalled: false,
+      streamStallText: ''
+    });
+  },
+
+  _clearLoadTimers() {
+    // 每个 token 都会走到这里，空数组时直接返回（token 频率高，别做无意义清理）
+    if (!this._loadTimers || !this._loadTimers.length) return;
+    this._loadTimers.forEach(clearTimeout);
+    this._loadTimers = [];
+  },
+
+  // 正文停顿：字追平了但这一轮还没结束，说明在等服务端下一段。
+  // 真停够 STREAM_STALL_MS 才亮一句说明，正常节奏下不会出现
+  _watchStreamStall() {
+    if (this._stallTimer || this._unloaded || this._streamIndex < 0) return;
+    this._stallTimer = setTimeout(() => {
+      this._stallTimer = 0;
+      if (this._unloaded || this._streamIndex < 0) return;
+      if (this._streamShown < this._streamText.length) return;
+      this.setData({
+        streamStalled: true,
+        // 长回答的停顿更让人怀疑是不是卡住，文案点明「还在写」而不是「卡住了」
+        streamStallText: this._streamText.length > 400 ? '回答较长，正在继续输出…' : '正在继续生成…'
+      });
+    }, STREAM_STALL_MS);
+  },
+
+  _clearStreamStall() {
+    if (this._stallTimer) {
+      clearTimeout(this._stallTimer);
+      this._stallTimer = 0;
+    }
+  },
+
+  // 卡片插到消息列表末尾：永远在正文之后，卡片位置由这一轮的文字长度决定
   _placeCard(msg) {
-    const messages = this.data.messages;
-    for (let i = 0; i < messages.length; i++) {
-      if (!messages[i] || !messages[i].pending || messages[i].card !== msg.card) continue;
-      const patch = {};
-      patch['messages[' + i + ']'] = msg;
-      this.setData(patch, () => this.scrollToBottom({ force: true }));
-      return;
-    }
-    this.setData({ messages: messages.concat([msg]) }, () => this.scrollToBottom({ force: true }));
-  },
-
-  // 单个工具取数失败：把它那张占位卡就地转成失败态，留在列表里
-  _failCardSlot(kind) {
-    const messages = this.data.messages;
-    for (let i = 0; i < messages.length; i++) {
-      if (!messages[i] || !messages[i].pending || messages[i].card !== kind) continue;
-      const patch = {};
-      patch['messages[' + i + '].pending'] = false;
-      patch['messages[' + i + '].status'] = 'error';
-      patch['messages[' + i + '].loadState'] = 'error';
-      patch['messages[' + i + '].loadLabel'] = CARD_ERROR_TEXT[kind] || '卡片数据获取失败';
-      this.setData(patch);
-      return;
-    }
-  },
-
-  // 整轮失败（连接异常 / 上游报错）：所有还在 loading 的占位卡转失败态，
-  // 并把失败原因写进副文案
-  _failPendingCards(detail) {
-    const messages = this.data.messages;
-    const patch = {};
-    let hit = false;
-    for (let i = 0; i < messages.length; i++) {
-      const m = messages[i];
-      if (!m || !m.pending) continue;
-      patch['messages[' + i + '].pending'] = false;
-      patch['messages[' + i + '].status'] = 'error';
-      patch['messages[' + i + '].loadState'] = 'error';
-      patch['messages[' + i + '].loadLabel'] = CARD_ERROR_TEXT[m.card] || '卡片数据获取失败';
-      patch['messages[' + i + '].loadDetail'] = detail || '';
-      hit = true;
-    }
-    if (hit) this.setData(patch);
-  },
-
-  // 本轮正常结束：撤掉仍未兑现的占位卡。过滤后下标会位移，
-  // 流式追踪状态一并复位（此时 done 已经收过尾，这里只是保持一致）
-  _dropPendingCards() {
-    const messages = this.data.messages;
-    const kept = messages.filter((m) => !m || !m.pending);
-    if (kept.length === messages.length) return;
-    this.setData({ messages: kept });
-    this._streamIndex = -1;
-    this._streamText = '';
-    this._streamFlushed = '';
+    this.setData({ messages: this.data.messages.concat([msg]) }, () => this.scrollToBottom({ force: true }));
   },
 
   onReady() {
@@ -990,8 +1061,10 @@ Page({
     if (this._onResize && wx.offWindowResize) wx.offWindowResize(this._onResize);
     if (this._scrollTimer) clearTimeout(this._scrollTimer);
     if (this._measureTimer) clearTimeout(this._measureTimer);
-    if (this._streamTimer) clearTimeout(this._streamTimer);
+    if (this._typeTimer) clearTimeout(this._typeTimer);
     this._clearSendWatchdog();
+    this._clearLoadTimers();
+    this._clearStreamStall();
     // 语音：走的时候停干净，否则插件还在后台录音
     if (this._recording) abortRecognize();
     if (this._voiceTextTimer) {
@@ -1076,10 +1149,28 @@ Page({
     this.sendText(this.data.input);
   },
 
-  // 首屏引导问题：等同把这条文本发出去
+  // 拉后端建议问题：失败保留本地兜底，不 toast、不打断首屏
+  loadQuickAsks() {
+    listQuickAsks(4, this._sessionId || '')
+      .then((data) => {
+        const list = (data && data.quick_asks) || [];
+        if (!list.length) return;
+        // 用户已经开口就不再替换，避免把建议塞进对话中段
+        if (this.data.messages.length > 1 || this.data.sending) return;
+        this.setData({ quickAsks: list });
+      })
+      .catch(() => {
+        // 兜底已在 onLoad 铺好，这里静默
+      });
+  },
+
+  // 首屏引导问题：展示用 display，真正发出去的是 query（带股票代码与维度，信息更完整）
   onQuickAsk(e) {
-    const q = (e && e.currentTarget && e.currentTarget.dataset.q) || '';
+    const ds = (e && e.currentTarget && e.currentTarget.dataset) || {};
+    const q = ds.q || '';
     if (!q) return;
+    // 点击上报只服务热度池，失败不影响发问，不等它的结果
+    if (ds.code) reportQuickAskClick(ds.code, ds.id || '').catch(() => {});
     this.sendText(q);
   },
 
@@ -1089,19 +1180,20 @@ Page({
     const text = (raw || '').trim();
     if (!text || this.data.sending) return;
 
-    // 上一轮流式状态先复位（正常情况下 done 已经收过尾，这里是兜底）；
-    // 兜底同样撤掉上一轮没兑现的占位卡（超时 / 看门狗复位这类非正常收尾）
-    this._flushStream({ force: true });
+    // 上一轮先落定（正常情况下 _endTurn 已经收过尾，这里是兜底）：
+    // 剩余文字一次性铺完，上一轮没落位的卡片作废
+    this._snapStreamEnd();
     this._finishStreaming();
-    this._dropPendingCards();
+    this._pendingCard = null;
 
+    this._roundTextStarted = false;
     this.setData({
       messages: this.data.messages.concat([userMsg(text)]),
       input: '',
-      sending: true,
-      thinking: true,
-      statusText: ''
+      sending: true
     });
+    // 加载块与用户消息同帧落位：先发一句「正在理解」，别让界面空着等
+    this._startLoad();
     this.scrollToBottom({ force: true });
     this._armSendWatchdog();
 
@@ -1118,9 +1210,12 @@ Page({
     this._sendWatchdog = setTimeout(() => {
       this._sendWatchdog = 0;
       if (!this.data.sending) return;
-      // 超时收尾同 error：在途的占位卡转失败态，不能让它继续转圈
-      this._failPendingCards('服务暂时没有响应，请重试');
-      this.setData({ sending: false, statusText: '', thinking: false });
+      // 超时收尾同 error：剩余文字直接铺完，没落位的卡片作废
+      this._snapStreamEnd();
+      this._finishStreaming();
+      this._pendingCard = null;
+      this._endLoad();
+      this.setData({ sending: false });
       this.toast('服务暂时没有响应，请重试');
     }, SEND_TIMEOUT_MS);
   },
@@ -1509,9 +1604,11 @@ Page({
     this._myReqId = 0;
     agentSocket.disconnect();
     this._clearSendWatchdog();
-    this._flushStream({ force: true });
+    this._snapStreamEnd();
     this._finishStreaming();
-    this.setData({ sending: false, statusText: '', thinking: false });
+    this._pendingCard = null;
+    this._endLoad();
+    this.setData({ sending: false });
   },
 
   // 当前会话被删后原地换一条新会话：不跳页、不收起抽屉，

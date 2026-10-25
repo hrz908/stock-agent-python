@@ -40,23 +40,12 @@
             <!-- 卡片消息（quote/kline）时气泡退让成透明容器，视觉交给金融卡组件，
                  避免出现「卡中卡」的双层底 -->
             <view class="bubble bubble--assistant {{msg.card ? 'bubble--bare' : ''}}">
-              <!-- 占位卡：加载中 / 取数失败。必须排在所有真卡分支之前——
-                   占位消息同样带 card 字段（气泡要退让成透明容器），
-                   放在后面会被同名的真卡分支抢先匹配，渲染出一张空数据卡。
-                   生命周期见 chat.js 的 _pushCardSlot / _placeCard / _failCardSlot -->
-              <base-card-status
-                wx:if="{{msg.loadState}}"
-                card-class="msg-card"
-                state="{{msg.loadState}}"
-                label="{{msg.loadLabel}}"
-                detail="{{msg.loadDetail}}"
-              />
-
               <!-- 行情卡片：金融卡组件（components/finance/quote-card），
                    数据字段在 chat.js 的 quoteCard() 里映射；
-                   点卡进卡片画廊（pages/test，静态八卡样式页） -->
+                   点卡进卡片画廊（pages/test，静态八卡样式页）。
+                   一轮最多一张卡，且排在正文之后（时序见 chat.js 的 _drainCards） -->
               <finance-quote-card
-                wx:elif="{{msg.card === 'quote'}}"
+                wx:if="{{msg.card === 'quote'}}"
                 card-class="msg-card"
                 bindtap="onQuoteCardTap"
                 data-code="{{msg.quote.code}}"
@@ -215,47 +204,61 @@
                     </view>
                   </view>
                 </block>
+
+                <!-- 生成中光标：跟在正文末尾，替代「生成中」这条独立状态条——
+                     文字本就在动，再挂一条横条只会抢走正在读的那一行。
+                     服务端换段落时会停一下，停够时长才在光标后补一句说明 -->
+                <view wx:if="{{msg.status === 'streaming'}}" class="md-caret-row">
+                  <view class="md-caret"></view>
+                  <text wx:if="{{streamStalled}}" class="md-caret-text">{{streamStallText}}</text>
+                </view>
               </block>
             </view>
           </view>
         </block>
 
-        <!-- 首屏引导：只有问候语时给出三条可点问题，点一下等同发送。
-             不引入新接口，走与打字完全相同的链路（见 chat.js onQuickAsk） -->
+        <!-- 首屏引导：只有问候语时给出可点问题，点一下等同发送。
+             问句由网关按热度池 + 股票状态生成，展示 display、发送 query，
+             走与打字完全相同的链路（见 chat.js onQuickAsk） -->
         <view wx:if="{{messages.length <= 1 && !sending}}" class="quick-asks">
           <view class="quick-asks-title">你可以这样问</view>
           <view
             class="quick-ask"
             wx:for="{{quickAsks}}"
             wx:for-item="q"
-            wx:key="*this"
-            data-q="{{q}}"
+            wx:key="id"
+            data-q="{{q.query}}"
+            data-id="{{q.id}}"
+            data-code="{{q.stock_code}}"
             bindtap="onQuickAsk"
           >
-            <text class="quick-ask-text">{{q}}</text>
+            <text wx:if="{{q.tag}}" class="quick-ask-tag">{{q.tag}}</text>
+            <text class="quick-ask-text">{{q.display}}</text>
             <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
           </view>
         </view>
 
-        <!-- 思考气泡：发送后到首个 token 到达前显示，占位在 AI 回复该出现的左侧 -->
-        <view wx:if="{{thinking}}" class="msg msg--assistant">
-          <view class="bubble bubble--assistant thinking-bubble">
-            <view class="thinking-dots">
-              <view class="thinking-dot"></view>
-              <view class="thinking-dot"></view>
-              <view class="thinking-dot"></view>
+        <!-- ===== AI 加载态 =====
+             占在回答该出现的位置（左对齐 + 同一条页边线），首个 token 到达即收起，
+             由流式正文接管。文案随阶段推进：理解 → 检索 → 取数 → 整理 → 长耗时，
+             阶段与阈值见 chat.js 的 LOAD_COPY / _refreshLoad。
+             只有一块：原先「思考气泡 + 底部状态条」会同时在转两套动效 -->
+        <view wx:if="{{loadVisible}}" class="msg msg--assistant">
+          <view class="bubble bubble--assistant ai-load {{loadTone === 'warn' ? 'ai-load--warn' : ''}}">
+            <view class="ai-load-hd">
+              <view class="ai-load-dots">
+                <view class="ai-load-dot"></view>
+                <view class="ai-load-dot"></view>
+                <view class="ai-load-dot"></view>
+              </view>
+              <!-- 主文案一行、补充说明一行：说明只在长耗时档出现，
+                   平时不占高度，也不和主文案抢视线 -->
+              <view class="ai-load-copy">
+                <text class="ai-load-text">{{loadText}}</text>
+                <text wx:if="{{loadHint}}" class="ai-load-hint">{{loadHint}}</text>
+              </view>
             </view>
           </view>
-        </view>
-
-        <!-- 状态提示：工具查询 / 重连时显示（思考气泡已覆盖「等待回答」阶段） -->
-        <view wx:if="{{statusText}}" class="status-tip">
-          <view class="status-dots">
-            <view class="status-dot"></view>
-            <view class="status-dot"></view>
-            <view class="status-dot"></view>
-          </view>
-          <text class="status-tip-text">{{statusText}}</text>
         </view>
 
         <!-- 合规兜底：所有回答底部固定挂载免责声明（金融产品红线） -->

@@ -15,7 +15,7 @@
 
 /* 表格：横向滚动容器，内部表格按列数撑开 */
 .cmp-scroll {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
   width: 100%;
 }
 
@@ -25,10 +25,11 @@
   min-width: 100%;
 }
 
+/* 行高由 96rpx 收到 72rpx：单行小字表格，48px 一行会显得散 */
 .cmp-row {
   display: flex;
   align-items: center;
-  min-height: 96rpx;
+  min-height: 72rpx;
 }
 
 /* 行间分隔线：sep 由 WXML 行号计算（WXSS 禁兄弟选择器） */

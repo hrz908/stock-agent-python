@@ -12,11 +12,11 @@ const SEARCH_LIMIT = 5;
 
 // 固定周期：key 与服务端 /stock/kline 的 period 一一对应
 const PERIODS = [
-  { key: 'm1', label: '1分钟K线' },
-  { key: 'm5', label: '5分钟K线' },
-  { key: 'm15', label: '15分钟K线' },
-  { key: 'day', label: '日K线' },
-  { key: 'week', label: '周K线' }
+  { key: 'm1', label: '1分钟k线' },
+  { key: 'm5', label: '5分钟k线' },
+  { key: 'm15', label: '15分钟k线' },
+  { key: 'day', label: '日k线' },
+  { key: 'week', label: '周k线' }
 ];
 
 // 空卡片：klines 为空时组件走空态占位，不画图也不显示假数字
@@ -170,7 +170,14 @@ Page({
 
   /* ===== 五个周期各自拉数 ===== */
 
-  loadAll() {
+  // 手动刷新：卡片保留旧图直到各周期新数据回来，不闪空态
+  onRefresh() {
+    if (!this.data.stock || this.data.loading) return;
+    this.loadAll(true);
+  },
+
+  // manual：手动刷新时成功给一次轻提示，首次选股不打扰
+  loadAll(manual) {
     const stock = this.data.stock;
     if (!stock) return;
 
@@ -197,6 +204,7 @@ Page({
       this.setData({ loading: false });
       const empty = this.data.cards.every((c) => !c.klines.length);
       if (empty) this.toast('K线获取失败，请稍后重试');
+      else if (manual) this.toast('K线已刷新');
     });
   },
 
