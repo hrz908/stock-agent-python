@@ -1,5 +1,5 @@
 import { clearSession, ensureLogin } from '../../utils/request';
-import { getProfile, updateProfile, uploadAvatar, absoluteUrl } from '../../services/user';
+import { getProfile, updateProfile, uploadAvatar, absoluteUrl, relativeUrl } from '../../services/user';
 
 const NICKNAME_MAX = 10;
 
@@ -7,10 +7,12 @@ const NICKNAME_MAX = 10;
 // 前端保持一致：后端返回空昵称时也用这个显示
 const DEFAULT_NICKNAME = '微信用户';
 
-// 头像路径可能是远程 URL（已经上传过的）或本地临时路径（刚选的），
-// 只有后者需要走上传
-function isRemoteUrl(path) {
-  return /^https?:\/\//i.test(path);
+// 头像只有落在站内 avatars 目录下才算「已上传」。
+// 别用 http 前缀判断：安卓 chooseAvatar 回的是 http://tmp/xxx.jpeg，
+// 也长得像远程地址，跳过上传就会拿临时路径去撞后端的「头像地址不合法」，
+// 连带同一次提交的昵称一起存不上
+function isStoredAvatar(path) {
+  return path.indexOf('/uploads/avatars/') === 0;
 }
 
 Page({
@@ -18,11 +20,15 @@ Page({
     // 个人信息
     nickname: '',
     avatar: '',
+    // 实际渲染用的地址：正常等于 avatar，域名证书不被信任时会换成 getImageInfo
+    // 拿到的本地临时路径（见 resolveAvatarSrc）。提交给后端的始终是 avatar
+    avatarSrc: '',
 
     // 编辑资料弹窗
     profileVisible: false,
     editNickname: '',
     editAvatar: '',
+    editAvatarSrc: '',
     // 超长时的输入框提示文案。空串表示没超——WXML 里 wx:if 为空不渲染提示行
     nicknameTip: '',
     // 昵称输入框是否处于「取微信昵称」模式：只决定 type（nickname/text）。
@@ -91,28 +97,65 @@ Page({
   loadProfile() {
     getProfile()
       .then((res) => {
+        const avatar = absoluteUrl(res && res.avatar);
         this.setData({
           nickname: (res && res.nickname) || DEFAULT_NICKNAME,
-          avatar: absoluteUrl(res && res.avatar)
+          avatar: avatar,
+          avatarSrc: avatar
         });
+        this.resolveAvatarSrc('avatar', avatar);
       })
       .catch(() => {
         // 拉不到不弹错打扰用户，页面保持登录时的值
       });
   },
 
+  // 头像显示地址的兜底解析。
+  // 后端域名当前用的是自签证书：<image> 取图走原生下载通道，证书不被信任时会静默失败，
+  // 画面上只剩一块底色（上传成功却「看不见头像」）。wx.getImageInfo 走的是开发者工具
+  // 「不校验域名与证书」放行的通道，能拿到图，转成本地临时路径再交给 <image>。
+  // 证书正常时这次调用只是重复命中缓存、把 src 换成同图，不改变最终显示
+  // keepPrev：解析期间先保留当前显示地址（换头像时用），避免中间闪一下空白
+  resolveAvatarSrc(field, url, keepPrev) {
+    if (!url || !/^https?:\/\//i.test(url)) return;
+    wx.getImageInfo({
+      src: url,
+      success: (r) => {
+        // 期间可能又换了头像：地址已变就别拿旧图覆盖新图
+        if (!r || !r.path || this.data[field] !== url) return;
+        const patch = {};
+        patch[field + 'Src'] = r.path;
+        this.setData(patch);
+      },
+      fail: () => {
+        // 取不到就退回原地址，让 <image> 按能显示多少显示多少
+        if (!keepPrev || this.data[field] !== url) return;
+        const patch = {};
+        patch[field + 'Src'] = url;
+        this.setData(patch);
+      }
+    });
+  },
+
   /* ===== 编辑资料弹窗 ===== */
 
   openProfile() {
+    this._nicknameBackup = '';
     this.setData({
       editNickname: this.data.nickname,
+      // 弹窗沿用卡片已解析好的显示地址，避免同一张图再解析一次
       editAvatar: this.data.avatar,
+      editAvatarSrc: this.data.avatarSrc,
       nicknameTip: this.tipFor(this.data.nickname),
       nicknamePicking: false,
       nicknameFocus: false,
       nicknameArmed: false,
       profileVisible: true
     });
+    // 卡片的显示地址还没落到这张图上（刚保存完、解析未回）：弹窗自己再解析一次
+    if (this.data.avatarSrc !== this.data.avatar) {
+      this.resolveAvatarSrc('editAvatar', this.data.avatar);
+    }
   },
 
   /* ===== 昵称输入的两条铁律（都是踩过坑才立的） =====
@@ -129,6 +172,7 @@ Page({
     const value = (e && e.detail && e.detail.value) || '';
     const picking = this.data.nicknamePicking;
     this.setData({ editNickname: value, nicknameTip: this.tipFor(value) });
+    if (value) this._nicknameBackup = '';
     // 取昵称模式一旦有值（面板选的或手动敲的）就切回普通 text
     if (picking && value) this.exitPicking(value);
   },
@@ -154,6 +198,7 @@ Page({
     const detail = (e && e.detail) || {};
     const value = detail.value || detail.nickname || '';
     if (!value) return;
+    this._nicknameBackup = '';
     this.setData({ editNickname: value, nicknameTip: this.tipFor(value) });
     if (this.data.nicknamePicking) this.exitPicking(value);
   },
@@ -174,20 +219,41 @@ Page({
     }
   },
 
-  onNicknameBlur() {
+  // blur 是面板回填的最后一道兜底：面板选完后个别基础库只把值写进原生输入框、
+  // 不派发 input，e.detail.value 里带着当前值，在这里补进 data，否则保存仍算空
+  onNicknameBlur(e) {
+    const value = (e && e.detail && e.detail.value) || '';
+    const patch = {};
     // 与真实焦点对齐
-    if (this.data.nicknameFocus) this.setData({ nicknameFocus: false });
-    // 按键唤起面板的过程中会人为制造一次失焦（见 fillWechatNickname），
-    // 那一刻不能把 nickname 模式复位，否则面板永远弹不出来
-    if (this.data.nicknamePicking && !this.data.nicknameArmed && !this._nicknamePulsing) {
-      this.setData({ nicknamePicking: false });
+    if (this.data.nicknameFocus) patch.nicknameFocus = false;
+    if (value && value !== this.data.editNickname) {
+      patch.editNickname = value;
+      patch.nicknameTip = this.tipFor(value);
+      this._nicknameBackup = '';
+    } else if (!value && !this.data.editNickname && this._nicknameBackup) {
+      // 面板关掉却没带回值：把进面板前的昵称还回去。
+      // 否则用户手里只剩空输入框，点保存必然「昵称不能为空」
+      patch.editNickname = this._nicknameBackup;
+      patch.nicknameTip = this.tipFor(this._nicknameBackup);
+      this._nicknameBackup = '';
     }
+    // 按键唤起面板的过程中会人为制造一次失焦（见 fillWechatNickname），
+    // 那一刻不能把 nickname 模式复位，否则面板永远弹不出来。
+    // 其余失焦一律复位：这一次焦点会话结束了，armed 也该跟着作废，
+    // 不然下次手动点输入框还会弹面板
+    if (!this._nicknamePulsing) {
+      if (this.data.nicknameArmed) patch.nicknameArmed = false;
+      if (this.data.nicknamePicking) patch.nicknamePicking = false;
+    }
+    if (Object.keys(patch).length) this.setData(patch);
   },
 
   // 「使用微信昵称」：弹微信官方的昵称选择面板。
   // 平台不提供读取昵称的接口，只能把输入框切成 nickname 类型并聚焦，由用户本人点选。
-  // 清空输入框是因为微信面板只在输入框为空时才弹出
+  // 清空输入框是因为微信面板只在输入框为空时才弹出；原值先存下来，
+  // 面板没选（或值没回来）时由 onNicknameBlur 还原
   fillWechatNickname() {
+    this._nicknameBackup = this.data.editNickname;
     const patch = {
       editNickname: '',
       nicknameTip: '',
@@ -226,10 +292,12 @@ Page({
   // 临时路径先存着，点「保存」时统一上传到后端换永久 URL
   onChooseWechatAvatar(e) {
     const url = e && e.detail && e.detail.avatarUrl;
-    if (url) this.setData({ editAvatar: url });
+    // 本地临时路径 <image> 直接能显示，不需要再过 resolveAvatarSrc
+    if (url) this.setData({ editAvatar: url, editAvatarSrc: url });
   },
 
   cancelEdit() {
+    this._nicknameBackup = '';
     this.setData({ profileVisible: false, nicknamePicking: false, nicknameFocus: false, nicknameArmed: false });
   },
 
@@ -249,11 +317,13 @@ Page({
     this.saveProfileRemote(nickname, this.data.editAvatar);
   },
 
-  // 头像可能是本地临时路径（刚选的新头像）或已经是远程 URL（上次保存过的），
-  // 只有本地路径才需要走上传
+  // 头像要么是站内已上传的（绝对地址或相对路径），要么是刚选的临时文件：
+  // 只有后者要上传。判断看「是否落在 /uploads/avatars/ 下」，
+  // 不能用 http 前缀——安卓 chooseAvatar 的临时路径就是 http://tmp/xxx.jpeg
   saveProfileRemote(nickname, avatarPath) {
+    const isStored = !!avatarPath && isStoredAvatar(relativeUrl(avatarPath));
     const ensureAvatar =
-      avatarPath && !isRemoteUrl(avatarPath)
+      avatarPath && !isStored
         ? uploadAvatar(avatarPath).then((up) => absoluteUrl(up && up.avatar_url))
         : Promise.resolve(avatarPath);
 
@@ -265,6 +335,7 @@ Page({
         }))
       )
       .then((result) => {
+        this._nicknameBackup = '';
         this.setData({
           nickname: result.nickname,
           avatar: result.avatar,
@@ -273,11 +344,14 @@ Page({
           nicknameFocus: false,
           nicknameArmed: false
         });
+        // 新头像解析出来才替换显示地址，期间卡片继续显示旧图，不闪空白
+        this.resolveAvatarSrc('avatar', result.avatar, true);
         this.toast('资料已保存');
       })
       .catch((err) => {
         this.toast((err && err.message) || '保存失败');
-      });  },
+      });
+  },
 
   /* ===== 退出登录 ===== */
 
@@ -296,7 +370,8 @@ Page({
     this.setData({
       logoutVisible: false,
       nickname: DEFAULT_NICKNAME,
-      avatar: ''
+      avatar: '',
+      avatarSrc: ''
     });
     this.toast('已退出登录');
   }

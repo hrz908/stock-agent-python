@@ -7,7 +7,7 @@
     <!-- 个人信息：整块可点，打开编辑资料弹窗。
          不用头像组件：没图时就是一块次级面底色 + user 图标，比组件内置小圆干净 -->
     <view class="profile-card" bindtap="onProfileTap">
-      <image wx:if="{{avatar}}" class="profile-avatar" src="{{avatar}}" mode="aspectFill" />
+      <image wx:if="{{avatarSrc}}" class="profile-avatar" src="{{avatarSrc}}" mode="aspectFill" />
       <view wx:else class="profile-avatar profile-avatar--empty">
         <ant-icon type="UserOutline" style="font-size:56rpx;color:var(--ink-3);" />
       </view>
@@ -48,7 +48,7 @@
         open-type="chooseAvatar"
         bind:chooseavatar="onChooseWechatAvatar"
       >
-        <image wx:if="{{editAvatar}}" class="edit-avatar" src="{{editAvatar}}" mode="aspectFill" />
+        <image wx:if="{{editAvatarSrc}}" class="edit-avatar" src="{{editAvatarSrc}}" mode="aspectFill" />
         <view wx:else class="edit-avatar edit-avatar--empty">
           <ant-icon type="UserOutline" style="font-size:64rpx;color:var(--ink-3);" />
         </view>
@@ -69,6 +69,7 @@
           focus="{{nicknameFocus}}"
           hold-keyboard="{{true}}"
           bindinput="onEditNickname"
+          bindchange="onEditNickname"
           bindblur="onNicknameBlur"
           bindfocus="onNicknameFocus"
           bindnicknamereview="onNicknameReview"
