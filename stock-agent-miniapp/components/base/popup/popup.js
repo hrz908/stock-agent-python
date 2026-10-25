@@ -21,9 +21,8 @@ Component({
     cancelText: { type: String, value: '' },
     // 确认按钮走危险色（删除 / 退出登录类操作）
     confirmDanger: { type: Boolean, value: false },
-    // 点遮罩是否通知页面关闭（页面置 visible=false）
-    closeOnMask: { type: Boolean, value: true },
-    // 过渡时长 ms（动画与定时器收尾共用）
+    // 过渡时长 ms（与 popup.wxss 的 240ms 动画对齐；改这里也要改 wxss）
+    // 点遮罩只发 mask 事件，关不关由页面决定（校验失败要能留在原地）
     duration: { type: Number, value: 240 }
   },
   data: {
@@ -65,6 +64,8 @@ Component({
     onMask() {
       this.triggerEvent('mask');
     },
+    // 只用于 catchtouchmove 拦截滚动穿透，不做任何事
+    onMaskMove() {},
     onConfirm() {
       this.triggerEvent('confirm');
     },

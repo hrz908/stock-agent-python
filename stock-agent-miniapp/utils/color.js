@@ -35,8 +35,4 @@ function resolveColor(color, fallback) {
   return raw;
 }
 
-module.exports = {
-  COLOR_VARS: COLOR_VARS,
-  TREND_COLORS: TREND_COLORS,
-  resolveColor: resolveColor
-};
+export { COLOR_VARS, TREND_COLORS, resolveColor };

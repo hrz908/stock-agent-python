@@ -186,6 +186,14 @@ function createChatPage(opts) {
     },
     // 只返回结构够用的最小形态：本套用例不校验 markdown 渲染
     '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] },
+    // 登录：sendText 会先 await 一次 ensureLogin（冷启动无 token 时不空手发 SSE），
+    // 这里永远给一个可用 token
+    '../../utils/request': {
+      getToken: () => 'test-token',
+      ensureLogin: () => Promise.resolve('test-token'),
+      setSession: noop,
+      clearSession: noop
+    },
     // 环境开关：用例里按开发版跑（isDev 只影响行情卡跳详情页的分支）
     '../../config': { isDev: true, apiBase: 'https://test.local', wsBase: 'wss://test.local' }
   };

@@ -1,7 +1,7 @@
 <!-- 走势与 K 线卡：K 线区高度 ≥180rpx，下方四列指标栅格；
      支撑 / 压力位左右对齐（支撑靠左、压力靠右），底部注释只留外部传入的 note。
-     注：周期切换 chips（分时/5日/日K/周K/月K）已按需求移除，
-     组件内 periods / activePeriod 与 onChipTap 逻辑保留但不再有入口触发。 -->
+     周期切换 chips 已按需求整块移除（多周期由 pages/kline 的独立卡片承担），
+     组件不再接收 periods / activePeriod。 -->
 <view class="fcard card-class">
   <view class="fcard-hd">
     <view class="fcard-title-col">

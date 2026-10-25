@@ -9,14 +9,14 @@
     <view class="profile-card" bindtap="onProfileTap">
       <image wx:if="{{avatarSrc}}" class="profile-avatar" src="{{avatarSrc}}" mode="aspectFill" />
       <view wx:else class="profile-avatar profile-avatar--empty">
-        <ant-icon type="UserOutline" style="font-size:56rpx;color:var(--ink-3);" />
+        <base-icon type="UserOutline" style="font-size:56rpx;color:var(--ink-3);" />
       </view>
       <view class="profile-info">
         <view class="profile-nickname">{{nickname}}</view>
         <view class="profile-desc">编辑头像与昵称</view>
       </view>
       <!-- 右侧箭头：整行可点，没有箭头时看不出这是一行入口 -->
-      <ant-icon type="RightOutline" style="font-size:32rpx;color:var(--ink-3);" />
+      <base-icon type="RightOutline" style="font-size:32rpx;color:var(--ink-3);" />
     </view>
 
     <!-- 消息推送卡片按需求整块移除（偏好设置组随之消失，pushEnabled 相关
@@ -27,6 +27,8 @@
   <view class="bottom-btn" style="bottom: {{bottomGap}}px;">
     <view class="footer-btn footer-btn--danger" bindtap="onLogout">退出登录</view>
     <view class="footer-hint">退出后下次打开小程序会自动登录</view>
+    <!-- 账号注销是合规入口，必须是可发现的文字入口，不能藏在弹窗里 -->
+    <view class="footer-link" bindtap="onDeleteAccount">{{deletingAccount ? '正在注销…' : '注销账号'}}</view>
   </view>
 
   <!-- 编辑资料弹窗：base-popup center 模式，纯淡入（内含原生 input） -->
@@ -50,7 +52,7 @@
       >
         <image wx:if="{{editAvatarSrc}}" class="edit-avatar" src="{{editAvatarSrc}}" mode="aspectFill" />
         <view wx:else class="edit-avatar edit-avatar--empty">
-          <ant-icon type="UserOutline" style="font-size:64rpx;color:var(--ink-3);" />
+          <base-icon type="UserOutline" style="font-size:64rpx;color:var(--ink-3);" />
         </view>
       </button>
 
@@ -99,6 +101,20 @@
     bind:confirm="onLogoutConfirm"
     bind:cancel="onLogoutCancel"
     bind:mask="onLogoutCancel"
+  />
+
+  <!-- 注销账号确认：措辞必须写清不可恢复，且说明删除范围 -->
+  <base-popup
+    visible="{{deleteAccountVisible}}"
+    mode="center"
+    title="注销账号"
+    desc="注销后，你的自选股、提醒规则、对话记录与个人资料将被删除且无法恢复。确定继续吗？"
+    confirm-text="确认注销"
+    cancel-text="取消"
+    confirm-danger="{{true}}"
+    bind:confirm="confirmDeleteAccount"
+    bind:cancel="cancelDeleteAccount"
+    bind:mask="cancelDeleteAccount"
   />
 
   <base-toast id="base-toast" />

@@ -3,7 +3,7 @@
 // 左竖线引用核心观点。合规：必须带来源机构名 / 原文链接（设计文档四-4）；
 // 卡内不出现任何买卖建议措辞。
 // 上行空间由调用方算好传入（组件内不做业务计算）。
-const { fmtPrice, fmtPct, direction } = require('../../../utils/format');
+import { fmtPrice, fmtPct, direction } from '../../../utils/format';
 
 // 评级 -> 色调（视觉稿：买入为红；中性灰；减持/卖出绿）。
 // 只影响呈现，不构成建议

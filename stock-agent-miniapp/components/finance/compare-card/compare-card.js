@@ -4,7 +4,7 @@
 // 不含任何历史区间或财务接口——因此对比维度为 价/涨跌幅/PE/PB/总市值。
 // 着色规则：涨跌幅按正负（加号红 / 减号绿），PE / PB「更低者优」（绿）。
 // 卡内只陈述客观事实，不写买卖推荐（合规红线）。
-const { fmtAmount, fmtNum, fmtPct, fmtPrice, direction } = require('../../../utils/format');
+import { fmtAmount, fmtNum, fmtPct, fmtPrice, direction } from '../../../utils/format';
 
 // 最多三个标的：本股 + 两家同行（需求：只对比两家同行，标题 A vs B vs C）
 const MAX_ITEMS = 3;

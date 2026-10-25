@@ -6,10 +6,10 @@
   <view class="content">
     <view class="search-field">
       <view class="search-box">
-        <ant-icon type="SearchOutline" style="font-size:32rpx;color:var(--ink-3);" />
+        <base-icon type="SearchOutline" style="font-size:32rpx;color:var(--ink-3);" />
         <input class="search-input" value="{{keyword}}" placeholder="股票代码 / 名称 / 拼音" placeholder-class="search-ph" bindinput="onSearchInput" />
         <view wx:if="{{keyword}}" class="search-clear" bindtap="onSearchClear">
-          <ant-icon type="CloseOutline" style="font-size:24rpx;color:var(--ink-3);" />
+          <base-icon type="CloseOutline" style="font-size:24rpx;color:var(--ink-3);" />
         </view>
       </view>
       <!-- 联想结果：选中即关闭下拉并触发五张卡拉数 -->
@@ -27,13 +27,14 @@
         <text class="picked-code num">{{stock.market}}{{stock.code}}</text>
       </view>
       <view class="picked-refresh {{loading ? 'picked-refresh--spinning' : ''}}" bindtap="onRefresh">
-        <ant-icon class-name="picked-refresh-icon" type="LoopOutline" style="font-size:28rpx;color:var(--ink);" />
+        <base-icon class-name="picked-refresh-icon" type="LoopOutline" style="font-size:28rpx;color:var(--ink);" />
         <text class="picked-refresh-text">刷新</text>
       </view>
     </view>
     <scroll-view class="card-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
       <view class="card-list">
         <kline-card wx:for="{{cards}}" wx:for-item="card" wx:key="key" title="{{card.label}}" subtitle="{{stockLabel}}" placeholder="{{loading ? '加载中…' : (stock ? '暂无数据' : '搜索并选择股票后展示')}}" klines="{{card.klines}}" ma="{{card.ma}}" period-pct="{{card.periodPct}}" amplitude="{{card.amplitude}}" volume-ratio="{{card.volumeRatio}}" support="{{card.support}}" resistance="{{card.resistance}}" />
+        <view class="page-disclaimer">K 线数据来自公开行情，仅供参考，不构成任何投资建议。</view>
       </view>
     </scroll-view>
   </view>

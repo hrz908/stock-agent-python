@@ -137,20 +137,19 @@ display 的边界：**同一屏出现两个 display 数字等于没有 display**
 
 ## 图标
 
-- **统一用 antd-mini 的 `ant-icon`**：用到图标的页面/组件在 json 里声明
-  `"ant-icon": "antd-mini/Icon/index"`，WXML 直接写 `<ant-icon type="..." />`。
-  自研的 `components/base/icon` 已于 2026-10-23 全量替换后删除。
-- **微信里只能用 `antd-mini/Icon/index`**：`antd-mini/es/Icon/index` 是支付宝产物
-  （`.axml`/`.acss`），微信编译不了。微信版源码在包的 `compiled/wechat/src`，
-  由开发者工具「构建 npm」按 `package.json` 的 `miniprogram` 字段产出到
-  `miniprogram_npm/antd-mini/`；改完依赖必须重新构建 npm。
-- **尺寸与颜色只能写在 style 上**：组件 v3 没有 `size`/`color` 属性，
-  统一 `style="font-size:44rpx;color:var(--ink);"`（rpx 与 CSS 变量都生效）。
-- **可用图标**：`miniprogram_npm/antd-mini/Icon/index.wxss` 里的 `.ant-icon-*`，共 152 个。
-  官方没有汉堡 / 键盘 / 暂停三枚，现有替代（列表 / 编辑 / 实心麦克风）见各页面注释。
-- **字体**：官方组件把 TTF 指向支付宝 CDN，网络字体在 iOS 上不可靠（加载失败整屏空白），
-  因此同一份 TTF 已 base64 内联进 `styles/antd-icon.wxss` 并覆盖 `.ant-icon` 的
-  font-family；升级 antd-mini 后若 codepoint 有变，需要重新导出字体。
+- **统一用自研 `components/base/icon`**：用到图标的页面/组件在 json 里声明
+  `"base-icon": "/components/base/icon/icon"`，WXML 写 `<base-icon type="..." />`。
+  不再依赖 antd-mini 整包（原先仅为了 Icon 就要背 2.5MB 依赖链），
+  但字形仍是 antd-mini 3.4.3 的官方 TTF，视觉与旧版一致。
+- **尺寸与颜色写在 style 上**：`style="font-size:44rpx;color:var(--ink);"`。
+  组件的 `.ico` 只设 `font-size: inherit`——字号靠宿主节点继承进来，
+  组件里再写死一个字号会把调用方的尺寸全部盖掉。
+- **可用图标**：`components/base/icon/icon.wxss` 的 `.ico-*` 码点表（当前 18 个，
+  覆盖全站实际用到的图标）。新增图标时从 antd-mini 的 `Icon/index.wxss`
+  取对应 `content` 码点补一行，同时确认字体里确实有这个字形。
+- **字体**：`styles/antd-icon.wxss` 里 base64 内联（网络字体在 iOS 上不可靠，
+  加载失败会整屏豆腐块），由 `app.wxss` 全局引入，是唯一的 `@font-face`。
+  换字体文件时同步改 `icon.wxss` 的码点表。
 
 ## 导航与返回（子页面退回主页）
 

@@ -11,6 +11,42 @@ import { Lexer } from 'marked';
 // 返回第一次的结果），因此每次解析都要新建，不能提成模块级单例
 const LEXER_OPTIONS = { gfm: true, pedantic: false, breaks: true };
 
+// marked 的强调规则按 ASCII 标点判定词边界，中文标点夹在闭合标记后面时会漏判：
+// 「涨幅 **1.23%**，收盘」整句被当成纯文本，界面上就直接露出 ** 星号。
+// 这里对「已经被 lex 成纯文本、但仍残留标记」的片段做一次兜底切分。
+// 只处理 ** / ` / ~~ 三种：单 * 与 _ 在正文里可能真的是乘号或下划线，误判代价更大。
+function leftoverSegments(text, st) {
+  const re = /(\*\*[^*\n]+\*\*|`[^`\n]+`|~~[^~\n]+~~)/g;
+  const out = [];
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) {
+      out.push({ t: 'text', text: text.slice(last, m.index), strong: st.strong, em: st.em, code: st.code, del: st.del });
+    }
+    const tok = m[0];
+    if (tok.charAt(0) === '*' && tok.charAt(1) === '*') {
+      out.push({ t: 'text', text: tok.slice(2, -2), strong: true, em: st.em, code: st.code, del: st.del });
+    } else if (tok.charAt(0) === '`') {
+      out.push({ t: 'text', text: tok.slice(1, -1), strong: st.strong, em: st.em, code: true, del: st.del });
+    } else {
+      out.push({ t: 'text', text: tok.slice(2, -2), strong: st.strong, em: st.em, code: st.code, del: true });
+    }
+    last = m.index + tok.length;
+  }
+  if (!out.length) return null;
+  if (last < text.length) {
+    out.push({ t: 'text', text: text.slice(last), strong: st.strong, em: st.em, code: st.code, del: st.del });
+  }
+  return out;
+}
+
+function pushText(out, text, st) {
+  const segs = leftoverSegments(String(text == null ? '' : text), st);
+  if (segs) out.push.apply(out, segs);
+  else out.push({ t: 'text', text: text || '', strong: st.strong, em: st.em, code: st.code, del: st.del });
+}
+
 // 行内 token 摊平成「带样式标记的文本段」。
 // 嵌套格式（em 套 strong 等）通过合并标记保留视觉效果，WXML 侧按标记组合加 class。
 // 换行（br）合并进下一个文本段的开头，配合容器 white-space: pre-wrap 渲染
@@ -29,7 +65,7 @@ function flattenInline(tokens, style) {
         if (tk.tokens && tk.tokens.length) {
           out.push.apply(out, flattenInline(tk.tokens, st));
         } else {
-          out.push({ t: 'text', text: tk.text || '', strong: st.strong, em: st.em, code: st.code, del: st.del });
+          pushText(out, tk.text, st);
         }
         break;
       case 'strong':
@@ -56,14 +92,14 @@ function flattenInline(tokens, style) {
         out.push({ t: 'br' });
         break;
       case 'escape':
-        out.push({ t: 'text', text: tk.text || '', strong: st.strong, em: st.em, code: st.code, del: st.del });
+        pushText(out, tk.text, st);
         break;
       case 'image':
         // 回答文本不渲染图片：保留 alt 文案，不引入 image 加载失败态
-        out.push({ t: 'text', text: tk.text || '[图片]', strong: st.strong, em: st.em, code: st.code, del: st.del });
+        pushText(out, tk.text || '[图片]', st);
         break;
       default:
-        if (tk.text) out.push({ t: 'text', text: tk.text, strong: st.strong, em: st.em, code: st.code, del: st.del });
+        if (tk.text) pushText(out, tk.text, st);
         break;
     }
   });
@@ -133,7 +169,8 @@ function tableBlock(tk) {
   const rows = (tk.rows || []).map((r) =>
     r.map((c) => mergeBreaks(flattenInline(c.tokens || [{ type: 'text', text: c.text || '' }])))
   );
-  return { tag: 'table', head: head, rows: rows, align: tk.align || [] };
+  // 不输出 tk.align：WXML 侧没有对应的对齐实现，带出去只会变成一份没人读的数据
+  return { tag: 'table', head: head, rows: rows };
 }
 
 // 入口：markdown 源码 -> blocks 数组。
@@ -192,6 +229,4 @@ function parseMarkdown(md) {
   return blocks;
 }
 
-module.exports = {
-  parseMarkdown: parseMarkdown
-};
+export { parseMarkdown };

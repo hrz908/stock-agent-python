@@ -16,6 +16,7 @@ from datetime import datetime
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from core.keywords import fast_intent
 from core.llm import get_small_llm
 from core.redis import get_redis
 from core.template import load_template, render
@@ -98,6 +99,22 @@ def _format_history(messages: list, limit: int = 10) -> str:
     return "\n".join(lines)
 
 
+def _history_text(state: dict) -> str:
+    """本轮之前的历史；末尾就是当前问题，不能算作「有历史」。
+
+    guardrail 写入的 messages 恒含本轮 HumanMessage，若直接格式化会把当前问题
+    当成对话历史，导致单轮里出现「它们/还是」也被判为需要改写（实测白跑一次
+    改写 + 把概念问题误判 clarify）。
+    """
+    msgs = list(state.get("messages") or [])
+    query = (state.get("query") or "").strip()
+    if msgs and isinstance(msgs[-1], HumanMessage):
+        last = msgs[-1].content if isinstance(msgs[-1].content, str) else str(msgs[-1].content or "")
+        if not query or last.strip() == query:
+            msgs = msgs[:-1]
+    return _format_history(msgs)
+
+
 async def _get_summary(thread_id: str) -> str:
     """读 Redis 中的滚动摘要（post 节点写入）；失败静默返回空。"""
     if not thread_id:
@@ -126,7 +143,7 @@ def _needs_rewrite(query: str) -> bool:
 async def rewrite(state: dict) -> dict:
     t0 = time.monotonic()
     query = state.get("query", "") or ""
-    history = _format_history(state.get("messages", []))
+    history = _history_text(state)
     summary = await _get_summary(state.get("thread_id", ""))
     timings = {"rewrite_ms": int((time.monotonic() - t0) * 1000)}
     # 无历史且无摘要则无需改写
@@ -154,13 +171,18 @@ async def rewrite(state: dict) -> dict:
             HumanMessage(content=route_prompt),
         ])
         text = (decision.rewritten or "").strip().strip('"').strip()
-        rewritten = text.splitlines()[0].strip() if text else query
+        rewritten = (text.splitlines()[0].strip() if text else query) or query
         intent = decision.intent if decision.intent in _ROUTE_INTENTS else "clarify"
         confidence = float(decision.confidence or 0.0)
-        if confidence < _CONF_MIN:
+        # 关键词兜底：改写后命中取数/文档词时以确定性口径为准，防止合并路由
+        # 把「它的市盈率」判回 RAG，白跑一次注定失败的检索
+        fast = fast_intent(rewritten)
+        if fast:
+            intent, confidence = fast, 1.0
+        elif confidence < _CONF_MIN:
             intent, confidence = "clarify", 0.0
         return {
-            "rewritten": rewritten or query,
+            "rewritten": rewritten,
             "intent": intent,
             "confidence": confidence,
             "entities": {

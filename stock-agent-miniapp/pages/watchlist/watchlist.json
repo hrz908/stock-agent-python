@@ -1,8 +1,7 @@
 {
   "usingComponents": {
     "base-navbar": "/components/base/navbar/navbar",
-    "ant-icon": "antd-mini/Icon/index",
-    "base-tabs": "/components/base/tabs/tabs",
+    "base-icon": "/components/base/icon/icon",
     "base-popup": "/components/base/popup/popup",
     "base-toast": "/components/base/toast/toast",
     "base-empty": "/components/base/empty/empty"

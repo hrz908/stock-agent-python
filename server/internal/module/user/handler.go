@@ -177,6 +177,56 @@ func UploadAvatar(c *gin.Context) {
 	resp.OK(c, gin.H{"avatar_url": rel})
 }
 
+// 注销时要清的两张业务表。只声明表名、不 import 对应模块（模块之间禁止互相依赖），
+// 因此表名必须与 module/watchlist、module/alert 的 TableName() 保持一致；
+// 字段不参与任何读写，DELETE 只按 user_id 过滤
+type purgeWatchlist struct {
+	ID int64 `gorm:"primaryKey;column:id"`
+}
+
+func (purgeWatchlist) TableName() string { return "user_watchlist" }
+
+type purgeAlertRule struct {
+	ID int64 `gorm:"primaryKey;column:id"`
+}
+
+func (purgeAlertRule) TableName() string { return "alert_rule" }
+
+// DeleteAccount DELETE /api/v1/user/account
+// 硬删当前用户及其业务数据：自选、提醒规则、用户行（含 openid / 昵称 / 头像路径），
+// 并尽力删除磁盘上的头像文件。删完 openid 不再存在，同一微信再次登录会建一个新账号。
+//
+// 对话会话与 LangGraph checkpoint 由 Python Agent 侧持有，网关无法跨模块清理：
+// 小程序在调用本接口前会先逐条 DELETE /agent/sessions/:sid，把能清的先清掉；
+// 未清掉的部分只保留了旧 user_id，与个人信息已无关联。
+func DeleteAccount(c *gin.Context) {
+	ctx := c.Request.Context()
+	u, ok := current(c)
+	if !ok {
+		return
+	}
+
+	err := deps.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", u.ID).Delete(&purgeAlertRule{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", u.ID).Delete(&purgeWatchlist{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", u.ID).Delete(&model.User{}).Error
+	})
+	if err != nil {
+		log.Printf("delete account failed: user=%d err=%v", u.ID, err)
+		resp.Fail(c, resp.CodeInternal, "注销失败")
+		return
+	}
+
+	// 库删成功后再删文件：先删文件、事务又回滚的话，用户头像就没了但账号还在
+	removeAvatarFile(u.Avatar)
+
+	resp.OK(c, gin.H{"deleted": true})
+}
+
 // current 取当前登录用户；取不到（未登录 / 用户不存在）时自行写回响应
 func current(c *gin.Context) (*model.User, bool) {
 	ctx := c.Request.Context()

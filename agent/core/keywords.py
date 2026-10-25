@@ -81,3 +81,17 @@ def is_realtime_data_question(text: str) -> bool:
 def is_concept_question(text: str) -> bool:
     """纯概念/知识型问题 -> True（不需要实时行情数据）。"""
     return any(k in (text or "") for k in CONCEPT_KEYWORDS)
+
+
+def fast_intent(text: str) -> str:
+    """确定性快路径：命中实时数据词 -> stock_agent；文档/混合数据词 -> stock。
+
+    返回空串表示没有命中关键词，交给路由 LLM。classify 与多轮合并路由共用这一口径，
+    避免「合并路由把取数问句判回 RAG」造成必然失败的检索空转。
+    """
+    q = (text or "").strip()
+    if not q or not hit_data_keyword(q):
+        return ""
+    if is_realtime_data_question(q) and not is_concept_question(q):
+        return "stock_agent"
+    return "stock"

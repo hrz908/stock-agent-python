@@ -155,6 +155,8 @@ test('切会话：掐断在途流、发送态复位，旧会话的后续回包�
 
   page.sendText('贵州茅台怎么样'); // 本页发起一轮，sending=true
   assert.strictEqual(page.data.sending, true);
+  // 发送前要过一次登录（ensureLogin 是 Promise），落定后再断言请求参数
+  await flush();
   assert.strictEqual(calls.sendMessage[0].sid, 'sess_old', '发送必须带本页的 session_id');
 
   page.onSessionSelect({ currentTarget: { dataset: { sid: 'sess_new' } } });
@@ -170,10 +172,11 @@ test('切会话：掐断在途流、发送态复位，旧会话的后续回包�
 
 // ---------- 9. 新对话后发送沿用新 session ----------
 test('新对话页发送：带上新会话的 session_id（上下文不串到上一轮）', async () => {
-  const { page, calls } = createChatPage();
+  const { page, calls, flush } = createChatPage();
   page.onLoad({ new: '1', session: 'sess_fresh' });
 
   page.sendText('宁德时代资金流');
+  await flush();
 
   assert.strictEqual(calls.sendMessage.length, 1);
   assert.strictEqual(calls.sendMessage[0].sid, 'sess_fresh', '新会话的提问必须落在新 thread 上');

@@ -1,6 +1,7 @@
 <view wx:if="{{innerVisible}}" class="popup popup-class {{leaving ? 'popup--leaving' : ''}}">
-  <!-- 遮罩：catchtap 吃掉点击，不穿透到背后内容 -->
-  <view class="popup-mask" catchtap="onMask" />
+  <!-- 遮罩：catchtap / catchtouchmove 吃掉点击与滑动，
+       否则手指在遮罩上拖动会把背后的页面滚走（iOS 上尤其明显） -->
+  <view class="popup-mask" catchtap="onMask" catchtouchmove="onMaskMove" />
 
   <view class="popup-panel popup-panel--{{mode}}">
     <!-- 对话框头部：标题 + 可选说明 -->

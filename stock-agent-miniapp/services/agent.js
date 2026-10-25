@@ -9,7 +9,7 @@
 // 增量收包、增量 UTF-8 解码、即时派发，不做攒批。SSE 为「每问一请求」，无持久连接，connect() 是兼容 no-op。
 
 import { apiBase, agentSsePath } from '../config';
-import { getToken } from '../utils/request';
+import { getToken, ensureLogin } from '../utils/request';
 
 // 生成 session_id：后端据此拼 thread_id 区分上下文；页面经 freshSessionId() 取用，
 // 每个对话页实例一条独立会话（多实例共享单例也不会串上下文）
@@ -33,6 +33,10 @@ class AgentSSE {
     this._isSSE = false; // 响应头是否为 text/event-stream
     this._chunkSeen = false; // 是否收到过分块（用于不支持 onChunkReceived 时的整段兜底）
     this._ended = false; // 是否已收到 done
+    // 本轮的提问与会话：401 重登后要原样重放，故随轮保存
+    this._round = { query: '', session: this.sessionId, retried: false };
+    // 代次：每次 abort 自增。异步的重登回调靠它判断「这条流是否已被顶掉」
+    this._gen = 0;
   }
 
   // 兼容旧调用：SSE 每问一请求，无持久连接
@@ -49,14 +53,24 @@ class AgentSSE {
   sendMessage(query, sessionId) {
     // 上一轮若仍在流（理论上发送态会挡住），先中止避免两条流交错
     this._abort();
+    this._reqId += 1;
+    // 本轮上下文留给 _open：401 重登后要原样重放，rid 不变，
+    // 页面侧的 __rid 闸门因此不用感知「重放过一次」
+    this._round = { query: query, session: sessionId || this.sessionId, retried: false };
+    this._open(getToken());
+    return this._reqId;
+  }
+
+  // 打开一条 SSE 流。抽出来是为了 401 重放时复用同一套收包逻辑
+  _open(token) {
     this._buffer = '';
     this._pending = new Uint8Array(0);
     this._isSSE = false;
     this._chunkSeen = false;
     this._ended = false;
-    this._reqId += 1;
+    const round = this._round;
+    const gen = this._gen;
 
-    const token = getToken();
     const task = wx.request({
       url: `${apiBase}${agentSsePath}`,
       method: 'POST',
@@ -67,13 +81,31 @@ class AgentSSE {
       },
       enableChunked: true,
       responseType: 'arraybuffer',
-      data: { query, session_id: sessionId || this.sessionId },
+      data: { query: round.query, session_id: round.session },
       success: (res) => {
         this.task = null;
         const code = res && res.statusCode;
-        // 非 SSE 响应（如鉴权 401 的 JSON）或异常状态码：没有事件流，按错误处置
+        // token 过期：静默重登一次再重放原提问，不把「未登录」抛给用户。
+        // 只重试一次，避免账号异常时打成死循环
+        if (code === 401 && !round.retried) {
+          round.retried = true;
+          ensureLogin(true).then((nt) => {
+            // 重登期间用户可能已切会话 / 发了新问题，这条流不该再被拉起来
+            if (gen !== this._gen) return;
+            if (!nt) {
+              this._emit('error', { code: 'SSE_NO_STREAM', msg: '登录已失效，请重试' });
+              return;
+            }
+            this._open(nt);
+          });
+          return;
+        }
+        // 非 SSE 响应（如鉴权失败 / 网关错误的 JSON）或异常状态码：没有事件流
         if (!this._isSSE || (code && code >= 400)) {
-          this._emit('error', { code: 'SSE_NO_STREAM', msg: '服务响应异常' });
+          this._emit('error', {
+            code: 'SSE_NO_STREAM',
+            msg: code === 401 ? '登录已失效，请重试' : '服务响应异常'
+          });
           return;
         }
         // 兜底：部分环境 onChunkReceived 不触发，整段响应在 success 里给，
@@ -113,8 +145,6 @@ class AgentSSE {
       this._buffer += text;
       this._drain();
     });
-
-    return this._reqId;
   }
 
   // 增量 UTF-8 解码：新字节拼到残留字节后尽量多解出完整字符，
@@ -234,8 +264,8 @@ class AgentSSE {
 
   _emit(event, data) {
     // 请求级事件统一打「发起轮」戳；data 里显式带了 __rid 则以它为准
-    //（供 abort 失败归属被掐断的那轮）。disconnected 是连接级事件，不打戳
-    const tagged = event === 'disconnected' ? data : this._tag(data);
+    //（供 abort 失败归属被掐断的那轮）
+    const tagged = this._tag(data);
     const cbs = this.listeners[event] || [];
     cbs.forEach((cb) => {
       try {
@@ -257,8 +287,17 @@ class AgentSSE {
     return { __rid: rid, data: data };
   }
 
+  // 当前在途轮的 rid：页面卸载时用它判断「在跑的这条流是不是本页发起的」，
+  // 是才断开——单例可能正被栈里另一个对话页使用
+  currentRequestId() {
+    return this._reqId;
+  }
+
   // 中止当前流（发送新提问 / 新建会话 / 断开时调用）
   _abort() {
+    // 代次自增放在最前：即使当前没有 task（例如正卡在 401 重登里），
+    // 也要让那一次异步重放失效
+    this._gen += 1;
     if (this.task) {
       // 记下被掐断的轮次：abort 触发的 fail 要把 error 归属这一轮，
       // 而不是让随后新起的那一轮误弹「连接异常」

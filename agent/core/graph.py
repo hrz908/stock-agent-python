@@ -51,9 +51,18 @@ def route_by_intent(
     return intent if intent in _CLASSIFY_INTENTS else 'clarify'
 
 
-def route_after_rag(state: dict) -> Literal['stock_agent', 'post']:
-    """RAG 两级判定未命中会把 intent 改成 stock_agent，此时重路由到炒股 agent 子图。"""
-    return 'stock_agent' if state.get('intent') == 'stock_agent' else 'post'
+def route_after_rag(state: dict) -> Literal['stock_agent', 'chat', 'post']:
+    """RAG 未命中会把 intent 改成 stock_agent（取数）或 chat（概念通用回答）。
+
+    chat 分支只用于「概念/投教问题且知识库没有可用片段」：这类问题取数没有意义，
+    交给通用问答直接解释，比升级到取数 agent 空跑 tool_call（8~16s）快一个量级。
+    """
+    intent = state.get('intent')
+    if intent == 'stock_agent':
+        return 'stock_agent'
+    if intent == 'chat':
+        return 'chat'
+    return 'post'
 
 
 def build_graph(checkpointer=None):
@@ -91,6 +100,7 @@ def build_graph(checkpointer=None):
     g.add_edge('stock_agent', 'post')
     g.add_conditional_edges('rag', route_after_rag, {
         'stock_agent': 'stock_agent',
+        'chat': 'chat',
         'post': 'post',
     })
     g.add_edge('chat', 'post')

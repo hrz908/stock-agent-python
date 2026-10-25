@@ -68,13 +68,5 @@ function direction(v) {
   return n > 0 ? 'up' : 'down';
 }
 
-module.exports = {
-  toNum: toNum,
-  fmtNum: fmtNum,
-  fmtSign: fmtSign,
-  fmtPct: fmtPct,
-  fmtPctPlain: fmtPctPlain,
-  fmtAmount: fmtAmount,
-  fmtPrice: fmtPrice,
-  direction: direction
-};
+// 全项目统一 ESM：页面、服务、组件一律 import，不再混用 require/module.exports
+export { toNum, fmtNum, fmtSign, fmtPct, fmtPctPlain, fmtAmount, fmtPrice, direction };

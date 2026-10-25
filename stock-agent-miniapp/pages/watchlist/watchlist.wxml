@@ -23,7 +23,7 @@
       <view class="hero-desc num">
         <text>{{totalRateText}} · 已同步 {{syncedAt}}</text>
         <view class="refresh-btn {{refreshing ? 'refresh-btn--spinning' : ''}}" bindtap="onRefresh">
-          <ant-icon class-name="refresh-icon" type="LoopOutline" style="font-size:28rpx;color:var(--ink);" />
+          <base-icon class-name="refresh-icon" type="LoopOutline" style="font-size:28rpx;color:var(--ink);" />
           <text class="refresh-btn-text">刷新</text>
         </view>
       </view>
@@ -38,10 +38,10 @@
     <scroll-view class="stock-scroll" scroll-y="{{scrollable}}" enhanced="{{true}}" show-scrollbar="{{false}}">
       <view class="stock-inner">
         <view class="stock-list" wx:if="{{filtered.length > 0}}">
-          <view class="stock-row {{swipeDragging ? 'stock-row--dragging' : ''}} {{(index === swipeOpen || (swipeDragging && index === swipeIndex)) ? 'stock-row--action-on' : ''}}" wx:for="{{filtered}}" wx:for-item="item" wx:for-index="index" wx:key="code">
-            <!-- 主行：绝对定位于操作区之上，位移由 swipeIndex / swipeOpen 决定。
-                 点击进卡片画廊（pages/test，静态样式页），code 仅随 URL 透传 -->
-            <view class="stock-row-main {{item.sep ? 'stock-row-main--sep' : ''}}" style="transform: translateX({{index === swipeIndex ? swipeDx : (index === swipeOpen ? -64 : 0)}}px);" data-index="{{index}}" bindtouchstart="onRowTouchStart" bindtouchmove="onRowTouchMove" bindtouchend="onRowTouchEnd" bindtouchcancel="onRowTouchEnd">
+          <view class="stock-row {{item.dragging ? 'stock-row--dragging' : ''}} {{item.dragging || index === swipeOpen ? 'stock-row--action-on' : ''}}" wx:for="{{filtered}}" wx:for-item="item" wx:for-index="index" wx:key="code">
+            <!-- 主行：绝对定位于操作区之上，位移只有两种来源——
+                 拖动中读 item.tx（逐行更新，不惊动其它行），静止时读 swipeOpen -->
+            <view class="stock-row-main {{item.sep ? 'stock-row-main--sep' : ''}}" style="transform: translateX({{item.tx === null ? (index === swipeOpen ? -actionW : 0) : item.tx}}px);" data-index="{{index}}" bindtouchstart="onRowTouchStart" bindtouchmove="onRowTouchMove" bindtouchend="onRowTouchEnd" bindtouchcancel="onRowTouchEnd">
               <view class="stock-info">
                 <view class="stock-name">{{item.name}}</view>
                 <!-- 新增自选只有代码，等待行情时显示占位，不重复显示一遍代码 -->
@@ -54,13 +54,14 @@
             </view>
             <!-- 左滑露出的删除操作 -->
             <view class="stock-row-action" data-index="{{index}}" bindtap="onDelete">
-              <ant-icon type="DeleteOutline" style="font-size:36rpx;color:#FFFFFF;" />
+              <base-icon type="DeleteOutline" style="font-size:36rpx;color:#FFFFFF;" />
               <text class="stock-row-action-text">删除</text>
             </view>
           </view>
         </view>
         <!-- 空态：带下一步动作，不是一句「没有」了事 -->
         <base-empty wx:else icon="StarOutline" text="这里还没有自选股" sub="点下方「添加股票」，搜索代码或名称" />
+        <view class="page-disclaimer">行情与盈亏按公开数据计算，仅供参考，不构成任何投资建议。</view>
       </view>
     </scroll-view>
   </view>

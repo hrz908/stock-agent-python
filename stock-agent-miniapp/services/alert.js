@@ -22,6 +22,38 @@ const CONDITION_FROM_API = {
   volume: 'volume'
 };
 
+// ===== 表单选项与阈值规则：页面列表文案与新增/编辑弹窗共用同一份 =====
+// 新增一种触发条件时只改这里，不用再去页面里改第二份枚举
+export const CONDITION_OPTIONS = [
+  { label: '价格突破', value: 'priceUp' },
+  { label: '价格跌破', value: 'priceDown' },
+  { label: '涨幅提醒', value: 'pctUp' },
+  { label: '跌幅提醒', value: 'pctDown' },
+  { label: '成交量异动', value: 'volume' }
+];
+
+// 基准周期（成交量提醒时选均量天数）
+export const VOLUME_BASE_OPTIONS = [
+  { label: '5日均量', value: 5 },
+  { label: '10日均量', value: 10 },
+  { label: '20日均量', value: 20 }
+];
+
+export const FREQUENCY_OPTIONS = [
+  { label: '盘中即时', value: 'realtime' },
+  { label: '日线收盘确认', value: 'close' }
+];
+
+// 阈值输入的单位 / 校验区间。max 必须写有限值：
+// 用 Infinity 会让「超过上限」那条校验永远不可达，提示文案也没法读
+export const THRESHOLD_CONFIG = {
+  priceUp: { unit: '元', placeholder: '如 1700.00', min: 0, max: 1000000, maxText: '100 万' },
+  priceDown: { unit: '元', placeholder: '如 235.00', min: 0, max: 1000000, maxText: '100 万' },
+  pctUp: { unit: '%', placeholder: '如 5.0', min: 0, max: 100, maxText: '100' },
+  pctDown: { unit: '%', placeholder: '如 5.0', min: 0, max: 100, maxText: '100' },
+  volume: { unit: '倍', placeholder: '如 1.5', min: 0.1, max: 100, maxText: '100' }
+};
+
 // 后端列表项 -> 页面渲染字段（下划线转驼峰，缺字段给默认值）
 function toViewItem(item) {
   return {

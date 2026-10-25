@@ -150,7 +150,7 @@
   color: var(--ink);
 }
 
-/* ant-icon 渲染成 <text>（行内元素），transform 对行内元素不生效，
+/* 图标组件渲染成 <text>（行内元素），transform 对行内元素不生效，
    要旋转必须先把图标变成 inline-block */
 .picked-refresh-icon {
   display: inline-block;

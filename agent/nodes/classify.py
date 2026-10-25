@@ -24,7 +24,7 @@ from datetime import datetime
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
-from core.keywords import hit_data_keyword, is_concept_question, is_realtime_data_question
+from core.keywords import fast_intent, hit_data_keyword
 from core.llm import get_small_llm
 from core.template import load_template, parse_route, render
 from nodes.rewrite import _format_history
@@ -138,11 +138,10 @@ async def classify(state: dict) -> dict:
     # 关键词兜底先行：命中实时数据词直接进取数子图，省一次 small_llm 调用，
     # 也省掉 RAG 的 embed + SQL + rerank；文档型（财报/研报/公告）仍走 RAG，
     # 概念型（解释/区别/是什么）也保持知识库回答，避免把「市盈率是什么」
-    # 误送去取数。三条分支都不调 LLM，判定是确定性的。
-    if _hit_data_keyword(query):
-        if is_realtime_data_question(query) and not is_concept_question(query):
-            return done({"intent": "stock_agent", "confidence": 1.0, "entities": {}})
-        return done({"intent": "stock", "confidence": 1.0, "entities": {}})
+    # 误送去取数。判定是确定性的，口径与 rewrite 的合并路由共用。
+    fast = fast_intent(query)
+    if fast:
+        return done({"intent": fast, "confidence": 1.0, "entities": {}})
 
     # 指代不明兜底：「那个股票怎么样」无历史可消解时直接 clarify，不让路由 LLM 猜
     if _is_vague_reference(query):

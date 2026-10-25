@@ -91,12 +91,12 @@ Page({
     // 列表是否可滚动：默认关，测量后只有内容真超出容器才打开
     scrollable: false,
 
-    // 左滑删除状态：swipeOpen = 处于打开态的行号（-1 无）；
-    // swipeIndex / swipeDx = 正在拖动的行与实时位移；swipeDragging = 拖动中（关过渡）
+    // 左滑删除状态：swipeOpen = 处于打开态的行号（-1 无）。
+    // 拖动中的位移不走全局字段——那样每帧都会让所有行的 style 表达式失效；
+    // 改为写 filtered[i].tx，只有被拖的那一行发生变化（见 onRowTouchMove）。
     swipeOpen: -1,
-    swipeIndex: -1,
-    swipeDx: 0,
-    swipeDragging: false,
+    // 操作区宽度（px）：与 .stock-row-action 的 width 一致，供 wxml 算打开位移
+    actionW: SWIPE_ACTION_W,
 
     // 删除确认弹窗（base-popup center，危险色确认）
     confirmVisible: false,
@@ -135,24 +135,35 @@ Page({
     this.setData({ bottomGap });
   },
 
-  // 每次进入页面（含从子页返回）都先刷新一次行情。
-  // 静默执行、不弹 toast，避免首次进入与返回都打断用户
+  // 每次进入页面（含从子页返回）都同步一次列表。
+  // 只读缓存（GET /watchlist）：refresh 接口会并发拉第三方行情、写缓存并广播
+  // 「行情已更新」触发提醒检查——每次进页都调它等于把第三方配额和推送都放大一遍。
+  // 真正的取数留给「刷新」按钮。
   onShow() {
-    this.refreshOnEnter();
+    this.loadOnEnter();
   },
 
-  refreshOnEnter() {
+  loadOnEnter() {
     if (this.data.refreshing) return;
     this.setData({ refreshing: true, errorMsg: '' });
     api
-      .refresh()
+      .fetchList()
       .then((data) => {
         this.setData({ refreshing: false });
         this.applyData(data);
       })
       .catch((err) => {
-        this.setData({ refreshing: false, errorMsg: (err && err.message) || '刷新失败' });
+        this.setData({ refreshing: false, errorMsg: (err && err.message) || '加载失败' });
       });
+  },
+
+  onUnload() {
+    // 打字过程中离开：清掉待发的搜索请求，避免在已销毁的页面上 setData
+    this._unloaded = true;
+    if (this._searchTimer) {
+      clearTimeout(this._searchTimer);
+      this._searchTimer = 0;
+    }
   },
 
   /* ================= 筛选（段式单选 radio） ================= */
@@ -195,8 +206,9 @@ Page({
       const asc = key === 'down';
       list.sort((a, b) => (asc ? a.pctValue - b.pctValue : b.pctValue - a.pctValue));
     }
-    // sep：行间分隔线类名由 JS 按行号计算（WXSS 禁兄弟选择器，见 watchlist.wxss）
-    return list.map((s, i) => Object.assign({}, s, { sep: i > 0 }));
+    // sep：行间分隔线类名由 JS 按行号计算（WXSS 禁兄弟选择器，见 watchlist.wxss）。
+    // tx / dragging 是左滑的逐行状态：初值必须显式给，wxml 才能用 null 判断「未拖动」
+    return list.map((s, i) => Object.assign({}, s, { sep: i > 0, tx: null, dragging: false }));
   },
 
   /* ================= 滚动控制 ================= */
@@ -275,6 +287,7 @@ Page({
   onRowTouchStart(e) {
     const index = Number(e.currentTarget.dataset.index);
     const touch = e.touches[0];
+    if (!touch || !this.data.filtered[index]) return;
     const baseOpen = this.data.swipeOpen === index;
     const baseTx = baseOpen ? -SWIPE_ACTION_W : 0;
     this._swipe = {
@@ -286,13 +299,18 @@ Page({
       tx: baseTx,
       lastTx: baseTx
     };
-    this.setData({ swipeDragging: true });
+    const patch = {};
+    // 同时只允许一行处于打开态：拖另一行时先把上一行收回去
+    if (this.data.swipeOpen >= 0 && this.data.swipeOpen !== index) patch.swipeOpen = -1;
+    patch['filtered[' + index + '].dragging'] = true;
+    this.setData(patch);
   },
 
   onRowTouchMove(e) {
     const s = this._swipe;
     if (!s) return;
     const touch = e.touches[0];
+    if (!touch) return;
     const dx = touch.clientX - s.startX;
     const dy = touch.clientY - s.startY;
     if (s.locked === null) {
@@ -302,7 +320,10 @@ Page({
       if (!s.locked) {
         // 纵向滚动：交还手势给 scroll-view，本行状态复位
         this._swipe = null;
-        this.setData({ swipeDragging: false, swipeIndex: -1, swipeDx: 0 });
+        this.setData({
+          ['filtered[' + s.index + '].dragging']: false,
+          ['filtered[' + s.index + '].tx']: null
+        });
         return;
       }
     }
@@ -313,27 +334,38 @@ Page({
     // 1px 内的抖动不回写视图，省掉无意义 setData
     if (Math.abs(tx - s.lastTx) < 1) return;
     s.lastTx = tx;
-    this.setData({ swipeIndex: s.index, swipeDx: tx });
+    // 只写这一行的位移路径：全局字段会让列表里每一行的 style 都重算一遍
+    this.setData({ ['filtered[' + s.index + '].tx']: tx });
   },
 
   onRowTouchEnd() {
     const s = this._swipe;
     this._swipe = null;
     if (!s) return;
-    // 松手：恢复过渡动画，按最终位移决定打开还是关闭
-    this.setData({ swipeDragging: false });
+    // 松手前列表可能已被刷新替换，行号失效时直接放弃，不去写一个不存在的下标
+    if (!this.data.filtered[s.index]) return;
     const open = s.tx <= -SWIPE_ACTION_W * SWIPE_OPEN_RATIO;
-    this.setData({ swipeIndex: -1, swipeDx: 0, swipeOpen: open ? s.index : -1 });
+    // 松手：恢复过渡动画，按最终位移决定打开还是关闭
+    this.setData({
+      ['filtered[' + s.index + '].dragging']: false,
+      ['filtered[' + s.index + '].tx']: null,
+      swipeOpen: open ? s.index : -1
+    });
   },
 
-  // 收掉所有左滑状态。打开态记的是行号，列表一旦重排（刷新 / 切筛选 / 删除）
+  // 收掉左滑状态。打开态记的是行号，列表一旦重排（刷新 / 切筛选 / 删除）
   // 行号就整体错位，残留的 swipeOpen 会落到另一张卡上——
   // 表现就是「删掉一张后，下面那张的删除键也自己露出来了」
   closeSwipe() {
-    if (this._swipe) this._swipe = null;
-    const d = this.data;
-    if (d.swipeOpen < 0 && d.swipeIndex < 0 && !d.swipeDx && !d.swipeDragging) return;
-    this.setData({ swipeIndex: -1, swipeDx: 0, swipeOpen: -1, swipeDragging: false });
+    const s = this._swipe;
+    this._swipe = null;
+    const patch = {};
+    if (s && this.data.filtered[s.index]) {
+      patch['filtered[' + s.index + '].dragging'] = false;
+      patch['filtered[' + s.index + '].tx'] = null;
+    }
+    if (this.data.swipeOpen >= 0) patch.swipeOpen = -1;
+    if (Object.keys(patch).length) this.setData(patch);
   },
 
   // 点主行：先把打开状态的行收回去；没收起的动作（纯点击）则进个股详情。
@@ -461,10 +493,12 @@ Page({
     stockApi
       .search(kw, SEARCH_LIMIT)
       .then((list) => {
+        if (this._unloaded) return;
         const results = list || [];
         this.setData({ searchResults: results, searchVisible: results.length > 0 });
       })
       .catch(() => {
+        if (this._unloaded) return;
         this.setData({ searchResults: [], searchVisible: false });
       });
   },
@@ -493,11 +527,20 @@ Page({
   },
 
   onAddConfirm() {
+    // 连点闸门：请求回来之前不再发第二次（后端是 Upsert，重复提交不会写坏数据，
+    // 但会重复请求、重复 toast，观感像「点一下加了两条」）
+    if (this._submitting) return;
+
     const code = String(this.data.addCode || '').trim();
+    const cost = String(this.data.addCost || '').trim();
+    const qty = String(this.data.addQty || '').trim();
 
     let codeError = '';
     if (!code) codeError = '请输入股票代码';
     else if (!/^\d{6}$/.test(code)) codeError = '股票代码为 6 位数字';
+    // 成本价最多三位小数（A 股报价两位，留一位冗余）；数量必须是正整数
+    else if (cost && !/^\d+(\.\d{1,3})?$/.test(cost)) codeError = '买入单价请填数字';
+    else if (qty && !/^\d+$/.test(qty)) codeError = '持股数量请填正整数';
 
     // 优先用下拉选中时记下的交易所（后端给的是权威值）；
     // 手输没选过的，再按代码前缀反推
@@ -515,11 +558,10 @@ Page({
     // 只把填了的字段发过去：没填的成本/数量让后端保持原值，
     // 这样重复添加同一只股票时才不会把之前的建仓信息冲掉
     const payload = { stock_code: `${market}${code}` };
-    const cost = String(this.data.addCost || '').trim();
-    const qty = String(this.data.addQty || '').trim();
     if (cost) payload.cost_price = cost;
-    if (qty) payload.quantity = Number(qty) || 0;
+    if (qty) payload.quantity = Number(qty);
 
+    this._submitting = true;
     this.setData({ addVisible: false, loading: true });
     api
       .add(payload)
@@ -527,6 +569,9 @@ Page({
       .then(() => this.toast(`已添加 ${market} ${code}`))
       .catch((err) => {
         this.setData({ loading: false, errorMsg: (err && err.message) || '添加失败' });
+      })
+      .then(() => {
+        this._submitting = false;
       });
   },
 

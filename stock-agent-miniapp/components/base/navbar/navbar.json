@@ -1,6 +1,6 @@
 {
   "component": true,
   "usingComponents": {
-    "ant-icon": "antd-mini/Icon/index"
+    "base-icon": "/components/base/icon/icon"
   }
 }

@@ -1,40 +1,9 @@
 import { apiBase } from '../config';
-import { getToken, ensureLogin, setSession } from '../utils/request';
-import { get, put } from '../utils/request';
+import { getToken, ensureLogin } from '../utils/request';
+import { get, put, del } from '../utils/request';
 
-// 静默登录：只用 code 换身份，不索要昵称/头像。
-// 后端按 openid 查/建用户，新用户自动给默认昵称「微信用户」、空头像。
-// 头像昵称的完善留给「编辑资料」页面，由用户主动触发
-export function login() {
-  return new Promise((resolve, reject) => {
-    wx.login({
-      success: (lr) => {
-        if (!lr || !lr.code) {
-          reject(new Error('微信登录失败'));
-          return;
-        }
-        wx.request({
-          url: apiBase + '/api/v1/auth/login',
-          method: 'POST',
-          data: { code: lr.code },
-          header: { 'Content-Type': 'application/json' },
-          timeout: 10000,
-          success: (res) => {
-            const body = res.data || {};
-            if (res.statusCode === 200 && body.code === 0 && body.data) {
-              setSession(body.data.token, body.data.user_id);
-              resolve(body.data);
-              return;
-            }
-            reject(new Error(body.message || '登录失败'));
-          },
-          fail: () => reject(new Error('网络异常'))
-        });
-      },
-      fail: () => reject(new Error('微信登录失败'))
-    });
-  });
-}
+// 登录只有一条实现：utils/request.js 的 ensureLogin（带 Promise 复用与 401 重登）。
+// 这里曾经有一份独立的 login()，与它逻辑重复且没有调用方，已删除。
 
 export function getProfile() {
   return get('/api/v1/user/profile');
@@ -94,4 +63,10 @@ export function relativeUrl(url) {
   if (!url) return '';
   if (url.indexOf(apiBase) === 0) return url.slice(apiBase.length);
   return url;
+}
+
+// 注销账号：后端硬删用户与自选/提醒数据（含头像文件），不可恢复。
+// 对话会话与 checkpoint 在 Agent 侧，必须由页面在调用本接口前逐条删除
+export function deleteAccount() {
+  return del('/api/v1/user/account');
 }

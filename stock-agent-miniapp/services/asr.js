@@ -6,8 +6,9 @@
 // 页面只拿 start / stop / abort 三个动作。
 const PLUGIN_ID = 'WechatSI';
 // 停录后等插件回调的兜底时限：插件异常时不回 onStop，
-// 不清会话会让之后每次录音都卡在排队里（表现为按住完全没反应）
-const STALE_RESET_MS = 2000;
+// 不清会话会让之后每次录音都卡在排队里（表现为按住完全没反应）。
+// 不能给太短：长录音的终稿往往要几秒才回来，2s 会把正常识别误判成超时
+const STALE_RESET_MS = 6000;
 
 let manager = null;
 let current = null; // 正在进行的识别会话

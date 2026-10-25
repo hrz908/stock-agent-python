@@ -1,0 +1,85 @@
+/* 图标字体：@font-face 在 styles/antd-icon.wxss（app.wxss 全局引入），
+   跨组件可用；这里只声明「类名 -> 码点」，不重复内联字体（否则每个组件各背 54KB）。
+   新增图标：从 antd-mini 的 Icon/index.wxss 取对应 content 码点补一行。 */
+.ico {
+  font-family: 'antdmini-icon-local';
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  /* 尺寸跟随调用方：style="font-size:44rpx" 落在自定义组件的宿主节点上，
+     字号靠继承传进来；这里写死 32rpx 会把它盖掉，图标全变成同一个尺寸 */
+  font-size: inherit;
+}
+
+/* 尺寸与颜色由调用方的 style 覆盖，故这里不写 color / font-size 特例 */
+
+.ico-UnorderedListOutline:before {
+  content: '\e6ac';
+}
+
+.ico-RightOutline:before {
+  content: '\e6b8';
+}
+
+.ico-LeftOutline:before {
+  content: '\e6b5';
+}
+
+.ico-SendOutline:before {
+  content: '\e6d3';
+}
+
+.ico-AudioOutline:before {
+  content: '\e6d6';
+}
+
+.ico-AppstoreOutline:before {
+  content: '\e6ad';
+}
+
+.ico-ChatAddOutline:before {
+  content: '\e6e0';
+}
+
+.ico-CloseOutline:before {
+  content: '\e6b3';
+}
+
+.ico-LoopOutline:before {
+  content: '\e6bf';
+}
+
+.ico-DeleteOutline:before {
+  content: '\e68c';
+}
+
+.ico-StarOutline:before {
+  content: '\e68a';
+}
+
+.ico-BellOutline:before {
+  content: '\e6a9';
+}
+
+.ico-UpOutline:before {
+  content: '\e6b7';
+}
+
+.ico-DownOutline:before {
+  content: '\e6b6';
+}
+
+.ico-HistogramOutline:before {
+  content: '\e6ed';
+}
+
+.ico-UserOutline:before {
+  content: '\e6d7';
+}
+
+.ico-SearchOutline:before {
+  content: '\e6aa';
+}
+
+.ico-FileOutline:before {
+  content: '\e6db';
+}

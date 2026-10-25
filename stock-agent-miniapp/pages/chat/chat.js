@@ -15,6 +15,7 @@ import {
 } from '../../services/sessions';
 import { parseMarkdown } from '../../utils/markdown';
 import { list as listQuickAsks, click as reportQuickAskClick } from '../../services/quickAsk';
+import { ensureLogin } from '../../utils/request';
 import { isDev } from '../../config';
 
 // 侧边抽屉导航项：每行 = 文字 + 右侧箭头（左侧不放图标）
@@ -80,7 +81,9 @@ const NEW_CHAT_URL = '/pages/chat/chat?new=1';
 // 触发抽屉开关的最小横向滑动距离（px）
 const SWIPE_MIN = 40;
 
-// 发送看门狗：超过这个时长一个字都没回来，就认为这一轮没有响应（秒）
+// 发送看门狗：超过这个时长没有任何新内容，就认为这一轮卡死（毫秒）。
+// 语义是「空闲超时」不是「首包超时」——每收到一个 token 都会重置；
+// 否则正文出到一半服务端静默挂掉时 sending 会一直为 true，用户再也发不出去
 const SEND_TIMEOUT_MS = 45000;
 
 // 对话列表底部锚点：scroll-into-view 滚动到它即可到达列表末尾
@@ -140,13 +143,6 @@ function numOrNull(v) {
   return isNaN(n) ? null : n;
 }
 
-// 交易状态：后端给 trading / closed，转成用户看得懂的中文
-function statusTextOf(s) {
-  if (s === 'trading') return '交易中';
-  if (s === 'closed') return '已收盘';
-  return s || '';
-}
-
 // 简单移动平均：与 values 等长，前 n-1 项为 null（数据不足不出点，折线自然断开）
 function movingAverage(values, n) {
   const out = [];
@@ -163,13 +159,9 @@ function movingAverage(values, n) {
   return out;
 }
 
-// 聊天场景的 K 线周期：table 事件只带 rows，不带周期与股票信息，
-// 因此这里只展示日 K 一档（完整五周期切换属于 K 线详情页，见改造指南目录规划）
-const KLINE_PERIODS_CHAT = [{ key: 'day', label: '日K' }];
-
-// K 线卡最多渲染的根数。比旧表格的 10 行多：图表需要足够根数才能看出趋势与均线，
-// 且 SVG 背景图按 viewBox 缩放，根数多不会增加渲染成本
-const KLINE_CARD_ROWS = 30;
+// K 线卡传给组件的根数。必须与 components/finance/kline-card 的 MAX_BARS 一致：
+// 组件只画 MAX_BARS 根，这里多传只会让副标题「最近 N 个交易日」与实际图不符
+const KLINE_CARD_ROWS = 15;
 
 function quoteCard(q) {
   // 后端 QuoteDetail：涨跌幅字段是 change_percent（可能为字符串）；
@@ -245,8 +237,6 @@ function klineCard(rows, meta) {
     content: [],
     kline: klines,
     klineMa: ma,
-    klinePeriods: KLINE_PERIODS_CHAT,
-    klineActivePeriod: 'day',
     klinePct: periodPct,
     klineAmplitude: amplitude,
     // 量比需要当日分时成交节奏，日 K 数据源算不出来，不出这个指标（不拿日线近似）
@@ -490,6 +480,15 @@ const TYPE_CATCHUP = 18;
 const TYPE_MAX_STEP = 12;
 const SCROLL_FOLLOW_MS = 80;
 
+// 流式版式重解析间隔(ms)：逐帧对整段文本跑 markdown 解析是 O(n²)，
+// 是这条链路最大的 CPU 开销。文字仍按帧更新，只有版式按这个节奏重排
+const MD_PARSE_MS = 120;
+
+// 历史消息分片：首屏只渲染最近一批，更早的按页向前补，
+// 避免长会话一次性解析 + 渲染几百条消息把首屏拖住
+const MSG_INITIAL = 30;
+const MSG_PAGE = 20;
+
 // 加载态节奏：文案跟着真实耗时推进，先给一句轻的，超过阈值才承认「这次慢」。
 // 阈值按用户能忍的节奏定——8 秒内没有任何解释会觉得卡死，20 秒以上必须给台阶
 const LOAD_SEARCH_MS = 1600;   // 理解 → 检索：首个 token 迟迟不来时换成交代动作
@@ -499,15 +498,29 @@ const LOAD_FINAL_MS = 26000;   // 核对 → 仍在整理：超长档，补一�
 // 正常节奏下这句话不会亮，避免全程挂一条多余说明
 const STREAM_STALL_MS = 1200;
 
-// 加载态文案表。只写「我们确实在做的事」，不承诺剩余时间、不催用户等待
+// 加载态文案表。只写「我们确实在做的事」，不承诺剩余时间、不催用户等待。
+// 没有「重连」档：SSE 是每问一个请求，失败即整轮失败，不存在后台重连状态
 const LOAD_COPY = {
   think: { text: '正在理解你的问题' },
   search: { text: '正在查找行情与资料' },
   read: { text: '正在整理查到的资料' },
   long: { text: '正在核对数据并组织回答', hint: '这次要查的资料比较多' },
-  final: { text: '还在整理，内容比平时多', hint: '内容较长时会慢一些，请再稍等' },
-  retry: { text: '连接断开了，正在重连', hint: '网络恢复后会自动接着回答' }
+  final: { text: '还在整理，内容比平时多', hint: '内容较长时会慢一些，请再稍等' }
 };
+
+// 交易状态：后端给 trading / closed，转成用户看得懂的中文。
+// 未知值一律不显示：直接把英文枚举抛给用户比空着更糟
+function statusTextOf(s) {
+  const map = {
+    trading: '交易中',
+    closed: '已收盘',
+    suspended: '停牌',
+    limit_up: '涨停',
+    limit_down: '跌停',
+    resume: '复牌'
+  };
+  return map[s] || '';
+}
 
 Page({
   data: {
@@ -548,6 +561,9 @@ Page({
     voiceText: '',
     // 空会话不铺问候气泡：首屏直接交给下方的引导问题
     messages: [],
+    // 历史消息分片开关：hasEarlier 为真时列表顶部出现「查看更早」入口
+    hasEarlier: false,
+    earlierCount: 0,
     // 首屏引导问题：onLoad 里随机生成（行情 / 资金 / 估值三类意图），
     // 点一条即发送，省掉「我能问什么」这一轮思考
     quickAsks: [],
@@ -558,8 +574,6 @@ Page({
     loadText: '',
     // 长耗时档才出现的第二行说明；平时为空，块高不会多占一行
     loadHint: '',
-    // 'warn' = 断线重连：文案与动效都降下来，等网络而不是等模型
-    loadTone: '',
     // 生成中光标之后的补充说明：只在正文停顿（等服务端下一段）时亮起
     streamStalled: false,
     streamStallText: ''
@@ -585,6 +599,11 @@ Page({
     // 本页发起的最新一轮 rid：agent 单例的请求级事件全带 __rid，
     // 只渲染自己发起的那轮，旧页在途流的 token 不会串进本页
     this._myReqId = 0;
+    // 历史消息加载序号：连点两条会话时，先发后到的响应不许覆盖后选的会话
+    this._msgSeq = 0;
+    // 发送序号：登录是异步的，登录回来时这一轮可能已被看门狗/切会话收掉，
+    // 甚至用户已经发了下一条——只有序号仍是本轮才允许真正开流
+    this._sendSeq = 0;
     // 抽屉收起动画是否已完成：新对话跳转要等它，否则新页面会盖掉动画。
     // 初始为 true（页面刚进、抽屉本来就是关的，没有动画要等）
     this._drawerClosed = true;
@@ -635,6 +654,12 @@ Page({
     this._streamIndex = -1;
     this._streamText = '';
     this._streamShown = 0;
+    // 已落到视图的字数 / 上次版式重解析时刻 / 版式是否落后于文字
+    this._renderedShown = 0;
+    this._mdAt = 0;
+    this._mdDirty = false;
+    // 历史消息分片：池子里是尚未渲染的更早消息
+    this._historyPool = [];
     this._typeTimer = 0;
     // 加载态：本轮开始时刻、工具阶段（running/done）、三档定时器、生成停顿定时器
     this._loadAt = 0;
@@ -763,13 +788,7 @@ Page({
     // 错误：不再逐字往外吐，已收到的正文一次性显示完再收尾；
     // 已经暂存的卡仍然放出来（数据是好的），别让用户白等一轮
     on('error', (data) => {
-      this._snapStreamEnd();
-      this._finishStreaming();
-      this._clearSendWatchdog();
-      this._endLoad();
-      this.setData({ sending: false });
-      this._drainCards();
-      this.toast((data && data.msg) || '服务异常');
+      this._failSend((data && data.msg) || '服务异常');
     });
 
     // 本轮回答结束：先记下「该收尾了」，等逐字打完再真正结束（_endTurn）。
@@ -786,28 +805,16 @@ Page({
       this._startTyping();   // 等新 token 期间定时器会停，这里兜底续上
     });
 
-    // 断连：连接级事件（不属于某一轮），不做 rid 过滤；
-    // 只在正在等回答时给个提示，重连由连接层自动完成。
-    // 文案切到「重连」档并保留在界面上——正文已经开始时也让这行留在末尾，
-    // 否则用户只会看到文字突然不动，不知道发生了什么
-    this._agentHandlers.disconnected = () => {
-      if (!this.data.sending) return;
-      // 同一时刻只说一件事：断线时撤掉「继续生成」那句，别让两条等待文案叠着
-      this._clearStreamStall();
-      this.setData({ loadTone: 'warn', streamStalled: false, streamStallText: '' });
-      this._refreshLoad();
-    };
-    agentSocket.on('disconnected', this._agentHandlers.disconnected);
-
     agentSocket.connect();
   },
 
   // 把增量文本积进缓冲；首个 token 到达时确定目标消息（没有 streaming 消息
   // 就新建一条）。token 本身不直接落视图，交给逐字定时器按帧揭示
   _appendToken(delta) {
-    // 已经有内容在回来，说明这一轮是活的，撤掉看门狗
-    this._clearSendWatchdog();
-    // 首个 token 到达即收起加载块（断线提示也一并撤），交给流式正文；
+    // 已经有内容在回来，说明这一轮还活着：把空闲看门狗往后推，而不是撤掉——
+    // 中途静默挂死（没有 error/done）同样要把 sending 放出来
+    this._touchSendWatchdog();
+    // 首个 token 到达即收起加载块，交给流式正文；
     // 之后每来一段都会清掉「停顿说明」，文字一直在动就不需要那句补充
     this._endLoad();
     if (this._streamIndex < 0) {
@@ -817,10 +824,14 @@ Page({
         this._streamIndex = messages.length - 1;
         this._streamText = (last.content[0] && last.content[0].data) || '';
         this._streamShown = this._streamText.length;
+        this._renderedShown = this._streamShown;
       } else {
         this._streamIndex = messages.length;
         this._streamText = '';
         this._streamShown = 0;
+        this._renderedShown = 0;
+        this._mdAt = 0;
+        this._mdDirty = false;
         this.setData({
           messages: messages.concat([
             {
@@ -870,39 +881,55 @@ Page({
     this._startTyping();
   },
 
-  // 把当前应显示的文本落到视图：文本与 markdown 块同一次 setData 写入，
-  // 避免出现「文字新、版式旧」的一帧。
-  // 这里刻意不跟随滚动：正文逐字变长时只让它向下溢出，视口停在用户当前看的位置。
-  // 跟着底部走会变成「每帧把页面往下推」，读上一段时视线一直被拽走。
-  _renderStream() {
+  // 把当前应显示的文本落到视图。
+  // 文字每帧都更新；markdown 版式按 MD_PARSE_MS 一档重解析——整段重新 lex
+  // 是流式渲染里最贵的一步（字数 × 帧数），逐帧做等于 O(n²)。
+  // 刻意不跟随滚动：正文变长只让它向下溢出，视口停在用户正在读的位置。
+  _renderStream(force) {
     const idx = this._streamIndex;
     if (idx < 0) return;
     const text = this._streamText.slice(0, this._streamShown);
     const patch = {};
     patch['messages[' + idx + '].content[0].data'] = text;
-    patch['messages[' + idx + '].blocks'] = parseMarkdown(text);
+    const now = Date.now();
+    if (force || now - (this._mdAt || 0) >= MD_PARSE_MS) {
+      patch['messages[' + idx + '].blocks'] = parseMarkdown(text);
+      this._mdAt = now;
+      this._mdDirty = false;
+    } else {
+      // 版式暂时落后于文字：收尾时必须强制补一次，否则最后一段没有排版
+      this._mdDirty = true;
+    }
+    this._renderedShown = this._streamShown;
     this.setData(patch);
   },
 
-  // 立刻把剩下的字全部显示：出错、切会话、新一轮发送这类不能等打字机的场合
+  // 立刻把剩下的字全部显示：出错、切会话、新一轮发送这类不能等打字机的场合。
+  // 即使字已经追平，只要版式还是脏的也要再落一次（见 _renderStream 的 _mdDirty）
   _snapStreamEnd() {
     if (this._typeTimer) {
       clearTimeout(this._typeTimer);
       this._typeTimer = 0;
     }
     if (this._streamIndex < 0) return;
-    if (this._streamShown >= this._streamText.length) return;
     this._streamShown = this._streamText.length;
-    this._renderStream();
+    if (this._mdDirty || this._renderedShown !== this._streamShown) {
+      this._renderStream(true);
+    }
   },
 
   // 流式消息收尾：status 转 complete，复位流式追踪状态。
-  // 不碰 sending：解锁发送只在 _endTurn 里做（正文打完才放开）
+  // 不碰 sending：解锁发送只在 _endTurn 里做（正文打完才放开）。
+  // _streamClosing 必须在这里复位：error / 切会话 / 看门狗三条路径都不走 _endTurn
   _finishStreaming() {
     const idx = this._streamIndex;
     this._streamIndex = -1;
     this._streamText = '';
     this._streamShown = 0;
+    this._renderedShown = 0;
+    this._mdAt = 0;
+    this._mdDirty = false;
+    this._streamClosing = false;
     if (idx < 0) return;
     const patch = {};
     patch['messages[' + idx + '].status'] = 'complete';
@@ -961,12 +988,11 @@ Page({
 
   _refreshLoad() {
     if (this._unloaded || !this.data.sending) return;
-    // 正文已经在出：加载块让给流式消息（断线除外，见下）
-    if (this._roundTextStarted && this.data.loadTone !== 'warn') return;
+    // 正文已经在出：加载块让给流式消息
+    if (this._roundTextStarted) return;
     const elapsed = Date.now() - (this._loadAt || Date.now());
     let copy;
-    if (this.data.loadTone === 'warn') copy = LOAD_COPY.retry;
-    else if (elapsed >= LOAD_FINAL_MS) copy = LOAD_COPY.final;
+    if (elapsed >= LOAD_FINAL_MS) copy = LOAD_COPY.final;
     else if (elapsed >= LOAD_LONG_MS) copy = LOAD_COPY.long;
     else if (this._toolPhase === 'running' && this._toolLabel) copy = { text: this._toolLabel };
     else if (this._toolPhase === 'done') copy = LOAD_COPY.read;
@@ -982,12 +1008,11 @@ Page({
   _endLoad() {
     this._clearLoadTimers();
     this._clearStreamStall();
-    if (!this.data.loadVisible && !this.data.streamStalled && !this.data.loadTone) return;
+    if (!this.data.loadVisible && !this.data.streamStalled) return;
     this.setData({
       loadVisible: false,
       loadText: '',
       loadHint: '',
-      loadTone: '',
       streamStalled: false,
       streamStallText: ''
     });
@@ -1047,6 +1072,11 @@ Page({
       agentSocket.off(ev, this._agentHandlers[ev]);
     });
     this._agentHandlers = {};
+    // 在途流已无人消费：本页发起的那条才断（单例可能被另一个对话页占着），
+    // 否则返回上一页后仍在后台收包、白耗流量与电量
+    if (this.data.sending && this._myReqId === agentSocket.currentRequestId()) {
+      agentSocket.disconnect();
+    }
     if (this._onResize && wx.offWindowResize) wx.offWindowResize(this._onResize);
     if (this._scrollTimer) clearTimeout(this._scrollTimer);
     if (this._measureTimer) clearTimeout(this._measureTimer);
@@ -1187,25 +1217,38 @@ Page({
     this._armSendWatchdog();
 
     // 通过 SSE 发送：每次提问开一条独立流；传入本页 session_id（后端据此拼 thread_id），
-    // 并记下本轮 rid，回来的事件只渲染本页发起的这一轮
-    this._myReqId = agentSocket.sendMessage(text, this._sessionId);
+    // 并记下本轮 rid，回来的事件只渲染本页发起的这一轮。
+    // 必须等登录：SSE 不走 utils/request 的 401 重登链路，冷启动后立刻提问
+    // 会带着空 Bearer 出去，直接撞 401（旧表现：「服务响应异常」）
+    this._sendSeq += 1;
+    const seq = this._sendSeq;
+    ensureLogin(false).then((token) => {
+      // 登录回来时这一轮可能已经结束（看门狗超时 / 切了会话 / 用户又发了新问题），
+      // 序号或发送态对不上就整轮丢弃，绝不把旧问题当成新问题重发
+      if (this._unloaded || seq !== this._sendSeq || !this.data.sending) return;
+      if (!token) {
+        this._failSend('登录失败，请重试');
+        return;
+      }
+      this._myReqId = agentSocket.sendMessage(text, this._sessionId);
+    });
   },
 
-  // 发送看门狗：sending 只在 done / error 复位；服务没起或连接始终没建立时这两个事件
-  // 永远不来，sending 一直为 true、后续发送被静默吞掉（表现为「点了发送没反应」）。
-  // 收到第一个 token 即说明链路活着，立刻撤掉（见 _appendToken）
+  // 发送看门狗：sending 只在 done / error 复位；服务没起、连接没建立，或正文出到
+  // 一半静默挂掉时这两个事件永远不来，sending 会一直为 true、后续发送被静默吞掉
+  //（表现为「点了发送没反应」）
   _armSendWatchdog() {
-    this._clearSendWatchdog();
+    this._touchSendWatchdog();
+  },
+
+  // 按「多久没有新内容」计时：每收到一个 token 都重置一次（见 _appendToken），
+  // 首包慢与中途静默卡死都能兜住
+  _touchSendWatchdog() {
+    if (this._sendWatchdog) clearTimeout(this._sendWatchdog);
     this._sendWatchdog = setTimeout(() => {
       this._sendWatchdog = 0;
-      if (!this.data.sending) return;
-      // 超时收尾同 error：剩余文字直接铺完；卡片数据是好的，照常落位
-      this._snapStreamEnd();
-      this._finishStreaming();
-      this._endLoad();
-      this.setData({ sending: false });
-      this._drainCards();
-      this.toast('服务暂时没有响应，请重试');
+      if (this._unloaded || !this.data.sending) return;
+      this._failSend('服务暂时没有响应，请重试');
     }, SEND_TIMEOUT_MS);
   },
 
@@ -1214,6 +1257,18 @@ Page({
       clearTimeout(this._sendWatchdog);
       this._sendWatchdog = 0;
     }
+  },
+
+  // 一轮失败/超时的统一收尾：剩余文字铺完、已到的卡片放出来、解锁发送、提示一次。
+  // error / 看门狗 / 登录失败三条路径共用，避免某一处漏掉某一步（如 _streamClosing）
+  _failSend(message) {
+    this._clearSendWatchdog();
+    this._snapStreamEnd();
+    this._finishStreaming();
+    this._endLoad();
+    this.setData({ sending: false });
+    this._drainCards();
+    if (message) this.toast(message);
   },
 
   // 键盘弹起后的布局：输入栏容器整体上移 kb，对话区同步收窄 kb，
@@ -1577,12 +1632,10 @@ Page({
     if (!this.data.sending) return;
     this._myReqId = 0;
     agentSocket.disconnect();
-    this._clearSendWatchdog();
-    this._snapStreamEnd();
-    this._finishStreaming();
     this._pendingCard = null;
-    this._endLoad();
-    this.setData({ sending: false });
+    // _failSend 负责铺完剩余文字 / 复位 _streamClosing / 解锁 sending；用户主动切走
+    // 不需要再弹提示，故不传文案
+    this._failSend('');
   },
 
   // 当前会话被删后原地换一条新会话：不跳页、不收起抽屉，
@@ -1593,7 +1646,11 @@ Page({
     const sid = agentSocket.freshSessionId();
     this._abortInFlight();
     this._sessionId = sid;
-    this.setData({ messages: [] });
+    // 换会话等于换一份历史：分片池与加载序号一起作废，
+    // 否则上一会话的旧响应还能把消息写回来
+    this._historyPool = [];
+    this._msgSeq += 1;
+    this.setData({ messages: [], hasEarlier: false, earlierCount: 0 });
     this.scrollToBottom();
     // 注册失败不阻断：首条消息发出时 Go 网关仍会 registerSession 补注册
     createSession(sid, '').catch(() => {});
@@ -1606,19 +1663,47 @@ Page({
   },
 
   // 恢复某会话的消息（文本气泡；结构化卡片不持久化，恢复后只有文本）。
+  // 长会话只渲染最近 MSG_INITIAL 条，更早的留在 _historyPool 里，点「查看更早」再补：
+  // 一次性解析 + 渲染几百条会把首屏拖住（每条都要跑一遍 markdown）。
+  // _msgSeq 是加载闸门：连点两条会话时，先发后到的响应不许覆盖后选的那条。
   // 失败时清空消息 + 轻提示——宁可显示空会话，也别把上一条对话的
   // 消息留在界面上冒充新会话的内容
   loadSessionMessages(sid) {
+    this._msgSeq += 1;
+    const seq = this._msgSeq;
     return sessionMessages(sid).then((data) => {
+      if (seq !== this._msgSeq || this._unloaded) return;
       const list = (data && data.messages) || [];
       const msgs = list.map((m) =>
         (m.role === 'user' ? userMsg(m.content) : assistantMsg(m.content))
       );
-      this.setData({ messages: msgs });
+      const cut = Math.max(0, msgs.length - MSG_INITIAL);
+      this._historyPool = msgs.slice(0, cut);
+      this.setData({
+        messages: msgs.slice(cut),
+        hasEarlier: cut > 0,
+        earlierCount: cut
+      });
       this.scrollToBottom();
     }).catch(() => {
-      this.setData({ messages: [] });
+      if (seq !== this._msgSeq || this._unloaded) return;
+      this._historyPool = [];
+      this.setData({ messages: [], hasEarlier: false, earlierCount: 0 });
       this.toast('会话加载失败');
+    });
+  },
+
+  // 向前补一页历史。只允许在「没有在途回答」时点：插入后所有下标整体后移，
+  // 正在流式刷新的那条消息会指错气泡
+  onLoadEarlier() {
+    if (!this._historyPool.length || this.data.sending) return;
+    const take = Math.min(MSG_PAGE, this._historyPool.length);
+    const chunk = this._historyPool.slice(-take);
+    this._historyPool = this._historyPool.slice(0, -take);
+    this.setData({
+      messages: chunk.concat(this.data.messages),
+      hasEarlier: this._historyPool.length > 0,
+      earlierCount: this._historyPool.length
     });
   },
 

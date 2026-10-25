@@ -6,6 +6,8 @@
   <base-navbar left-arrow="{{true}}" bind:back="onBack" />
 
   <scroll-view class="gallery" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
+    <view class="gallery-warn">开发版专用 · 以下全部为示例假数据，非真实行情与研报</view>
+
     <view class="gallery-hd">
       <view class="gallery-hd-t">卡片样式测试</view>
       <view class="gallery-hd-d">八张金融卡 · 假数据实例 · 不接后端。调组件 wxss 或 token 后，chat 主页面自动同步。</view>
@@ -39,8 +41,6 @@
         card-class="msg-card"
         name=""
         subtitle="{{msg.klineSub}}"
-        periods="{{msg.klinePeriods}}"
-        active-period="{{msg.klineActivePeriod}}"
         klines="{{msg.kline}}"
         ma="{{msg.klineMa}}"
         period-pct="{{msg.klinePct}}"

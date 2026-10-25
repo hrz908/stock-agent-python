@@ -103,6 +103,17 @@
   color: var(--ink-3);
 }
 
+/* 注销入口：次级文字链，不用危险色实底——不跟「退出登录」抢主次，
+   但必须在页面上可发现（合规要求账号可删除） */
+.footer-link {
+  margin-top: var(--sp-4);
+  padding: var(--sp-2) 0;
+  text-align: center;
+  font-size: var(--fs-aux);
+  color: var(--ink-3);
+  text-decoration: underline;
+}
+
 /* ===== 编辑资料弹窗 ===== */
 .edit-form {
   display: flex;

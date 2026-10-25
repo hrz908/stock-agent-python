@@ -8,37 +8,9 @@ import * as alertApi from '../../services/alert';
 // 下拉最多展示几条联想结果（与自选股页保持一致）
 const SEARCH_LIMIT = 5;
 
-// 触发条件选项
-const CONDITION_OPTIONS = [
-  { label: '价格突破', value: 'priceUp' },
-  { label: '价格跌破', value: 'priceDown' },
-  { label: '涨幅提醒', value: 'pctUp' },
-  { label: '跌幅提醒', value: 'pctDown' },
-  { label: '成交量异动', value: 'volume' }
-];
-
-// 基准周期选项（成交量提醒时选均量天数）
-const VOLUME_BASE_OPTIONS = [
-  { label: '5日均量', value: 5 },
-  { label: '10日均量', value: 10 },
-  { label: '20日均量', value: 20 }
-];
-
-// 检查频率选项
-const FREQUENCY_OPTIONS = [
-  { label: '盘中即时', value: 'realtime' },
-  { label: '日线收盘确认', value: 'close' }
-];
-
-// 条件类型 -> 阈值输入的配置（单位、占位提示、校验规则）
-// 单位单独显示在输入框尾部（清除图标右边），不写进 placeholder
-const THRESHOLD_CONFIG = {
-  priceUp:   { unit: '元', placeholder: '如 1700.00', min: 0, max: Infinity },
-  priceDown: { unit: '元', placeholder: '如 235.00', min: 0, max: Infinity },
-  pctUp:     { unit: '%', placeholder: '如 5.0', min: 0, max: 100 },
-  pctDown:   { unit: '%', placeholder: '如 5.0', min: 0, max: 100 },
-  volume:    { unit: '倍', placeholder: '如 1.5', min: 0.1, max: 100 }
-};
+// 条件 / 基准周期 / 频率 / 阈值规则都定义在 services/alert.js：
+// 列表文案与弹窗表单共用一份，新增条件类型不需要改两处
+const { CONDITION_OPTIONS, VOLUME_BASE_OPTIONS, FREQUENCY_OPTIONS, THRESHOLD_CONFIG } = alertApi;
 
 // 列表文案：把弹窗里的字段拆成两段——条件（左）与检查频率（右），
 // 卡片里左右分栏显示，不再拼成一句用「·」连接
@@ -99,7 +71,7 @@ function priceTextOf(a) {
   return `${a.threshold} 倍`;
 }
 
-// 趋势图标：直接给 ant-icon 的 type（antd-mini 图标集）
+// 趋势图标：直接给 base-icon 的 type（字体图标集，见 components/base/icon）
 function trendIconOf(a) {
   if (a.conditionType === 'priceUp' || a.conditionType === 'pctUp') return 'UpOutline';
   if (a.conditionType === 'priceDown' || a.conditionType === 'pctDown') return 'DownOutline';
@@ -107,7 +79,7 @@ function trendIconOf(a) {
 }
 
 // 趋势颜色跟随涨跌：突破 / 涨幅用红，跌破 / 跌幅用绿，成交量保持红。
-// 颜色名走新 token（--up/--down），内联到 ant-icon 的 style 里由页面解析
+// 颜色名走新 token（--up/--down），内联到 base-icon 的 style 里由页面解析
 function trendColorOf(a) {
   if (a.conditionType === 'priceDown' || a.conditionType === 'pctDown') return 'var(--down)';
   return 'var(--up)';
@@ -441,7 +413,7 @@ Page({
       return `阈值必须大于 ${cfg.min}`;
     }
     if (numVal > cfg.max) {
-      return `阈值不能超过 ${cfg.max}`;
+      return `阈值不能超过 ${cfg.maxText || cfg.max}`;
     }
     // 价格类保留两位小数校验
     if ((conditionType === 'priceUp' || conditionType === 'priceDown') && !/^\d+(\.\d{1,2})?$/.test(threshold)) {

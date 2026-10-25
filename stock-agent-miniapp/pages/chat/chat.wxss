@@ -248,8 +248,9 @@
   color: var(--ink-3);
 }
 
-/* 行内代码：等宽 + 次级面小底 */
-.md-code.md-i {
+/* 行内代码：等宽 + 次级面小底。
+   独立类名，不复用块级 .md-code——复用会把块级的外边距与描边一起带进来 */
+.md-code-inline {
   padding: 0 var(--sp-1);
   border-radius: var(--r-tag);
   background: var(--surface-2);
@@ -299,21 +300,6 @@
 /* 间距沿用 .bubble--assistant（sp-1 上下 + sp-3 左），这里只加呼吸 */
 .ai-load {
   animation: ai-load-breathe 2.4s ease-in-out infinite;
-}
-
-/* 断线重连：等的是网络不是模型。动效停下（静 = 卡住），
-   只把文案提成琥珀色——状态色按语义用，不铺底、不描边 */
-.ai-load--warn {
-  animation: none;
-}
-
-.ai-load--warn .ai-load-dot {
-  animation: none;
-  opacity: 1;
-}
-
-.ai-load--warn .ai-load-text {
-  color: var(--warn);
 }
 
 .ai-load-hd {
@@ -421,6 +407,20 @@
   50%, 100% {
     opacity: 0.15;
   }
+}
+
+/* ===== 历史消息分片入口 =====
+   长会话首屏只渲染最近一批，更早的点这里向前补一页（见 chat.js 的 onLoadEarlier） */
+.load-earlier {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72rpx;
+  margin-bottom: var(--sp-3);
+  border: var(--hairline);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-aux);
+  color: var(--ink-2);
 }
 
 /* ===== 首屏引导问题 =====
@@ -541,7 +541,7 @@
 }
 
 /* 两个图标叠在同一格，靠 opacity 交叉淡入。
-   必须绝对定位 + display:block：ant-icon 渲染成行内 text，
+   必须绝对定位 + display:block：图标组件渲染成行内 text，
    行内元素不吃 transform，居中会偏 */
 .bar-btn-mic,
 .bar-btn-keyboard {

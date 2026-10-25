@@ -12,11 +12,11 @@ const SEARCH_LIMIT = 5;
 
 // 固定周期：key 与服务端 /stock/kline 的 period 一一对应
 const PERIODS = [
-  { key: 'm1', label: '1分钟k线' },
-  { key: 'm5', label: '5分钟k线' },
-  { key: 'm15', label: '15分钟k线' },
-  { key: 'day', label: '日k线' },
-  { key: 'week', label: '周k线' }
+  { key: 'm1', label: '1分钟K线' },
+  { key: 'm5', label: '5分钟K线' },
+  { key: 'm15', label: '15分钟K线' },
+  { key: 'day', label: '日K线' },
+  { key: 'week', label: '周K线' }
 ];
 
 // 空卡片：klines 为空时组件走空态占位，不画图也不显示假数字

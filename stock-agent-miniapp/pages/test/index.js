@@ -1,4 +1,4 @@
-// 卡片画廊（原 K 线详情页，2026-10-22 改造）：八张金融卡的样式测试页。
+// 卡片画廊（原 K 线详情页）：八张金融卡的样式测试页。
 //
 // 用途与约定（详见 DESIGN.md「卡片画廊」节）：
 // - 不接后端、不读接口，全部用手写假数据渲染八张卡，用于看卡片实例样式；
@@ -7,8 +7,19 @@
 // - 因此调卡片样式只需改组件 wxss / token，两边自动同步，不存在两份样式；
 // - 字段口径与 chat.js 的卡片工厂保持一致，方便对照真实链路的数据形状。
 //
-// 入口：watchlist 股票行点击、chat 页行情卡点击（原 K 线详情入口，现打开本页）。
+// 【只允许开发版进入】页面用的是假行情与假研报：体验版/正式版一旦可达，
+// 就是「向用户展示虚构金融信息」，审核与合规都过不去。这里双保险——
+// onLoad 强制回首页（app 里仍注册着本页，方便开发版调试），
+// 数据本身也去掉了真实机构名，并挂了一条醒目水印。
+//
+// 入口：watchlist 股票行点击、chat 页行情卡点击（仅 isDev）。
+import { isDev } from '../../config';
+
 Page({
+  onLoad() {
+    if (!isDev) wx.reLaunch({ url: '/pages/chat/chat' });
+  },
+
   data: {
     // 与 chat 页消息结构一致：{ role, status, card, content, <cardKey> }
     cards: [
@@ -77,16 +88,7 @@ Page({
         klineNote: '',
         // 支撑 / 压力位（测试用假数据）
         klineSupport: 1480,
-        klineResistance: 1550,
-        // 周期 chips 与当前选中周期（测试用假数据）
-        klinePeriods: [
-          { key: 'fenshi', label: '分时' },
-          { key: 'day5', label: '5日' },
-          { key: 'day', label: '日K' },
-          { key: 'week', label: '周K' },
-          { key: 'month', label: '月K' }
-        ],
-        klineActivePeriod: 'day'
+        klineResistance: 1550
       },
       {
         role: 'assistant',
@@ -129,7 +131,7 @@ Page({
           lhb: [
             { seat: '沪股通专用', buy: 382000000, sell: 156000000 },
             { seat: '机构专用', buy: 214000000, sell: 98000000 },
-            { seat: '中信证券上海分公司', buy: 128000000, sell: 142000000 }
+            { seat: '某券商营业部', buy: 128000000, sell: 142000000 }
           ],
           note: '600519.SH · 数据日期 2026-10-22'
         }
@@ -159,7 +161,8 @@ Page({
         card: 'research',
         content: [],
         research: {
-          org: '中信证券',
+          // 机构名一律用占位：假数据挂着真实机构名会构成「虚构研报」
+          org: '示例券商',
           rating: '买入',
           targetPrice: 1780,
           publishDate: '2026-10-18',
@@ -167,7 +170,7 @@ Page({
           summary: '公司三季度收入与利润增速符合预期，直销渠道占比提升带动吨价，预收账款维持高位，全年业绩确定性强。',
           forecastDir: '上调',
           upside: 16.82,
-          sourceName: '中信证券研究部',
+          sourceName: '示例券商研究部',
           sourceUrl: 'https://example.com/research/600519-2026q3'
         }
       },

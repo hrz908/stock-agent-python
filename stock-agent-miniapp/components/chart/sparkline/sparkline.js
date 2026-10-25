@@ -3,8 +3,8 @@
 // preserveAspectRatio="none" 拉伸铺满容器——WXSS 禁用 url() 本地图，
 // data-URI 是唯一的内联方式。
 // 颜色在编码时固化：trend（up/down/flat）或 color（hex / var(--xx)）二选一。
-const { resolveColor } = require('../../../utils/color');
-const { svgToDataUri } = require('../../../utils/svg-uri');
+import { resolveColor } from '../../../utils/color';
+import { svgToDataUri } from '../../../utils/svg-uri';
 
 // viewBox 尺寸：与常见卡片内容宽（约 345px）接近，缩放失真最小
 const VB_W = 340;

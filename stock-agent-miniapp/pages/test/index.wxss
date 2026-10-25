@@ -23,6 +23,18 @@
   padding: var(--sp-3) var(--sp-4) var(--sp-6);
 }
 
+/* 开发版水印：这一页全是假数据，必须在第一屏说清楚 */
+.gallery-warn {
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--hairline);
+  border-radius: var(--r-tag);
+  background: var(--warn-tint);
+  border-color: var(--warn-border);
+  font-size: var(--fs-min);
+  line-height: 1.5;
+  color: var(--warn);
+}
+
 /* 页眉说明：弱辅助级，不抢卡片 */
 .gallery-hd {
   padding: var(--sp-1) 0 var(--sp-2);

@@ -23,4 +23,4 @@ function svgToDataUri(svg) {
   );
 }
 
-module.exports = { svgToDataUri: svgToDataUri };
+export { svgToDataUri };

@@ -6,8 +6,8 @@
 // 新建分包 + 构建 npm，与当前「主包 ≤2MB、零新增依赖」的改造节奏冲突；
 // 这里按指南对「迷你走势线」的同一思路（SVG polyline 手写）扩展到 K 线，
 // 数据字段与版式与设计稿一致，后续若要交互式图表可平滑替换图表区。
-const { toNum, fmtNum, fmtPct, fmtPctPlain, direction } = require('../../../utils/format');
-const { svgToDataUri } = require('../../../utils/svg-uri');
+import { toNum, fmtNum, fmtPct, fmtPctPlain, direction } from '../../../utils/format';
+import { svgToDataUri } from '../../../utils/svg-uri';
 
 // viewBox 与分区（对齐视觉稿：K 线区 ≥180rpx，下方成交量）
 const VB_W = 340;
@@ -23,15 +23,6 @@ const COLOR_UP = '#dc2626';
 const COLOR_DOWN = '#16a34a';
 const MA_COLORS = { ma5: '#2559EB', ma10: '#F5A623', ma20: '#8B5CF6' };
 const GRID_COLOR = '#e4e4e7';
-
-// 默认周期枚举（设计文档②）
-const DEFAULT_PERIODS = [
-  { key: 'fenshi', label: '分时' },
-  { key: 'day5', label: '5日' },
-  { key: 'day', label: '日K' },
-  { key: 'week', label: '周K' },
-  { key: 'month', label: '月K' }
-];
 
 function num(v) {
   const n = parseFloat(v);
@@ -203,12 +194,8 @@ Component({
     title: { type: String, value: '' },
     // 空态文案：给了就占住图区高度写这句话，没数据时卡片不会塌成一条
     placeholder: { type: String, value: '' },
-    // 副标题（code 为空时展示，如「最近 30 个交易日 · 前复权」）
+    // 副标题（code 为空时展示，如「最近 15 个交易日 · 前复权」）
     subtitle: { type: String, value: '' },
-    // [{ key, label }]，为空用默认周期
-    periods: { type: Array, value: [] },
-    // 当前周期 key（受控）
-    activePeriod: { type: String, value: 'day' },
     // OHLC 数组 [{ d, o, h, l, c, v }]
     klines: { type: Array, value: [] },
     // 均线 { ma5, ma10, ma20 }，与 klines 等长（可含 null）
@@ -224,9 +211,6 @@ Component({
     note: { type: String, value: '' }
   },
   data: {
-    periodList: DEFAULT_PERIODS,
-    periodIndex: 2,
-    activeLabel: '日K',
     chartSrc: '',
     pctText: '--',
     pctDir: 'flat',
@@ -237,25 +221,15 @@ Component({
     resistanceText: '--'
   },
   lifetimes: {
-    // observer 不会在 attached 时对初始值触发：首帧三个口径各手动算一次
-    attached() {
-      this.refreshPeriods();
-      this.refreshChart();
-      this.refreshStats();
-    },
-
-    // ready 再兜一次：wx:if 首帧创建时 properties 可能尚未就绪，
-    // attached 读到的是初始值（observer 对首值也不触发），ready 时必然已就绪
+    // 只在 ready 算一次：attached 时 wx:if 首帧创建可能还没拿到父组件传值，
+    // 与 ready 各算一遍会让 SVG 构建（字符串拼接 + encodeURIComponent）白做一轮
     ready() {
-      this.refreshPeriods();
-      this.refreshChart();
+      // 显式赋值判断，避免父组件没传值时白跑一遍 SVG 构建
+      if (this.data.klines && this.data.klines.length) this.refreshChart();
       this.refreshStats();
     }
   },
   observers: {
-    'periods, activePeriod'() {
-      this.refreshPeriods();
-    },
     'klines, ma'() {
       this.refreshChart();
     },
@@ -264,16 +238,6 @@ Component({
     }
   },
   methods: {
-    refreshPeriods() {
-      const list = this.data.periods && this.data.periods.length ? this.data.periods : DEFAULT_PERIODS;
-      const idx = list.findIndex((p) => p.key === this.data.activePeriod);
-      const index = idx >= 0 ? idx : 0;
-      this.setData({
-        periodList: list,
-        periodIndex: index,
-        activeLabel: (list[index] && list[index].label) || ''
-      });
-    },
     refreshChart() {
       this.setData({ chartSrc: buildChart(this.data.klines, this.data.ma) });
     },
@@ -302,13 +266,6 @@ Component({
         supportText: fmtNum(d.support),
         resistanceText: fmtNum(d.resistance)
       });
-    },
-    // 周期切换：只上报，不自己拉数据（组件内不做业务计算）
-    onChipTap(e) {
-      const index = Number(e.currentTarget.dataset.index);
-      const item = this.data.periodList[index];
-      if (!item || index === this.data.periodIndex) return;
-      this.triggerEvent('change', { period: item.key, index: index });
     }
   }
 });

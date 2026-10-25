@@ -1,5 +1,5 @@
 <view class="empty empty-class">
-  <ant-icon class="empty-icon" type="{{icon}}" style="font-size:96rpx;color:var(--ink-3);" />
+  <base-icon class="empty-icon" type="{{icon}}" style="font-size:96rpx;color:var(--ink-3);" />
   <view class="empty-text">{{text}}</view>
   <view wx:if="{{sub}}" class="empty-sub">{{sub}}</view>
 </view>

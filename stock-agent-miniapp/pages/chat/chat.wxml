@@ -5,13 +5,15 @@
     <!-- 左侧：打开侧边抽屉的菜单图标（汉堡）。
          原本顶栏应有此键，缺失后抽屉只能靠右滑开，这里补回 -->
     <view slot="left" class="nav-menu-btn" aria-label="打开导航抽屉" bindtap="onMenuTap">
-      <ant-icon type="UnorderedListOutline" style="font-size:44rpx;color:var(--ink);" />
+      <base-icon type="UnorderedListOutline" style="font-size:44rpx;color:var(--ink);" />
     </view>
   </base-navbar>
   <!-- 对话区：高度由 JS 精算并固定为像素值，不随视口变化抖动 -->
   <view class="chat-wrap" style="height: {{chatHeight}}px;">
     <scroll-view class="chat-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}" scroll-with-animation="{{scrollAnimated}}" scroll-top="{{scrollTop}}">
       <view class="chat-inner">
+        <!-- 历史消息分片：只渲染最近一批，更早的按页向前补（见 chat.js 的 onLoadEarlier） -->
+        <view wx:if="{{hasEarlier}}" class="load-earlier" bindtap="onLoadEarlier">查看更早的 {{earlierCount}} 条</view>
         <block wx:for="{{messages}}" wx:for-item="msg" wx:key="index">
           <!-- ===== 用户消息（含语音识别结果）：右对齐主色气泡 ===== -->
           <view wx:if="{{msg.role === 'user'}}" class="msg msg--user">
@@ -30,7 +32,7 @@
                    一轮最多一张卡，且排在正文之后（时序见 chat.js 的 _drainCards） -->
               <finance-quote-card wx:if="{{msg.card === 'quote'}}" card-class="msg-card" bindtap="onQuoteCardTap" data-code="{{msg.quote.code}}" data-name="{{msg.quote.name}}" name="{{msg.quote.name}}" code="{{msg.quote.code}}" status="{{msg.quote.status}}" price="{{msg.quote.price}}" change="{{msg.quote.change}}" change-pct="{{msg.quote.changePct}}" open="{{msg.quote.open}}" high="{{msg.quote.high}}" low="{{msg.quote.low}}" amount="{{msg.quote.amount}}" turnover-rate="{{msg.quote.turnoverRate}}" total-cap="{{msg.quote.totalCap}}" points="{{msg.quote.points}}" tags="{{msg.quote.tags}}" note="{{msg.quote.note}}" />
               <!-- K 线卡片：金融卡组件（components/finance/kline-card） -->
-              <finance-kline-card wx:elif="{{msg.card === 'kline'}}" card-class="msg-card" name="{{msg.klineName}}" code="{{msg.klineCode}}" subtitle="{{msg.klineSub}}" periods="{{msg.klinePeriods}}" active-period="{{msg.klineActivePeriod}}" klines="{{msg.kline}}" ma="{{msg.klineMa}}" period-pct="{{msg.klinePct}}" amplitude="{{msg.klineAmplitude}}" volume-ratio="{{msg.klineVolumeRatio}}" support="{{msg.klineSupport}}" resistance="{{msg.klineResistance}}" note="{{msg.klineNote}}" />
+              <finance-kline-card wx:elif="{{msg.card === 'kline'}}" card-class="msg-card" name="{{msg.klineName}}" code="{{msg.klineCode}}" subtitle="{{msg.klineSub}}" klines="{{msg.kline}}" ma="{{msg.klineMa}}" period-pct="{{msg.klinePct}}" amplitude="{{msg.klineAmplitude}}" volume-ratio="{{msg.klineVolumeRatio}}" support="{{msg.klineSupport}}" resistance="{{msg.klineResistance}}" note="{{msg.klineNote}}" />
               <!-- 估值卡片：金融卡组件（components/finance/valuation-card）。
                    历史分位/行业均值当前数据源没有，卡片内显示「--」降级 -->
               <finance-valuation-card wx:elif="{{msg.card === 'valuation'}}" card-class="msg-card" pe-ttm="{{msg.valuation.peTtm}}" pe-static="{{msg.valuation.peStatic}}" pb="{{msg.valuation.pb}}" ps="{{msg.valuation.ps}}" peg="{{msg.valuation.peg}}" dividend-yield="{{msg.valuation.dividendYield}}" total-cap="{{msg.valuation.totalCap}}" note="{{msg.valuation.note}}" />
@@ -104,7 +106,7 @@
           <view class="quick-ask" wx:for="{{quickAsks}}" wx:for-item="q" wx:key="id" data-q="{{q.query}}" data-id="{{q.id}}" data-code="{{q.stock_code}}" bindtap="onQuickAsk">
             <text wx:if="{{q.tag}}" class="quick-ask-tag">{{q.tag}}</text>
             <text class="quick-ask-text">{{q.display}}</text>
-            <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+            <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
           </view>
         </view>
         <!-- ===== AI 加载态 =====
@@ -113,7 +115,7 @@
              阶段与阈值见 chat.js 的 LOAD_COPY / _refreshLoad。
              只有一块：原先「思考气泡 + 底部状态条」会同时在转两套动效 -->
         <view wx:if="{{loadVisible}}" class="msg msg--assistant">
-          <view class="bubble bubble--assistant ai-load {{loadTone === 'warn' ? 'ai-load--warn' : ''}}">
+          <view class="bubble bubble--assistant ai-load">
             <view class="ai-load-hd">
               <view class="ai-load-dots">
                 <view class="ai-load-dot"></view>
@@ -166,8 +168,8 @@
            切换瞬间会闪一下。antd 图标集没有键盘图标，用网格图标（Appstore）
            代替——九宫格排布和键盘键位是同一套视觉语言 -->
       <view class="bar-btn {{voiceMode ? 'bar-btn--voice' : ''}}" aria-label="{{voiceMode ? '切换到键盘输入' : '切换到语音输入'}}" bindtap="onToggleInputMode">
-        <ant-icon class="bar-btn-mic" type="AudioOutline" style="font-size:44rpx;" />
-        <ant-icon class="bar-btn-keyboard" type="AppstoreOutline" style="font-size:44rpx;" />
+        <base-icon class="bar-btn-mic" type="AudioOutline" style="font-size:44rpx;" />
+        <base-icon class="bar-btn-keyboard" type="AppstoreOutline" style="font-size:44rpx;" />
       </view>
       <!-- 键盘态：输入区紧贴模式键右侧，整块可点（主动聚焦） -->
       <view wx:if="{{!voiceMode}}" class="bar-field" bindtap="onTapInputField">
@@ -183,7 +185,7 @@
            「收尾并发出」，未在聆听时用弱色表示暂不可用（见 chat.js 的 onSend） -->
       <view class="bar-send {{voiceMode ? 'bar-send--plain' : ''}} {{recording ? 'bar-send--live' : ''}}" aria-label="发送" bindtap="onSend">
         <view wx:if="{{sending}}" class="bar-send-stop"></view>
-        <ant-icon wx:else type="SendOutline" style="font-size:44rpx;" />
+        <base-icon wx:else type="SendOutline" style="font-size:44rpx;" />
       </view>
     </view>
   </view>
@@ -208,7 +210,7 @@
         <view class="drawer-section-title drawer-nav-title">导航</view>
         <view class="drawer-item" wx:for="{{menus}}" wx:for-item="m" wx:key="key" data-menu="{{m.key}}" bindtap="onMenuSelect">
           <text class="drawer-item-text">{{m.label}}</text>
-          <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+          <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
         </view>
       </view>
       <!-- 历史对话：只有这一块滚（占掉导航与底部按钮之间的全部高度）。
@@ -221,7 +223,7 @@
               <text class="history-item-title">{{item.title}}</text>
             </view>
             <view class="history-item-del" data-sid="{{item.session_id}}" catchtap="onSessionDelete">
-              <ant-icon type="CloseOutline" style="font-size:28rpx;color:var(--ink-3);" />
+              <base-icon type="CloseOutline" style="font-size:28rpx;color:var(--ink-3);" />
             </view>
           </view>
           <view wx:if="{{!sessions.length}}" class="history-empty">暂无历史对话</view>
@@ -234,7 +236,7 @@
         <!-- 内层 88rpx 与输入栏的 .bar-btn 同高，外层内边距与描边也照抄 .sender-bar，
              两个盒子用同一个公式算高度，不会因 rpx 换算差半像素 -->
         <view class="drawer-new-inner">
-          <ant-icon wx:if="{{!newChatting}}" type="ChatAddOutline" style="font-size:32rpx;" />
+          <base-icon wx:if="{{!newChatting}}" type="ChatAddOutline" style="font-size:32rpx;" />
           <view wx:else class="drawer-new-spinner" />
           <text class="drawer-new-text">{{newChatting ? '创建中…' : '新对话'}}</text>
         </view>
@@ -252,7 +254,12 @@
      链接点击统一走 onMdLinkTap（复制链接，不用 webview 直接打开外部站点） -->
 <template name="mdInline">
   <block wx:for="{{inlines}}" wx:for-item="i" wx:key="index">
-    <text wx:if="{{i.t !== 'br'}}" class="md-i {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code' : ''}} {{i.del ? 'md-del' : ''}} {{i.href ? 'md-link' : ''}}" data-href="{{i.href}}" bindtap="onMdLinkTap">
+    <!-- 链接与非链接分成两支：普通文本节点不绑事件。
+         长回答里行内片段成千上万，给每个节点挂 tap 会白白增加事件注册与派发成本 -->
+    <text wx:if="{{i.t !== 'br' && !i.href}}" class="md-i {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code-inline' : ''}} {{i.del ? 'md-del' : ''}}">
+      {{i.text}}
+    </text>
+    <text wx:elif="{{i.t !== 'br'}}" class="md-i md-link {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code-inline' : ''}} {{i.del ? 'md-del' : ''}}" data-href="{{i.href}}" bindtap="onMdLinkTap">
       {{i.text}}
     </text>
   </block>

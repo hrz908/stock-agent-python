@@ -1,9 +1,31 @@
 import { clearSession, ensureLogin } from '../../utils/request';
-import { getProfile, updateProfile, uploadAvatar, absoluteUrl, relativeUrl } from '../../services/user';
+import {
+  getProfile,
+  updateProfile,
+  uploadAvatar,
+  absoluteUrl,
+  relativeUrl,
+  deleteAccount
+} from '../../services/user';
+import { listSessions, deleteSession } from '../../services/sessions';
 
 const NICKNAME_MAX = 10;
 
-// 没完善过资料时的兗底昵称。后端建号时默认给的就是这个值，
+// 注销前先把会话逐条删掉：checkpoint 与摘要都在 Agent 侧，只有这个接口能清。
+// 单条失败不阻断整体注销——后端硬删用户之后，残留数据已无法关联到本人
+function clearAllSessions() {
+  return listSessions()
+    .then((data) => {
+      const list = (data && data.sessions) || [];
+      return list.reduce(
+        (p, s) => p.then(() => deleteSession(s.session_id).catch(() => {})),
+        Promise.resolve()
+      );
+    })
+    .catch(() => {});
+}
+
+// 没完善过资料时的兜底昵称。后端建号时默认给的就是这个值，
 // 前端保持一致：后端返回空昵称时也用这个显示
 const DEFAULT_NICKNAME = '微信用户';
 
@@ -46,6 +68,10 @@ Page({
 
     // 退出登录二次确认
     logoutVisible: false,
+
+    // 注销账号：二次确认 + 提交中（挡连点）
+    deleteAccountVisible: false,
+    deletingAccount: false,
 
     // 底部退出登录按钮距屏幕底部的距离（安全区 + 留白），与其它子页面一致
     bottomGap: 20
@@ -374,5 +400,43 @@ Page({
       avatarSrc: ''
     });
     this.toast('已退出登录');
+  },
+
+  /* ===== 注销账号（合规要求：用户必须能删除自己的账号与数据） ===== */
+
+  onDeleteAccount() {
+    if (this.data.deletingAccount) return;
+    this.setData({ deleteAccountVisible: true });
+  },
+
+  cancelDeleteAccount() {
+    if (this.data.deletingAccount) return;
+    this.setData({ deleteAccountVisible: false });
+  },
+
+  confirmDeleteAccount() {
+    if (this.data.deletingAccount) return;
+    this.setData({ deleteAccountVisible: false, deletingAccount: true });
+
+    // 顺序不能反：先清会话（Agent 侧数据），再删账号（网关侧数据），
+    // 账号一删 openid 就没了，会话接口也跟着登录态一起失效
+    clearAllSessions()
+      .then(() => deleteAccount())
+      .then(() => {
+        clearSession();
+        this.setData({
+          deletingAccount: false,
+          nickname: DEFAULT_NICKNAME,
+          avatar: '',
+          avatarSrc: ''
+        });
+        this.toast('账号已注销');
+        // 回首页：下次提问会自动走静默登录，建一个全新的空账号
+        wx.reLaunch({ url: '/pages/chat/chat' });
+      })
+      .catch((err) => {
+        this.setData({ deletingAccount: false });
+        this.toast((err && err.message) || '注销失败，请重试');
+      });
   }
 });

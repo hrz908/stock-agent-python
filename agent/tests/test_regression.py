@@ -657,6 +657,13 @@ def test_rag_judge_fallback():
 
     out = asyncio.run(rag_mod.sufficiency_check({"retrieved": [], "query": "x"}))
     check("空检索 -> stock_agent", out.get("intent") == "stock_agent", str(out))
+    out_concept = asyncio.run(rag_mod.sufficiency_check(
+        {"retrieved": [], "query": "市盈率是什么，怎么用"}))
+    check("概念空检索 -> chat 通用回答", out_concept.get("intent") == "chat", str(out_concept))
+    from core.graph import route_after_rag
+    check("chat 未命中可路由到 chat", route_after_rag({"intent": "chat"}) == "chat")
+    check("stock_agent 未命中仍取数", route_after_rag({"intent": "stock_agent"}) == "stock_agent")
+    check("命中走 post", route_after_rag({"intent": "stock"}) == "post")
     check("命中路由到 generate",
           rag_mod.route_after_check({"intent": "stock"}) == "generate")
     check("未命中路由到 escalate",
@@ -1029,7 +1036,11 @@ def test_rewrite_route_merge():
 
     rw = rewrite_node.__globals__
 
-    hist = [HumanMessage(content="贵州茅台现在多少钱"), AIMessage(content="约1500元")]
+    hist = [
+        HumanMessage(content="贵州茅台现在多少钱"),
+        AIMessage(content="约1500元"),
+        HumanMessage(content="那它的市盈率呢"),
+    ]
     state = {"query": "那它的市盈率呢", "messages": hist, "thread_id": ""}
 
     class _Decision:
@@ -1058,7 +1069,8 @@ def test_rewrite_route_merge():
         rw["get_small_llm"] = orig
         rw["_merge_runnable"] = None
     check("合并路径产出改写", out.get("rewritten") == "贵州茅台的市盈率是多少", str(out))
-    check("合并路径产出意图", out.get("intent") == "stock" and out.get("confidence") == 0.95, str(out))
+    check("合并路径产出意图（关键词兜底直连取数）",
+          out.get("intent") == "stock_agent" and out.get("confidence") == 1.0, str(out))
     check("合并路径带实体", (out.get("entities") or {}).get("symbol") == "贵州茅台", str(out))
 
     # 合并调用异常 -> 回退只改写，不写 intent（交给 classify）
@@ -1089,6 +1101,15 @@ def test_rewrite_route_merge():
         classify.__globals__["get_small_llm"] = orig_cls
     check("已路由时 classify 透传", "intent" not in out3, str(out3))
     check("透传时 classify_ms=0", (out3.get("timings") or {}).get("classify_ms") == 0, str(out3))
+
+    # 单轮：messages 只含当前问题，不得当作有历史触发改写
+    import asyncio as _asyncio
+    single = _asyncio.run(rewrite_node({"query": "用通俗的语言解释一下市盈率是什么？",
+                                        "messages": [HumanMessage(content="用通俗的语言解释一下市盈率是什么？")],
+                                        "thread_id": ""}))
+    check("单轮当前问题不算历史", single.get("rewritten") == "用通俗的语言解释一下市盈率是什么？",
+          str(single))
+    check("单轮不写意图", "intent" not in single, str(single))
 
 
 def test_kb_sources_event():

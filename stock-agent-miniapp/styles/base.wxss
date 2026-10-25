@@ -60,3 +60,13 @@ page {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
+
+/* 金融页免责声明：凡是展示行情 / 盈亏 / 提醒的页面都要挂一条。
+   对话页有自己的 .disclaimer（列表末尾常驻），子页面统一用这个类 */
+.page-disclaimer {
+  margin-top: var(--sp-4);
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-min);
+  line-height: 1.7;
+  color: var(--ink-3);
+}

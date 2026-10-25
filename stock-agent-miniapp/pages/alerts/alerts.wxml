@@ -37,7 +37,7 @@
           </view>
 
           <view class="alert-card-price">
-            <ant-icon type="{{item.trendIcon}}" style="font-size:40rpx;color:{{item.trendColor}};" />
+            <base-icon type="{{item.trendIcon}}" style="font-size:40rpx;color:{{item.trendColor}};" />
             <text class="alert-card-price-text num" style="color: {{item.trendColor}};">{{item.priceText}}</text>
           </view>
 
@@ -56,6 +56,7 @@
         text="还没有提醒"
         sub="为关注的股票设一条价格或涨幅提醒"
       />
+      <view class="page-disclaimer">提醒依据公开行情触发，仅供参考，不构成任何投资建议。</view>
     </scroll-view>
   </view>
 
@@ -110,7 +111,7 @@
           />
           <!-- 清除按钮：原生 input 没有内建清除，自绘一个 -->
           <view wx:if="{{searchKeyword}}" class="input-clear" bindtap="onSearchClear">
-            <ant-icon type="CloseOutline" style="font-size:24rpx;color:var(--ink-3);" />
+            <base-icon type="CloseOutline" style="font-size:24rpx;color:var(--ink-3);" />
           </view>
         </view>
         <!-- 下拉联想结果 -->
@@ -134,7 +135,7 @@
       <!-- 已选中股票：点右侧 x 清除重新选 -->
       <view wx:if="{{selectedStock}}" class="selected-stock" bindtap="onClearStock">
         <text class="selected-stock-text num">{{selectedStock.name}} ({{selectedStock.market}}{{selectedStock.code}})</text>
-        <ant-icon type="CloseOutline" style="font-size:32rpx;color:var(--ink-3);" />
+        <base-icon type="CloseOutline" style="font-size:32rpx;color:var(--ink-3);" />
       </view>
       </block>
 
@@ -161,7 +162,7 @@
             <text class="option-label">触发条件</text>
             <view class="option-value">
               <text class="option-value-text">{{conditionText}}</text>
-              <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+              <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
             </view>
           </view>
         </picker>
@@ -201,7 +202,7 @@
             <text class="option-label">基准周期</text>
             <view class="option-value">
               <text class="option-value-text">{{volumeBaseText}}</text>
-              <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+              <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
             </view>
           </view>
         </picker>
@@ -221,7 +222,7 @@
             <text class="option-label">检查频率</text>
             <view class="option-value">
               <text class="option-value-text">{{frequencyText}}</text>
-              <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+              <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
             </view>
           </view>
         </picker>

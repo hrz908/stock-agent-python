@@ -1,12 +1,14 @@
 r"""RAG 混合检索子图（RAG 漏斗）。
 
 流程: hybrid_retrieve -> sufficiency_check --(命中)--> generate_with_citations -> END
-                                         \--(不足)--> escalate(设 intent=stock_agent) -> END
+                                         \--(不足)--> escalate(概念->chat，其余->stock_agent) -> END
 
-sufficiency_check 两级判定：阈值闸（重排分 < RERANK_THRESHOLD 或有效片段 < 2 即未命中；
+sufficiency_check 三级判定：阈值闸（重排分 < RERANK_THRESHOLD 或有效片段 < 2 即未命中；
 重排关闭时回退余弦相似度 < RAG_THRESHOLD）；
-过阈值后再交小模型判读「能否回答」（prompts/rag_judge.xml），避免主题相似但答非所问
-（问实时股价却检索到投教文章）。未命中时置 intent=stock_agent，由主图重路由到炒股 agent 子图。
+高分短路（最高重排分 >= RAG_JUDGE_SKIP_SCORE 直接判命中，省一次小模型判读）；
+其余过阈值样本交小模型判读「能否回答」（prompts/rag_judge.xml），避免主题相似但答非所问
+（问实时股价却检索到投教文章）。未命中时概念问题置 intent=chat（通用知识直接回答），
+其余置 intent=stock_agent，由主图重路由。
 generate_with_citations: 用 prompts/rag.xml 生成带 [n] 引用的回答，并发 sources 事件
 （{"docs":[{title, chunk_id, score}]}，与前端和 Go 事件协议一致）。
 """
@@ -20,6 +22,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
 from config import RAG_JUDGE_SKIP_SCORE, RAG_THRESHOLD, RAG_TOP_K, RERANK_THRESHOLD
+from core.keywords import is_concept_question
 from core.llm import get_llm, get_small_llm
 from core.state import AgentState, recent_turns
 from core.template import render
@@ -120,6 +123,10 @@ async def sufficiency_check(state: dict) -> dict:
     """
     t0 = time.monotonic()
     retrieved = state.get("retrieved", []) or []
+    query = state.get("rewritten") or state.get("query", "") or ""
+    # 未命中时的降级目标：概念/投教问题不需要取数，交给 chat 用通用知识直接回答；
+    # 其余问题按原设计升级到取数 agent
+    miss_intent = "chat" if is_concept_question(query) else "stock_agent"
     has_rerank = any(r.get("rerank_score") is not None for r in retrieved)
     if has_rerank:
         top_score = max((r.get("rerank_score") or 0.0 for r in retrieved), default=0.0)
@@ -129,7 +136,7 @@ async def sufficiency_check(state: dict) -> dict:
         threshold = RAG_THRESHOLD
     if len(retrieved) < _MIN_CHUNKS or top_score < threshold:
         return {
-            "intent": "stock_agent",
+            "intent": miss_intent,
             "timings": {"sufficiency_ms": int((time.monotonic() - t0) * 1000)},
         }
     # 高分短路：分数已远超阈值时判读没有增量信息（实测相关样本 top1 中位 1.0、
@@ -151,16 +158,16 @@ async def sufficiency_check(state: dict) -> dict:
     }
     if can_answer:
         return {"timings": timings}
-    return {"intent": "stock_agent", "timings": timings}
+    return {"intent": miss_intent, "timings": timings}
 
 
 def route_after_check(state: dict) -> Literal["escalate", "generate"]:
-    # 两级判定未命中后 intent 被改成 stock_agent
-    return "escalate" if state.get("intent") == "stock_agent" else "generate"
+    # 未命中时 sufficiency_check 会把 intent 改成 stock_agent（取数）或 chat（概念通用回答）
+    return "generate" if state.get("intent") == "stock" else "escalate"
 
 
 async def escalate(state: dict) -> dict:
-    """占位节点：intent 已在 sufficiency_check 改为 stock_agent，直接结束子图。"""
+    """占位节点：intent 已被 sufficiency_check 改为 stock_agent / chat，直接结束子图。"""
     return {}
 
 
