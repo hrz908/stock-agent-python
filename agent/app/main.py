@@ -29,7 +29,7 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
-from core.checkpointer import close_checkpointer, prune_thread_checkpoints
+from core.checkpointer import close_checkpointer
 from core.graph import get_graph
 from core.pg import close_pool as close_app_pool
 from core.redis import close_redis
@@ -150,9 +150,10 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
     try:
         graph = await get_graph()
-        # 每轮 run 前裁掉该线程的历史 checkpoint 版本：PostgresSaver 不回收旧版本，
-        # 不裁则单线程行数随 run 数线性增长；失败静默，不影响本轮对话
-        await prune_thread_checkpoints(thread_id)
+        # 不在请求路径裁剪 checkpoint：prune_thread_checkpoints 会 alist + 删除 + aput，
+        # 实测多轮会话第二轮会在 prune 阶段把 uvicorn 内存推到 2G+ 并卡住 60~80s。
+        # 改为 durability="exit"：每轮只在图结束时落一份 checkpoint，行数不再按 superstep 增长；
+        # 历史清理交给会话删除或后续离线维护任务。
         inp = initial_state(user_id=user_id, thread_id=thread_id, query=query)
         inp["messages"] = [HumanMessage(content=query)]
 
@@ -163,6 +164,7 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
             inp, config=config,
             stream_mode=["custom", "updates"],
             subgraphs=True,
+            durability="exit",
         ):
             # subgraphs=True 时 item 是 (namespace, mode, data) 三元组：只有带上它，
             # stock/rag/chat 子图内部的 token 与 card/table/tool 事件才会冒泡到父流，

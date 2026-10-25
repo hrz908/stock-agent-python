@@ -56,6 +56,11 @@ _PRUNE_TRIGGER = 4
 async def prune_thread_checkpoints(thread_id: str, keep: int = 1) -> bool:
     """把线程的历史 checkpoint 版本裁到只剩最新 keep 份。
 
+    维护工具，禁止放在请求路径：alist / adelete_thread / aput 会加载并重写
+    全量 checkpoint，实测多轮会话第二轮在 prune 阶段把 uvicorn 内存推到 2G+
+    并卡住 60~80s。线上请求路径已改用 durability="exit"，只在图结束时落一份
+    checkpoint；本函数留给会话删除后的离线维护或后台任务使用。
+
     PostgresSaver 每个 superstep 都写一份全量 checkpoint 且从不回收旧版本：
     不裁的话单线程行数随 run 数线性增长（消息裁剪只让单份 blob 有界，管不到行数）。
     做法是「删旧 + 补回最新」——alist 取最新一份，adelete_thread 清全线程，aput 原样补回，

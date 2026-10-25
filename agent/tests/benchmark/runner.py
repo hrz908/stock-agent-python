@@ -286,7 +286,7 @@ async def run_case_http(case: Case, base_url: str, run_id: str, timeout: float =
             "query": query,
             "intent": "",  # HTTP 模式由调用方从 agent_runs 回填
             "confidence": None,
-            "tools": [],
+            "tools": _tool_events_list(tool_events),
             "text": "".join(text_parts),
             "cards": cards,
             "tables": tables,
@@ -312,32 +312,54 @@ async def run_case_http(case: Case, base_url: str, run_id: str, timeout: float =
         "final": {
             "text": last.get("text", ""),
             "intent": "",
-            "tools": [],
+            "tools": last.get("tools", []),
             "cards": last.get("cards", []) + last.get("tables", []),
         },
-        "all_tools": [],
+        "all_tools": sorted({
+            t["tool"] for tn in turns_out for t in (tn.get("tools") or []) if t.get("tool")
+        }),
         "all_cards": sorted({c for tn in turns_out for c in tn["cards"] + tn["tables"]}),
         "errors": [e for tn in turns_out for e in tn["errors"]],
         "elapsed_ms_total": sum(tn["elapsed_ms"] for tn in turns_out),
     }
 
 
+def _tool_events_list(tool_events: dict) -> list:
+    """HTTP 模式：tool_end 事件 -> evaluate 需要的 tools 列表。
+
+    inproc 模式从 state.tool_results 拿工具名；HTTP 模式没有 state，只能从
+    tool_start/tool_end 事件还原。evaluate 的 tools_any/tools_all 统一读 t["tool"]。
+    """
+    return [
+        {"tool": item.get("name"), "ok": item.get("ok"), "ms": item.get("ms")}
+        for item in tool_events.values()
+        if item.get("name")
+    ]
+
+
 def backfill_intent_http(results: list, dsn: str) -> None:
-    """HTTP 模式：从 agent_runs 审计表按 thread_id 回填 intent/confidence/tool_calls。"""
+    """HTTP 模式：从 agent_runs 审计表按 thread_id 回填 intent/confidence。
+
+    agent_runs 的主键是 run_id、没有 id 列；按 created_at 升序取该 thread 的
+    全部审计行，再按轮次顺序回填，多轮用例的第一轮也能拿到 intent。
+    """
     import psycopg
     with psycopg.connect(dsn) as conn:
         for r in results:
             tid = r.get("thread_id")
             if not tid:
                 continue
-            row = conn.execute(
-                "SELECT intent, confidence FROM agent_runs WHERE thread_id = %s ORDER BY id DESC LIMIT 1",
+            rows = conn.execute(
+                "SELECT intent, confidence FROM agent_runs "
+                "WHERE thread_id = %s ORDER BY created_at ASC",
                 (tid,),
-            ).fetchone()
-            if row:
-                r["final"]["intent"] = row[0] or ""
-                r["turns"][-1]["intent"] = row[0] or ""
-                r["turns"][-1]["confidence"] = row[1]
+            ).fetchall()
+            if not rows:
+                continue
+            for turn, row in zip(r.get("turns") or [], rows, strict=False):
+                turn["intent"] = row[0] or ""
+                turn["confidence"] = row[1]
+            r["final"]["intent"] = rows[-1][0] or ""
 
 
 async def run_batch(cases: list, mode: str = "inproc", run_id: str = None,
