@@ -136,6 +136,55 @@ func TestBuildAskRotatesDimensionsInBatch(t *testing.T) {
 	}
 }
 
+func TestParseRankItems(t *testing.T) {
+	body := []byte(`[
+      {"symbol":"sz300308","code":"300308","name":"中际旭创","changepercent":3.816,"amount":27918480076,"turnoverratio":4.31},
+      {"symbol":"sh600519","code":"600519","name":"贵州茅台","changepercent":1.25,"amount":7677216283,"turnoverratio":0.46}
+    ]`)
+	items, err := parseRankItems(body)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items=%d, want 2", len(items))
+	}
+	if items[0].Symbol != "sz300308" || items[0].Name != "中际旭创" || items[0].Amount <= 0 {
+		t.Fatalf("unexpected first item: %+v", items[0])
+	}
+}
+
+func TestParseRankItemsNullPage(t *testing.T) {
+	// 翻到空页时新浪返回 null，不能当解析失败
+	items, err := parseRankItems([]byte(`null`))
+	if err != nil || len(items) != 0 {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+}
+
+func TestWatchlistUniverseKeepsEvergreenAndDropsColdStocks(t *testing.T) {
+	meta := map[string]metaRow{
+		"SH600519": {Code: "600519", Name: "贵州茅台", Status: "listed"},
+		"BJ920092": {Code: "920092", Name: "汉鑫科技", Status: "listed"},
+		"SH600001": {Code: "600001", Name: "ST 样例", Status: "listed", IsST: true},
+	}
+	heat := map[string]float64{"BJ920092": 3, "SH600001": 2}
+	pool := watchlistUniverse(meta, heat)
+
+	codes := map[string]bool{}
+	for _, c := range pool {
+		codes[c.Code] = true
+	}
+	if !codes["SH600519"] {
+		t.Fatal("evergreen should always be present")
+	}
+	if !codes["BJ920092"] {
+		t.Fatal("watched stock should be present")
+	}
+	if codes["SH600001"] {
+		t.Fatal("ST stock must be filtered out")
+	}
+}
+
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	in := Candidate{Code: "SZ300750", Name: "宁德时代", Sector: "电力设备", ChangePct: 4.23, VolumeRatio: 2.11}
 	out, ok := decodeCandidate(in.encode(), 87.6)

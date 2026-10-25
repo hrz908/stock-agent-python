@@ -216,59 +216,93 @@ func buildPool(ctx context.Context) []Candidate {
 	return scored
 }
 
-// loadUniverse 组装打分前的候选清单：站内行为热度排序 + 常青股补齐。
-// 「全市场 5000 支」在网关层没有榜单接口，这里收敛成「有人关注过的 + 常青股」，
-// 再按热度截断到 200 只——随机只发生在候选池这一层，绝不在全市场裸随机。
+// loadUniverse 组装打分前的候选清单：成交额榜前 200 为主路，
+// 榜单不可用时退回「站内自选 + 常青股」。
+//
+// 绝不能「按代码顺序取前 200」：零热度股票的排序会退化成字典序，
+// BJ920xxx 整段排在最前，候选池会被北交所小票占满（+30% 的陌生票直接进首屏）。
 func loadUniverse(ctx context.Context) ([]Candidate, map[string]float64) {
 	heat := loadAskHeat(ctx)
 	for code, n := range loadWatchlistHeat(ctx) {
 		heat[code] += n
 	}
 	meta := loadMeta(ctx)
-
-	byCode := make(map[string]Candidate, len(meta)+len(evergreen))
-	for _, c := range evergreen {
-		byCode[c.Code] = c
-		// 常青股给一个最低热度：站内行为稀疏时它们必须排在零热度的陌生代码之前
-		if heat[c.Code] < 1 {
-			heat[c.Code] = 1
-		}
-	}
-
 	now := time.Now()
-	for code, m := range meta {
-		// ST / 已退市硬过滤：让用户点开一支 ST 股的「风险点」没有产品价值
-		if m.IsST || m.Status != "listed" {
-			continue
-		}
-		// 新股上市不满 7 个自然日不进池：无历史量价，模板问什么都答不出东西
-		if freshListing(m.ListDate, now) {
-			continue
-		}
-		c := byCode[code]
-		c.Code = code
-		c.Name = pickName(c.Name, m.Name)
-		c.Sector = pickName(c.Sector, m.Sector)
-		byCode[code] = c
+
+	ranked := loadRankUniverse(ctx)
+	if len(ranked) < 20 {
+		// 榜单抓不到（网络 / 接口改版）：只用有人关注过的 + 常青股，
+		// 宁可池子小，也不要拿零热度的陌生代码凑数
+		ranked = watchlistUniverse(meta, heat)
 	}
 
-	out := make([]Candidate, 0, len(byCode))
-	for code, c := range byCode {
-		if !strings.HasPrefix(code, "SH") && !strings.HasPrefix(code, "SZ") && !strings.HasPrefix(code, "BJ") {
+	out := make([]Candidate, 0, len(ranked))
+	for _, c := range ranked {
+		m, ok := meta[c.Code]
+		if ok {
+			// ST / 已退市硬过滤：让用户点开一支 ST 股的「风险点」没有产品价值
+			if m.IsST || m.Status != "listed" || freshListing(m.ListDate, now) {
+				continue
+			}
+			c.Name = pickName(m.Name, c.Name)
+			c.Sector = strings.TrimSpace(m.Sector)
+		} else if strings.HasPrefix(c.Code, "BJ") {
+			// 榜单本身不含北交所；没有主数据佐证时不要把 BJ 小票放进来
 			continue
 		}
+		c.Heat = heat[c.Code]
 		out = append(out, c)
 	}
+	if len(out) > maxUniverse {
+		out = out[:maxUniverse]
+	}
+	return out, heat
+}
+
+// watchlistUniverse 榜单失败时的保底：常青股 + 有行为热度（自选加入 / 点击）的股票。
+// 不掺零热度的陌生代码——按代码补满 200 只会把北交所小票顶到前面。
+func watchlistUniverse(meta map[string]metaRow, heat map[string]float64) []Candidate {
+	out := make([]Candidate, 0, len(heat)+len(evergreen))
+	seen := make(map[string]bool, len(evergreen)+len(heat))
+
+	add := func(code, name, sector string, h float64) {
+		if seen[code] {
+			return
+		}
+		if m, ok := meta[code]; ok {
+			if m.Status != "listed" || m.IsST {
+				return
+			}
+			name = pickName(m.Name, name)
+			sector = pickName(sector, strings.TrimSpace(m.Sector))
+		}
+		if name == "" {
+			return
+		}
+		seen[code] = true
+		out = append(out, Candidate{Code: code, Name: name, Sector: sector, Heat: h})
+	}
+
+	for _, c := range evergreen {
+		add(c.Code, c.Name, c.Sector, 1+heat[c.Code])
+	}
+	for code, h := range heat {
+		if h < 1 {
+			continue
+		}
+		add(code, "", "", h)
+	}
+
 	sort.SliceStable(out, func(i, j int) bool {
-		if heat[out[i].Code] != heat[out[j].Code] {
-			return heat[out[i].Code] > heat[out[j].Code]
+		if out[i].Heat != out[j].Heat {
+			return out[i].Heat > out[j].Heat
 		}
 		return out[i].Code < out[j].Code
 	})
 	if len(out) > maxUniverse {
 		out = out[:maxUniverse]
 	}
-	return out, heat
+	return out
 }
 
 func candidateCodes(list []Candidate) []string {
