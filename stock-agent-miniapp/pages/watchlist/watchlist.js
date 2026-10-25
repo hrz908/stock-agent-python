@@ -162,6 +162,7 @@ Page({
     if (!key || key === this.data.filter) return;
     // 滑块位置：按 key 在 filters 中的下标，驱动 thumb 滑动
     const idx = this.data.filters.findIndex((f) => f.key === key);
+    this.closeSwipe();
     this.setData({ filter: key, filterIndex: idx, filtered: this.filterList(key) }, () => this.updateScrollable());
   },
 
@@ -169,6 +170,7 @@ Page({
   onTabsChange(e) {
     const key = e.detail && e.detail.value;
     if (!key || key === this.data.filter) return;
+    this.closeSwipe();
     this.setData({ filter: key, filtered: this.filterList(key) }, () => this.updateScrollable());
   },
 
@@ -252,6 +254,9 @@ Page({
     const item = this.data.filtered[index];
     if (!item) return;
 
+    // 先把滑开的行收回去再发请求：否则这一行在列表重排前一直是打开态，
+    // 重排后打开态就「传」给了顶上来的那张卡
+    this.closeSwipe();
     this.setData({ confirmVisible: false, pendingIndex: -1, loading: true });
     api
       .remove(item.stockCode)
@@ -321,6 +326,16 @@ Page({
     this.setData({ swipeIndex: -1, swipeDx: 0, swipeOpen: open ? s.index : -1 });
   },
 
+  // 收掉所有左滑状态。打开态记的是行号，列表一旦重排（刷新 / 切筛选 / 删除）
+  // 行号就整体错位，残留的 swipeOpen 会落到另一张卡上——
+  // 表现就是「删掉一张后，下面那张的删除键也自己露出来了」
+  closeSwipe() {
+    if (this._swipe) this._swipe = null;
+    const d = this.data;
+    if (d.swipeOpen < 0 && d.swipeIndex < 0 && !d.swipeDx && !d.swipeDragging) return;
+    this.setData({ swipeIndex: -1, swipeDx: 0, swipeOpen: -1, swipeDragging: false });
+  },
+
   // 点主行：先把打开状态的行收回去；没收起的动作（纯点击）则进个股详情。
   // 详情页目前只有开发版可进（卡片画廊是假数据），正式版给提示，
   // 免得把「卡片样式测试」和茅台假数据当成真实行情交付出去。
@@ -373,6 +388,8 @@ Page({
     const d = data || {};
     const stocks = (d.list || []).map(toViewItem);
 
+    // 整表替换前先收左滑：新列表的排序/条数都可能变，旧行号不再可信
+    this.closeSwipe();
     this.setData({
       stocks,
       filtered: this.filterList(this.data.filter, stocks),

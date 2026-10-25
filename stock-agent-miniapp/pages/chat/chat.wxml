@@ -1,10 +1,4 @@
-<view
-  class="page"
-  bindtouchstart="onSwipeStart"
-  bindtouchmove="onSwipeMove"
-  bindtouchend="onSwipeEnd"
-  bindtouchcancel="onSwipeEnd"
->
+<view class="page" bindtouchstart="onSwipeStart" bindtouchmove="onSwipeMove" bindtouchend="onSwipeEnd" bindtouchcancel="onSwipeEnd">
   <!-- 顶部导航栏：自研 navbar（含胶囊安全区）。
        高度 = 状态栏 + 44px 内容区，完全确定，页面直接算无需实测 -->
   <base-navbar title="溜来">
@@ -14,17 +8,9 @@
       <ant-icon type="UnorderedListOutline" style="font-size:44rpx;color:var(--ink);" />
     </view>
   </base-navbar>
-
   <!-- 对话区：高度由 JS 精算并固定为像素值，不随视口变化抖动 -->
   <view class="chat-wrap" style="height: {{chatHeight}}px;">
-    <scroll-view
-      class="chat-scroll"
-      scroll-y="{{true}}"
-      enhanced="{{true}}"
-      show-scrollbar="{{false}}"
-      scroll-with-animation="{{scrollAnimated}}"
-      scroll-top="{{scrollTop}}"
-    >
+    <scroll-view class="chat-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}" scroll-with-animation="{{scrollAnimated}}" scroll-top="{{scrollTop}}">
       <view class="chat-inner">
         <block wx:for="{{messages}}" wx:for-item="msg" wx:key="index">
           <!-- ===== 用户消息（含语音识别结果）：右对齐主色气泡 ===== -->
@@ -33,7 +19,6 @@
               <text class="bubble-text" selectable="{{true}}">{{msg.content[0].data}}</text>
             </view>
           </view>
-
           <!-- ===== AI 消息：左对齐卡片气泡 ===== -->
           <view wx:else class="msg msg--assistant">
             <!-- 卡片消息（quote/kline）时气泡退让成透明容器，视觉交给金融卡组件，
@@ -43,129 +28,24 @@
                    数据字段在 chat.js 的 quoteCard() 里映射；
                    点卡进卡片画廊（pages/test，静态八卡样式页）。
                    一轮最多一张卡，且排在正文之后（时序见 chat.js 的 _drainCards） -->
-              <finance-quote-card
-                wx:if="{{msg.card === 'quote'}}"
-                card-class="msg-card"
-                bindtap="onQuoteCardTap"
-                data-code="{{msg.quote.code}}"
-                data-name="{{msg.quote.name}}"
-                name="{{msg.quote.name}}"
-                code="{{msg.quote.code}}"
-                status="{{msg.quote.status}}"
-                price="{{msg.quote.price}}"
-                change="{{msg.quote.change}}"
-                change-pct="{{msg.quote.changePct}}"
-                open="{{msg.quote.open}}"
-                high="{{msg.quote.high}}"
-                low="{{msg.quote.low}}"
-                amount="{{msg.quote.amount}}"
-                turnover-rate="{{msg.quote.turnoverRate}}"
-                total-cap="{{msg.quote.totalCap}}"
-                points="{{msg.quote.points}}"
-                tags="{{msg.quote.tags}}"
-                note="{{msg.quote.note}}"
-              />
-
+              <finance-quote-card wx:if="{{msg.card === 'quote'}}" card-class="msg-card" bindtap="onQuoteCardTap" data-code="{{msg.quote.code}}" data-name="{{msg.quote.name}}" name="{{msg.quote.name}}" code="{{msg.quote.code}}" status="{{msg.quote.status}}" price="{{msg.quote.price}}" change="{{msg.quote.change}}" change-pct="{{msg.quote.changePct}}" open="{{msg.quote.open}}" high="{{msg.quote.high}}" low="{{msg.quote.low}}" amount="{{msg.quote.amount}}" turnover-rate="{{msg.quote.turnoverRate}}" total-cap="{{msg.quote.totalCap}}" points="{{msg.quote.points}}" tags="{{msg.quote.tags}}" note="{{msg.quote.note}}" />
               <!-- K 线卡片：金融卡组件（components/finance/kline-card） -->
-              <finance-kline-card
-                wx:elif="{{msg.card === 'kline'}}"
-                card-class="msg-card"
-                name="{{msg.klineName}}"
-                code="{{msg.klineCode}}"
-                subtitle="{{msg.klineSub}}"
-                periods="{{msg.klinePeriods}}"
-                active-period="{{msg.klineActivePeriod}}"
-                klines="{{msg.kline}}"
-                ma="{{msg.klineMa}}"
-                period-pct="{{msg.klinePct}}"
-                amplitude="{{msg.klineAmplitude}}"
-                volume-ratio="{{msg.klineVolumeRatio}}"
-                support="{{msg.klineSupport}}"
-                resistance="{{msg.klineResistance}}"
-                note="{{msg.klineNote}}"
-              />
-
+              <finance-kline-card wx:elif="{{msg.card === 'kline'}}" card-class="msg-card" name="{{msg.klineName}}" code="{{msg.klineCode}}" subtitle="{{msg.klineSub}}" periods="{{msg.klinePeriods}}" active-period="{{msg.klineActivePeriod}}" klines="{{msg.kline}}" ma="{{msg.klineMa}}" period-pct="{{msg.klinePct}}" amplitude="{{msg.klineAmplitude}}" volume-ratio="{{msg.klineVolumeRatio}}" support="{{msg.klineSupport}}" resistance="{{msg.klineResistance}}" note="{{msg.klineNote}}" />
               <!-- 估值卡片：金融卡组件（components/finance/valuation-card）。
                    历史分位/行业均值当前数据源没有，卡片内显示「--」降级 -->
-              <finance-valuation-card
-                wx:elif="{{msg.card === 'valuation'}}"
-                card-class="msg-card"
-                pe-ttm="{{msg.valuation.peTtm}}"
-                pe-static="{{msg.valuation.peStatic}}"
-                pb="{{msg.valuation.pb}}"
-                ps="{{msg.valuation.ps}}"
-                peg="{{msg.valuation.peg}}"
-                dividend-yield="{{msg.valuation.dividendYield}}"
-                total-cap="{{msg.valuation.totalCap}}"
-                note="{{msg.valuation.note}}"
-              />
-
+              <finance-valuation-card wx:elif="{{msg.card === 'valuation'}}" card-class="msg-card" pe-ttm="{{msg.valuation.peTtm}}" pe-static="{{msg.valuation.peStatic}}" pb="{{msg.valuation.pb}}" ps="{{msg.valuation.ps}}" peg="{{msg.valuation.peg}}" dividend-yield="{{msg.valuation.dividendYield}}" total-cap="{{msg.valuation.totalCap}}" note="{{msg.valuation.note}}" />
               <!-- 资金流向卡片：金融卡组件（components/finance/fundflow-card）。
                    命中龙虎榜时 payload 带 lhb 席位区块，chat.js 已换算成元口径 -->
-              <finance-fundflow-card
-                wx:elif="{{msg.card === 'fundflow'}}"
-                card-class="msg-card"
-                main-net="{{msg.fundflow.mainNet}}"
-                main-net-pct="{{msg.fundflow.mainNetPct}}"
-                tiers="{{msg.fundflow.tiers}}"
-                north-pct="{{msg.fundflow.northPct}}"
-                north-change-pct="{{msg.fundflow.northChangePct}}"
-                streak-days="{{msg.fundflow.streakDays}}"
-                days5="{{msg.fundflow.days5}}"
-                lhb="{{msg.fundflow.lhb}}"
-                note="{{msg.fundflow.note}}"
-              />
-
+              <finance-fundflow-card wx:elif="{{msg.card === 'fundflow'}}" card-class="msg-card" main-net="{{msg.fundflow.mainNet}}" main-net-pct="{{msg.fundflow.mainNetPct}}" tiers="{{msg.fundflow.tiers}}" north-pct="{{msg.fundflow.northPct}}" north-change-pct="{{msg.fundflow.northChangePct}}" streak-days="{{msg.fundflow.streakDays}}" days5="{{msg.fundflow.days5}}" lhb="{{msg.fundflow.lhb}}" note="{{msg.fundflow.note}}" />
               <!-- 财报速览卡片：金融卡组件（components/finance/report-card）。
                    一致预期数据源没有，不出「超预期」标签 -->
-              <finance-report-card
-                wx:elif="{{msg.card === 'report'}}"
-                card-class="msg-card"
-                period-label="{{msg.report.periodLabel}}"
-                revenue="{{msg.report.revenue}}"
-                net-profit="{{msg.report.netProfit}}"
-                cash-flow="{{msg.report.cashFlow}}"
-                gross-margin="{{msg.report.grossMargin}}"
-                net-margin="{{msg.report.netMargin}}"
-                roe="{{msg.report.roe}}"
-                eps="{{msg.report.eps}}"
-                beat="{{msg.report.beat}}"
-                note="{{msg.report.note}}"
-              />
-
+              <finance-report-card wx:elif="{{msg.card === 'report'}}" card-class="msg-card" period-label="{{msg.report.periodLabel}}" revenue="{{msg.report.revenue}}" net-profit="{{msg.report.netProfit}}" cash-flow="{{msg.report.cashFlow}}" gross-margin="{{msg.report.grossMargin}}" net-margin="{{msg.report.netMargin}}" roe="{{msg.report.roe}}" eps="{{msg.report.eps}}" beat="{{msg.report.beat}}" note="{{msg.report.note}}" />
               <!-- 研报观点卡片：金融卡组件（components/finance/research-card） -->
-              <finance-research-card
-                wx:elif="{{msg.card === 'research'}}"
-                card-class="msg-card"
-                org="{{msg.research.org}}"
-                rating="{{msg.research.rating}}"
-                target-price="{{msg.research.targetPrice}}"
-                publish-date="{{msg.research.publishDate}}"
-                report-type="{{msg.research.reportType}}"
-                summary="{{msg.research.summary}}"
-                forecast-dir="{{msg.research.forecastDir}}"
-                upside="{{msg.research.upside}}"
-                source-name="{{msg.research.sourceName}}"
-                source-url="{{msg.research.sourceUrl}}"
-              />
-
+              <finance-research-card wx:elif="{{msg.card === 'research'}}" card-class="msg-card" org="{{msg.research.org}}" rating="{{msg.research.rating}}" target-price="{{msg.research.targetPrice}}" publish-date="{{msg.research.publishDate}}" report-type="{{msg.research.reportType}}" summary="{{msg.research.summary}}" forecast-dir="{{msg.research.forecastDir}}" upside="{{msg.research.upside}}" source-name="{{msg.research.sourceName}}" source-url="{{msg.research.sourceUrl}}" />
               <!-- 公司事件卡片：金融卡组件（components/finance/event-card） -->
-              <finance-event-card
-                wx:elif="{{msg.card === 'event'}}"
-                card-class="msg-card"
-                events="{{msg.event.events}}"
-                range="{{msg.event.range}}"
-                note="{{msg.event.note}}"
-              />
-
+              <finance-event-card wx:elif="{{msg.card === 'event'}}" card-class="msg-card" events="{{msg.event.events}}" range="{{msg.event.range}}" note="{{msg.event.note}}" />
               <!-- 同业对比卡片：金融卡组件（components/finance/compare-card） -->
-              <finance-compare-card
-                wx:elif="{{msg.card === 'compare'}}"
-                card-class="msg-card"
-                items="{{msg.compare.items}}"
-                note="{{msg.compare.note}}"
-              />
-
+              <finance-compare-card wx:elif="{{msg.card === 'compare'}}" card-class="msg-card" items="{{msg.compare.items}}" note="{{msg.compare.note}}" />
               <!-- 纯文本回答：markdown 块渲染（见页面底部 md-* 模板与样式） -->
               <block wx:else>
                 <block wx:for="{{msg.blocks}}" wx:for-item="b" wx:key="index">
@@ -184,7 +64,9 @@
                   <view wx:if="{{b.tag === 'hr'}}" class="md-hr" />
                   <view wx:if="{{b.tag === 'ul' || b.tag === 'ol'}}" class="md-list">
                     <view class="md-li {{item.depth ? 'md-li--sub' : ''}}" wx:for="{{b.items}}" wx:for-item="item" wx:key="index">
-                      <text class="md-li-marker num">{{b.tag === 'ol' ? index + 1 + '.' : (item.depth ? '◦' : '•')}}</text>
+                      <text class="md-li-marker num">
+                        {{b.tag === 'ol' ? index + 1 + '.' : (item.depth ? '◦' : '•')}}
+                      </text>
                       <view class="md-li-body">
                         <template is="mdInline" data="{{inlines: item.inlines}}" />
                       </view>
@@ -203,7 +85,6 @@
                     </view>
                   </view>
                 </block>
-
                 <!-- 生成中光标：跟在正文末尾，替代「生成中」这条独立状态条——
                      文字本就在动，再挂一条横条只会抢走正在读的那一行。
                      服务端换段落时会停一下，停够时长才在光标后补一句说明 -->
@@ -215,28 +96,17 @@
             </view>
           </view>
         </block>
-
         <!-- 首屏引导：空会话（还没有任何消息）时给出可点问题，点一下等同发送。
              问句由网关按热度池 + 股票状态生成，展示 display、发送 query，
              走与打字完全相同的链路（见 chat.js onQuickAsk） -->
         <view wx:if="{{!messages.length && !sending}}" class="quick-asks">
           <view class="quick-asks-title">你可以这样问</view>
-          <view
-            class="quick-ask"
-            wx:for="{{quickAsks}}"
-            wx:for-item="q"
-            wx:key="id"
-            data-q="{{q.query}}"
-            data-id="{{q.id}}"
-            data-code="{{q.stock_code}}"
-            bindtap="onQuickAsk"
-          >
+          <view class="quick-ask" wx:for="{{quickAsks}}" wx:for-item="q" wx:key="id" data-q="{{q.query}}" data-id="{{q.id}}" data-code="{{q.stock_code}}" bindtap="onQuickAsk">
             <text wx:if="{{q.tag}}" class="quick-ask-tag">{{q.tag}}</text>
             <text class="quick-ask-text">{{q.display}}</text>
             <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
           </view>
         </view>
-
         <!-- ===== AI 加载态 =====
              占在回答该出现的位置（左对齐 + 同一条页边线），首个 token 到达即收起，
              由流式正文接管。文案随阶段推进：理解 → 检索 → 取数 → 整理 → 长耗时，
@@ -259,24 +129,17 @@
             </view>
           </view>
         </view>
-
         <!-- 合规兜底：所有回答底部固定挂载免责声明（金融产品红线） -->
         <view class="disclaimer">以上内容由 AI 基于公开数据整理，仅供信息参考，不构成任何投资建议。市场有风险，决策需谨慎。</view>
-
         <!-- 底部锚点：0 高度，仅作为列表内容的稳定结尾 -->
         <view id="chat-bottom" class="chat-anchor"></view>
       </view>
     </scroll-view>
   </view>
-
   <!-- 输入栏：页面自绘的一条胶囊，左端模式键（语音 / 键盘），右端是发送键。
        手势起点标记用 bind 而不是 catch：catch 会让子元素的点击全部失效，
        这里改成「起点在输入栏」的信号，由 onSwipeStart 判断后锁掉抽屉手势 -->
-  <view
-    class="sender-wrap"
-    style="padding-bottom: {{senderPadBottom}}px; bottom: {{keyboardOffset}}px;"
-    bindtouchstart="onSenderTouchStart"
-  >
+  <view class="sender-wrap" style="padding-bottom: {{senderPadBottom}}px; bottom: {{keyboardOffset}}px;" bindtouchstart="onSenderTouchStart">
     <!-- 预输入文字框：点一下语音键后弹出，边说边出字，再点一下直接发给 agent。
          绝对定位（bottom:100%），不参与布局，不会挤压对话区 -->
     <view wx:if="{{recording}}" class="voice-panel">
@@ -290,9 +153,10 @@
         <!-- 误点了想收回：立刻丢弃这次识别，不发出 -->
         <view class="voice-panel-cancel" catchtap="onVoiceCancel">取消</view>
       </view>
-      <view class="voice-panel-text {{voiceText ? '' : 'voice-panel-text--empty'}}">{{voiceText || '请说话…'}}</view>
+      <view class="voice-panel-text {{voiceText ? '' : 'voice-panel-text--empty'}}">
+        {{voiceText || '请说话…'}}
+      </view>
     </view>
-
     <view class="sender-bar">
       <!-- 模式键：键盘态是麦克风图标，语音态直接显示「键盘」二字。
            antd 图标集没有键盘图标，原先语音态用铅笔（EditSOutline），
@@ -301,65 +165,31 @@
       <!-- 两个子节点常驻、用透明度交叉淡入：wx:if 换节点是「销毁 + 重建」，
            切换瞬间会闪一下。antd 图标集没有键盘图标，用网格图标（Appstore）
            代替——九宫格排布和键盘键位是同一套视觉语言 -->
-      <view
-        class="bar-btn {{voiceMode ? 'bar-btn--voice' : ''}}"
-        aria-label="{{voiceMode ? '切换到键盘输入' : '切换到语音输入'}}"
-        bindtap="onToggleInputMode"
-      >
+      <view class="bar-btn {{voiceMode ? 'bar-btn--voice' : ''}}" aria-label="{{voiceMode ? '切换到键盘输入' : '切换到语音输入'}}" bindtap="onToggleInputMode">
         <ant-icon class="bar-btn-mic" type="AudioOutline" style="font-size:44rpx;" />
         <ant-icon class="bar-btn-keyboard" type="AppstoreOutline" style="font-size:44rpx;" />
       </view>
-
       <!-- 键盘态：输入区紧贴模式键右侧，整块可点（主动聚焦） -->
       <view wx:if="{{!voiceMode}}" class="bar-field" bindtap="onTapInputField">
-        <textarea
-          class="bar-input"
-          value="{{input}}"
-          focus="{{inputFocus}}"
-          placeholder="问点什么…"
-          placeholder-style="color: #9AA1AC; font-size: 30rpx;"
-          auto-height="{{true}}"
-          adjust-position="{{false}}"
-          cursor-spacing="24"
-          confirm-type="send"
-          show-confirm-bar="{{false}}"
-          maxlength="-1"
-          bindinput="onInput"
-          bindconfirm="onSend"
-          bindfocus="onInputFocus"
-          bindblur="onInputBlur"
-          bindkeyboardheightchange="onKeyboardHeightChange"
-        ></textarea>
+        <textarea class="bar-input" value="{{input}}" focus="{{inputFocus}}" placeholder="问点什么…" placeholder-style="color: #9AA1AC; font-size: 30rpx;" auto-height="{{true}}" adjust-position="{{false}}" cursor-spacing="24" confirm-type="send" show-confirm-bar="{{false}}" maxlength="-1" bindinput="onInput" bindconfirm="onSend" bindfocus="onInputFocus" bindblur="onInputBlur" bindkeyboardheightchange="onKeyboardHeightChange"></textarea>
       </view>
-
       <!-- 语音态：胶囊整宽中央的语音键（以含模式键的全宽居中）。
            点一下开始聆听（预输入框见上方 .voice-panel），再点一下把终稿直接发给 agent。
            识别由微信同声传译插件完成，边说边出字；
            不再用「按住说话」——按住时会话区被手指压住，松手即发也不好改口 -->
       <view wx:else class="bar-hold" bindtap="onVoiceTap">{{voiceTip}}</view>
-
       <!-- 发送键：键盘态是唯一的黑圆主按钮（无输入内容、等待回复时都不切色）。
            语音态只保留图标、去掉黑圆——胶囊里没有文字可发，这个键的语义变成
            「收尾并发出」，未在聆听时用弱色表示暂不可用（见 chat.js 的 onSend） -->
-      <view
-        class="bar-send {{voiceMode ? 'bar-send--plain' : ''}} {{recording ? 'bar-send--live' : ''}}"
-        aria-label="发送"
-        bindtap="onSend"
-      >
+      <view class="bar-send {{voiceMode ? 'bar-send--plain' : ''}} {{recording ? 'bar-send--live' : ''}}" aria-label="发送" bindtap="onSend">
         <view wx:if="{{sending}}" class="bar-send-stop"></view>
         <ant-icon wx:else type="SendOutline" style="font-size:44rpx;" />
       </view>
     </view>
   </view>
-
   <!-- 侧边抽屉：自研 base-popup left 模式。
        点遮罩 / 左滑都能关；收起动画结束（leaved）后才跳转，避免动画被新页面掐断 -->
-  <base-popup
-    visible="{{drawerOpen}}"
-    mode="left"
-    bind:mask="onDrawerMask"
-    bind:leaved="onDrawerLeaved"
-  >
+  <base-popup visible="{{drawerOpen}}" mode="left" bind:mask="onDrawerMask" bind:leaved="onDrawerLeaved">
     <!-- 抽屉竖向分三层：头部与导航固定，历史对话自己滚，新对话钉在底部。
          底部内边距与聊天输入栏同源（padBottom = 安全区），
          这样「新对话」和输入栏才会落在同一条水平线上 -->
@@ -370,40 +200,23 @@
         <view class="drawer-title-col">
           <view class="drawer-title">溜来</view>
           <!-- 副标题原来是「AI 溜来」，和标题重复；换成实际定位 -->
-          <view class="drawer-sub">AI 投研助手</view>
+          <view class="drawer-sub">投研小助手</view>
         </view>
       </view>
-
       <!-- 导航：纯行，左侧不再放图标，只留文字与右侧箭头 -->
       <view class="drawer-nav">
-        <view
-          class="drawer-item"
-          wx:for="{{menus}}"
-          wx:for-item="m"
-          wx:key="key"
-          data-menu="{{m.key}}"
-          bindtap="onMenuSelect"
-        >
+        <view class="drawer-section-title drawer-nav-title">导航</view>
+        <view class="drawer-item" wx:for="{{menus}}" wx:for-item="m" wx:key="key" data-menu="{{m.key}}" bindtap="onMenuSelect">
           <text class="drawer-item-text">{{m.label}}</text>
           <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
         </view>
       </view>
-
       <!-- 历史对话：只有这一块滚（占掉导航与底部按钮之间的全部高度）。
            当前会话套框高亮，每行右侧删除入口（catchtap 防止冒泡触发选中） -->
       <view class="drawer-history">
         <view class="drawer-section-title">历史对话</view>
-        <scroll-view
-          class="history-scroll"
-          scroll-y="{{true}}"
-          enhanced="{{true}}"
-          show-scrollbar="{{false}}"
-        >
-          <view
-            wx:for="{{sessions}}"
-            wx:key="session_id"
-            class="history-item {{item.active ? 'history-item--active' : ''}}"
-          >
+        <scroll-view class="history-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
+          <view wx:for="{{sessions}}" wx:key="session_id" class="history-item {{item.active ? 'history-item--active' : ''}}">
             <view class="history-item-main" data-sid="{{item.session_id}}" bindtap="onSessionSelect">
               <text class="history-item-title">{{item.title}}</text>
             </view>
@@ -414,15 +227,10 @@
           <view wx:if="{{!sessions.length}}" class="history-empty">暂无历史对话</view>
         </scroll-view>
       </view>
-
       <!-- 新对话：固定在抽屉底部（不随内容滚走）。
            先注册一条新 session（立即进入历史列表），注册期间按钮转圈并挡连点，
            成功后再压栈全新的对话页实例；旧对话留在栈里可返回 -->
-      <view
-        class="drawer-new {{newChatting ? 'drawer-new--loading' : ''}}"
-        aria-label="开始新对话"
-        bindtap="onNewChat"
-      >
+      <view class="drawer-new {{newChatting ? 'drawer-new--loading' : ''}}" aria-label="开始新对话" bindtap="onNewChat">
         <!-- 内层 88rpx 与输入栏的 .bar-btn 同高，外层内边距与描边也照抄 .sender-bar，
              两个盒子用同一个公式算高度，不会因 rpx 换算差半像素 -->
         <view class="drawer-new-inner">
@@ -433,37 +241,19 @@
       </view>
     </view>
   </base-popup>
-
   <!-- 删除会话确认：与自选股 / 提醒页同一套 base-popup 胶囊弹窗。
        放到抽屉弹层之外，避免被抽屉的 overflow 裁切；
        DOM 顺序在后，所以会盖在抽屉之上，关掉后抽屉仍在 -->
-  <base-popup
-    id="delete-dialog"
-    visible="{{deleteVisible}}"
-    mode="center"
-    title="删除对话"
-    desc="删除后该对话的所有记录将不可恢复"
-    confirm-text="删除"
-    cancel-text="取消"
-    confirm-danger="{{true}}"
-    bind:confirm="confirmDeleteSession"
-    bind:cancel="cancelDeleteSession"
-    bind:mask="cancelDeleteSession"
-  />
-
+  <base-popup id="delete-dialog" visible="{{deleteVisible}}" mode="center" title="删除对话" desc="删除后该对话的所有记录将不可恢复" confirm-text="删除" cancel-text="取消" confirm-danger="{{true}}" bind:confirm="confirmDeleteSession" bind:cancel="cancelDeleteSession" bind:mask="cancelDeleteSession" />
   <base-toast id="base-toast" />
 </view>
-
 <!-- ===== markdown 行内片段模板 =====
      结构由 utils/markdown.js 生成：带样式标记的扁平文本段。
      链接点击统一走 onMdLinkTap（复制链接，不用 webview 直接打开外部站点） -->
 <template name="mdInline">
   <block wx:for="{{inlines}}" wx:for-item="i" wx:key="index">
-    <text
-      wx:if="{{i.t !== 'br'}}"
-      class="md-i {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code' : ''}} {{i.del ? 'md-del' : ''}} {{i.href ? 'md-link' : ''}}"
-      data-href="{{i.href}}"
-      bindtap="onMdLinkTap"
-    >{{i.text}}</text>
+    <text wx:if="{{i.t !== 'br'}}" class="md-i {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code' : ''}} {{i.del ? 'md-del' : ''}} {{i.href ? 'md-link' : ''}}" data-href="{{i.href}}" bindtap="onMdLinkTap">
+      {{i.text}}
+    </text>
   </block>
 </template>

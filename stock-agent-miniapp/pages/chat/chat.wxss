@@ -863,11 +863,16 @@
   to { transform: rotate(360deg); }
 }
 
-/* 导航：纯行，不再套分组外框。
-   图标承担识别，所以连「导航」小标题也省掉了 */
+/* 导航：纯行，不再套分组外框，但补一个与「历史对话」同款的小标题 */
 .drawer-nav {
   flex: none;
   padding: 0 var(--sp-3);
+}
+
+/* 导航标题复用 .drawer-section-title，只掐掉上间距：
+   头部已经留了 sp-4，再叠一层 sp-3 会空出一大块 */
+.drawer-nav-title {
+  padding-top: 0;
 }
 
 .drawer-item {
