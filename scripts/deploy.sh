@@ -230,10 +230,18 @@ cmd_update() {
     require_repo
     require_docker
 
-    log "拉取最新代码（$BRANCH）..."
     cd "$DEPLOY_DIR"
+    # 门禁 1：服务器工作区必须干净（.env 等 ignored 文件不算），
+    # 防止服务器上的手工改动被 pull 覆盖或阻塞快进
+    [ -z "$(git status --porcelain)" ] || die "服务器有未提交改动，先导出 diff 并回滚，禁止直接更新"
+
+    log "拉取最新代码（$BRANCH）..."
     git fetch origin "$BRANCH"
-    git pull --ff-only origin "$BRANCH"
+    # 门禁 2：只允许快进；服务器与 origin 分叉时中止，交给人工处理
+    git merge-base --is-ancestor HEAD "origin/$BRANCH" || die "服务器与 origin/$BRANCH 已分叉，先人工处理"
+    PREV=$(git rev-parse --short HEAD)
+    log "更新前提交：$PREV"
+    git merge --ff-only "origin/$BRANCH"
 
     # 新版本可能引入新配置项：模板变了但已存在的 .env 不会被更新，这里提示差异
     cmd_env_check
