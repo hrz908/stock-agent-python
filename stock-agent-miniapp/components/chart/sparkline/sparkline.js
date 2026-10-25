@@ -11,6 +11,8 @@ const VB_W = 340;
 const VB_H = 88;
 // 上下留白，避免折线贴边
 const PAD = 6;
+// 端点圆半径：左右各让出这么多，否则最后一个点会被 viewBox 裁掉半边
+const DOT = 3;
 
 function buildSrc(points, color, strokeWidth, fill) {
   const nums = (points || []).map(Number).filter((n) => !isNaN(n));
@@ -19,15 +21,15 @@ function buildSrc(points, color, strokeWidth, fill) {
   const min = Math.min.apply(null, nums);
   const max = Math.max.apply(null, nums);
   const span = max - min || 1;
-  const coords = nums
-    .map((v, i) => {
-      const x = (i / (nums.length - 1)) * VB_W;
-      const y = PAD + (1 - (v - min) / span) * (VB_H - PAD * 2);
-      return x.toFixed(1) + ',' + y.toFixed(1);
-    })
-    .join(' ');
+  const pts = nums.map((v, i) => {
+    const x = DOT + (i / (nums.length - 1)) * (VB_W - DOT * 2);
+    const y = PAD + (1 - (v - min) / span) * (VB_H - PAD * 2);
+    return [Number(x.toFixed(1)), Number(y.toFixed(1))];
+  });
+  const coords = pts.map((p) => p[0] + ',' + p[1]).join(' ');
+  const last = pts[pts.length - 1];
 
-  const sw = strokeWidth || 2;
+  const sw = strokeWidth || 3;
   // 面积填充的折线要闭合到viewBox底边
   const areaCoords = coords + ' ' + VB_W + ',' + VB_H + ' 0,' + VB_H;
   const svg =
@@ -41,16 +43,11 @@ function buildSrc(points, color, strokeWidth, fill) {
     ' ' +
     VB_H +
     "' preserveAspectRatio='none'>" +
+    // 面积填充用平铺淡色而非渐变：渐变在 96rpx 高度上只会糊成一层灰
     (fill
-      ? "<defs><linearGradient id='sparkFill' x1='0' y1='0' x2='0' y2='1'>" +
-        "<stop offset='0' stop-color='" +
+      ? "<polyline fill='" +
         color +
-        "' stop-opacity='0.30'/>" +
-        "<stop offset='1' stop-color='" +
-        color +
-        "' stop-opacity='0'/>" +
-        '</linearGradient></defs>' +
-        "<polyline fill='url(#sparkFill)' stroke='none' points='" +
+        "' fill-opacity='0.08' stroke='none' points='" +
         areaCoords +
         "'/>"
       : '') +
@@ -60,6 +57,16 @@ function buildSrc(points, color, strokeWidth, fill) {
     sw +
     "' stroke-linecap='round' stroke-linejoin='round' points='" +
     coords +
+    "'/>" +
+    // 末端圆点：给走势一个「现在」的落点，也是整条线唯一的实心记号
+    "<circle cx='" +
+    last[0] +
+    "' cy='" +
+    last[1] +
+    "' r='" +
+    DOT +
+    "' fill='" +
+    color +
     "'/>" +
     '</svg>';
 
@@ -76,7 +83,7 @@ Component({
     // 直接指定颜色（hex 或 var(--xx)）
     color: { type: String, value: '' },
     // 线宽（viewBox 单位）
-    strokeWidth: { type: Number, value: 2 },
+    strokeWidth: { type: Number, value: 3 },
     // 是否填充线下渐变面积
     fill: { type: Boolean, value: true }
   },

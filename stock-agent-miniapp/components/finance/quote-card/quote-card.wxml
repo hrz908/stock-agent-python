@@ -8,12 +8,15 @@
     </view>
   </view>
 
-  <!-- 参考图：主价格保持主文字色（--ink），只有涨跌额/涨跌幅跟随涨跌着色。
-       三个数字等距居中：一格一个数字，flex:1 均分 + 文字居中（同数据栅格口径） -->
+  <!-- 主价格独占左半行，涨跌额/涨跌幅竖排贴右：三个数字挤在一行时
+       32px 的价格放不下，层级也被压平。主价格保持主文字色（--ink），
+       只有涨跌额/涨跌幅跟随涨跌着色 -->
   <view class="price-row">
     <text class="price num">{{priceText}}</text>
-    <text class="chg num {{dir}}">{{changeText}}</text>
-    <text class="pct num {{dir}}">{{pctText}}</text>
+    <view class="price-chg">
+      <text class="chg num {{dir}}">{{changeText}}</text>
+      <text class="pct num {{dir}}">{{pctText}}</text>
+    </view>
   </view>
 
   <!-- 迷你走势线：分时点位不足两个点时没有可画的线，整块不渲染 -->
