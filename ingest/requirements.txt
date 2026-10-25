@@ -2,7 +2,10 @@ psycopg[binary,pool]>=3.2.0
 redis>=5.0.0
 watchdog>=4.0.0
 tiktoken>=0.7.0
-pymupdf4llm>=0.0.5
+# 2.0 的 wheel 只有 dist-info（PyPI 上的空壳），装完 import 直接 ModuleNotFoundError；
+# 锁 <2.0 并显式装 PyMuPDF，loaders.py 的 fitz 分支也才有底层实现
+pymupdf4llm>=0.0.5,<2.0
+pymupdf>=1.24.0
 pandas>=2.0.0
 python-docx>=1.0.0
 python-pptx>=0.6.21
