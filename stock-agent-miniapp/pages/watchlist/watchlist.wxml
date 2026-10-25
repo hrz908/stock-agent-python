@@ -26,12 +26,8 @@
       </view>
     </view>
 
-    <!-- 筛选：占满整行的段式单选（radio）；选中黑底白字 + 滑块滑动动画 -->
+    <!-- 筛选：占满整行的段式单选（radio）；无槽底色，选中靠字重与字色 -->
     <view class="filter-radio">
-      <view
-        class="filter-radio__thumb"
-        style="width: calc((100% - 8rpx) / {{filters.length}}); transform: translateX({{filterIndex * 100}}%);"
-      ></view>
       <view
         class="filter-radio__item {{item.key === filter ? 'filter-radio__item--on' : ''}}"
         wx:for="{{filters}}"
@@ -70,8 +66,8 @@
                 <view class="stock-code num">{{item.pending ? '等待行情' : item.code}}</view>
               </view>
               <view class="price-note">
-                <view class="p1 num {{item.up ? 'up' : 'down'}}">{{item.price}}</view>
-                <view class="p2 num {{item.up ? 'up' : 'down'}}">{{item.pct}}</view>
+                <view class="p1 num {{item.dir}}">{{item.price}}</view>
+                <view class="p2 num {{item.dir}}">{{item.pct}}</view>
               </view>
             </view>
             <!-- 左滑露出的删除操作 -->
@@ -82,8 +78,13 @@
           </view>
         </view>
 
-        <!-- 空态 -->
-        <base-empty wx:else icon="StarOutline" text="暂无符合条件的自选股" />
+        <!-- 空态：带下一步动作，不是一句「没有」了事 -->
+        <base-empty
+          wx:else
+          icon="StarOutline"
+          text="这里还没有自选股"
+          sub="点下方「添加股票」，搜索代码或名称"
+        />
       </view>
     </scroll-view>
   </view>
@@ -91,7 +92,6 @@
   <!-- 底部主操作：主行动蓝（唯一强调色的合法用途） -->
   <view class="bottom-btn" style="bottom: {{bottomGap}}px;">
     <view class="add-btn" bindtap="onAdd">
-      <ant-icon type="AddOutline" style="font-size:36rpx;color:#FFFFFF;" />
       <text class="add-btn-text">添加股票</text>
     </view>
   </view>

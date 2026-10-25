@@ -34,6 +34,15 @@ function fmtPct(v, digits) {
   return fmtSign(v, digits) + '%';
 }
 
+// 水平值百分比：不带正负号。毛利率 / 净利率 / ROE / 股息率 / 振幅 / 持股比例
+// 这类指标没有方向，用 fmtPct 会渲染成「+91.78%」，读起来像同比增速
+function fmtPctPlain(v, digits) {
+  const d = digits === undefined ? 2 : digits;
+  const n = toNum(v);
+  if (n === null) return '--';
+  return fmtNum(n, d) + '%';
+}
+
 // 亿/万单位换算（金额类大数，不带正负号——金额本身没有方向）：
 // >= 1 万亿 -> X.XX万亿；>= 1 亿 -> X.XX亿；>= 1 万 -> X.XX万；其余原样千分位
 function fmtAmount(v) {
@@ -64,6 +73,7 @@ module.exports = {
   fmtNum: fmtNum,
   fmtSign: fmtSign,
   fmtPct: fmtPct,
+  fmtPctPlain: fmtPctPlain,
   fmtAmount: fmtAmount,
   fmtPrice: fmtPrice,
   direction: direction

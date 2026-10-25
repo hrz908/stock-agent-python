@@ -2,7 +2,7 @@
 // 字段口径见设计文档第 2 节④。两行估值指标（四列 + 三列），全部等距居中。
 // 分位类信息（PE 分位进度条 / 近5年分位）不出卡：分位必须标注历史区间口径，
 // 而卡内按需求不再出现口径文案，故整块移除，只留可独立成立的估值指标。
-const { fmtNum, fmtPct, fmtAmount } = require('../../../utils/format');
+const { fmtNum, fmtPctPlain, fmtAmount } = require('../../../utils/format');
 
 Component({
   externalClasses: ['card-class'],
@@ -56,7 +56,8 @@ Component({
         pbText: fmtNum(d.pb),
         psText: fmtNum(d.ps),
         pegText: fmtNum(d.peg),
-        yieldText: fmtPct(d.dividendYield),
+        // 股息率是水平值，不带正负号
+        yieldText: fmtPctPlain(d.dividendYield),
         capText: fmtAmount(d.totalCap)
       });
     }

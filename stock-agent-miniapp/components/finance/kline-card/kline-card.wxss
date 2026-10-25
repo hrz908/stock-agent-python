@@ -13,7 +13,7 @@
   text-align: left;
 }
 
-/* 周期 chips：横向不换行，激活项用主行动蓝描边（单一强调色） */
+/* 周期 chips：无填充、发丝轮廓、胶囊形；选中只提描边与字重 */
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -29,9 +29,10 @@
   min-height: 88rpx;
   padding: 0 var(--sp-2);
   box-sizing: border-box;
-  background: var(--surface-2);
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
 }
 
 .chip-text {
@@ -39,14 +40,12 @@
   color: var(--ink-2);
 }
 
-/* 选中态：shadcn primary（--ink 近黑底 + --primary-fg 字），与 base-tabs 一致 */
 .chip--on {
-  background: var(--ink);
-  border-color: var(--ink);
+  border-color: var(--line);
 }
 
 .chip--on .chip-text {
-  color: var(--primary-fg);
+  color: var(--ink);
   font-weight: 600;
 }
 

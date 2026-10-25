@@ -38,6 +38,8 @@ function toViewItem(item) {
     // 排序专用数值：pct 是带正负号和 % 的展示串，不能直接比大小
     pctValue: Number(item.change_percent) || 0,
     up: !!item.up,
+    // 着色方向：0.00% 是平盘，不能因为 up=false 就借用「跌」的绿色
+    dir: Number(item.change_percent) > 0 ? 'up' : (Number(item.change_percent) < 0 ? 'down' : ''),
     cost: item.cost_price,
     qty: item.quantity,
     profit: item.profit_amount,
@@ -178,8 +180,9 @@ Page({
     const list = (stocks || this.data.stocks).filter((s) => {
       // 尚无行情的自选只在「全部」出现，不参与涨跌榜
       if (s.pending) return key === 'all';
-      if (key === 'up') return s.up;
-      if (key === 'down') return !s.up;
+      // 按数值判定而不是 up 布尔：0.00% 属平盘，两个榜都不该收
+      if (key === 'up') return s.pctValue > 0;
+      if (key === 'down') return s.pctValue < 0;
       return true;
     });
 

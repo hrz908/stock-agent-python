@@ -192,11 +192,13 @@ Page({
         status: 'complete',
         card: 'compare',
         content: [],
+        // 字段名必须与 compare-card 的 METRICS 对齐（changePct / pb / totalMv）：
+        // 早前用的是 periodPct / roe / dividendYield，组件读不到就整张表渲染成 '--'
         compare: {
           items: [
-            { name: '贵州茅台', price: 1523.66, periodPct: 8.62, pe: 24.18, roe: 24.68, dividendYield: 3.28 },
-            { name: '五粮液', price: 148.32, periodPct: 5.14, pe: 16.42, roe: 22.15, dividendYield: 3.95 },
-            { name: '泸州老窖', price: 132.86, periodPct: -2.35, pe: 15.28, roe: 25.44, dividendYield: 4.12 }
+            { name: '贵州茅台', price: 1523.66, changePct: 1.56, pe: 24.18, pb: 8.42, totalMv: 1914800000000 },
+            { name: '五粮液', price: 148.32, changePct: 0.84, pe: 16.42, pb: 4.15, totalMv: 575600000000 },
+            { name: '泸州老窖', price: 132.86, changePct: -1.24, pe: 15.28, pb: 6.73, totalMv: 195500000000 }
           ],
           note: '数据日期 2026-10-22'
         }

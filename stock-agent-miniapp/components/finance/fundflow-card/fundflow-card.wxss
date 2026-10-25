@@ -59,8 +59,11 @@
   color: var(--ink-2);
 }
 
+/* 数值不写 color：金额按正负着色（.up / .down 来自 _card.wxss），
+   在这里写死 --ink 会以「后定义者胜」把着色整片盖掉。
+   字号比标签大一档——金额才是这一行的信息 */
 .flow-v {
-  color: var(--ink);
+  font-size: var(--fs-body);
 }
 
 .flow-spark {

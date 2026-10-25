@@ -13,11 +13,28 @@
   text-align: left;
 }
 
-/* 时间轴行：圆点 + 内容 */
+/* 时间轴行：圆点 + 内容。
+   ::before 画一条贯穿到下一行的竖线，把孤立圆点连成真正的时间轴；
+   末条不画（:last-child 是结构伪类，非 WXSS 禁用项） */
 .evt {
+  position: relative;
   display: flex;
   gap: var(--gap-grid);
   margin-top: var(--sp-3);
+}
+
+.evt::before {
+  content: '';
+  position: absolute;
+  left: 7rpx;
+  top: 24rpx;
+  bottom: calc(-1 * var(--sp-3));
+  width: 2rpx;
+  background: var(--line);
+}
+
+.evt:last-child::before {
+  display: none;
 }
 
 /* 圆点：金色=需关注，蓝色=常规（视觉稿规格） */

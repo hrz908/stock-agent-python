@@ -29,8 +29,9 @@
   display: flex;
   align-items: center;
   min-height: 96rpx;
+}
 
-/* 行间分隔线：sep 由 WXML 行号计算（WXSS 禁兄弟选择器） */}
+/* 行间分隔线：sep 由 WXML 行号计算（WXSS 禁兄弟选择器） */
 .cmp-row--sep {
   border-top: var(--hairline);
 }
@@ -39,14 +40,15 @@
   border-bottom: var(--hairline);
 }
 
-/* 指标列固定宽度，数值列均分且不收缩（横向滚动由外层 scroll-view 负责） */
+/* 指标列固定宽度，数值列均分且不收缩（横向滚动由外层 scroll-view 负责）。
+   这里不写 color：写死 --ink 会盖掉 _card.wxss 的 .up/.down，
+   涨跌幅与「更优者」的着色全部失效（同名优先级，后定义者胜） */
 .cmp-cell {
   flex: 1;
   flex-shrink: 0;
   min-width: 140rpx;
   padding: var(--sp-2) var(--sp-2);
   font-size: var(--fs-aux);
-  color: var(--ink);
   text-align: right;
   white-space: nowrap;
 }
@@ -72,15 +74,12 @@
   word-break: break-word;        /* 不裁剪：表头指标名换行完整显示 */
 }
 
-/* 表格排版：指标列靠左（行首），数值列等分居中，末列靠右——与其余卡片同一套左右对齐 */
+/* 表格排版：指标列靠左（行首），数值列等分居中。
+   末列不再单独右对齐——3 个标的等距时，只有末列贴右会让整张表看起来是歪的 */
 .cmp-cell {
   text-align: center;
 }
 
 .cmp-cell--label {
   text-align: left;
-}
-
-.cmp-cell:last-child {
-  text-align: right;
 }

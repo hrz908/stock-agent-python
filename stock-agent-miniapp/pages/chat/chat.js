@@ -16,17 +16,37 @@ import {
 import { parseMarkdown } from '../../utils/markdown';
 import { isDev } from '../../config';
 
-// 侧边抽屉导航项（分组卡片 + 行间分隔线）
-// 不列「主页」：抽屉本来就只在主页存在，这一项点了没地方去。
-// 每行 = 文字 + 右侧箭头；sep 由 JS 按行号算好（WXSS 禁兄弟选择器）
+// 侧边抽屉导航项：每行 = 文字 + 右侧箭头（左侧不放图标）
+// 不列「主页」：抽屉本来就只在主页存在，这一项点了没地方去
 const MENUS = [
-  { key: 'watchlist', label: '自选股', sep: false },
-  { key: 'alerts', label: '提醒', sep: true },
-  { key: 'settings', label: '我的', sep: true },
+  { key: 'watchlist', label: '自选股' },
+  { key: 'alerts', label: '提醒' },
+  { key: 'settings', label: '我的' },
   // 卡片画廊是假数据页，只给开发版：体验版/正式版留着「K线测试」入口
   // 等于把测试内容交付给用户，审核也会被判为内容不完整
-  ...(isDev ? [{ key: 'kline', label: 'K线测试', sep: true }] : [])
+  ...(isDev ? [{ key: 'kline', label: 'K线测试' }] : [])
 ];
+
+// 首屏引导问题：股票名每次进页面随机抽，避免永远是同一只
+const QUICK_ASK_STOCKS = [
+  '贵州茅台', '宁德时代', '比亚迪', '隆基绿能', '中芯国际', '招商银行',
+  '五粮液', '长江电力', '紫金矿业', '立讯精密', '海康威视', '美的集团'
+];
+const QUICK_ASK_TEMPLATES = [
+  (name) => name + '现在什么价',
+  (name) => name + '最近的资金流向怎么样',
+  (name) => name + '的估值贵不贵'
+];
+
+// 抽三条不重复的股票，逐个套模板。抽完即定，同一次页面里不再变
+function buildQuickAsks() {
+  const pool = QUICK_ASK_STOCKS.slice();
+  const picked = [];
+  for (let i = 0; i < QUICK_ASK_TEMPLATES.length && pool.length; i += 1) {
+    picked.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  }
+  return picked.map((name, i) => QUICK_ASK_TEMPLATES[i](name));
+}
 
 // 抽屉导航项 → 子页面路由，key 与 MENUS 一一对应
 const ROUTES = {
@@ -488,11 +508,14 @@ function cardSlotMsg(kind) {
 }
 
 // ===== 语音输入 =====
-// 录音时长的两条边界：短于下限当作误触、不识别；触及上限插件自动结束
+// 点一下开始聆听、再点一下把识别结果直接发给 agent（不是「按住说话」）
+// 录音时长的两条边界：短于下限当作误触、不发出；触及上限插件自动结束，走同一条发出链路
 const REC_MIN_MS = 1000;
 const REC_MAX_MS = 60000;
-// 手指上滑超过这个距离（px）后松开，算「取消发送」
-const CANCEL_DISTANCE = 60;
+// 语音键的三态文案
+const VOICE_TIP_IDLE = '点一下说话';
+const VOICE_TIP_LIVE = '聆听中 · 再点发送';
+const VOICE_TIP_STOP = '正在转写…';
 // 中间结果的视图刷新间隔：识别回调远快于渲染需要，合批后只落最后一次
 const VOICE_TEXT_FLUSH_MS = 100;
 
@@ -527,20 +550,24 @@ Page({
     // 历史对话列表（抽屉）：{ session_id, title, updated_at, active }，
     // active 标记当前会话（选中效果），loadSessions 时按 _sessionId 计算
     sessions: [],
+    // 删除会话确认弹窗（胶囊弹层，替代原先的原生 wx.showModal）
+    deleteVisible: false,
 
     // 输入模式：false = 键盘输入，true = 语音输入（模式键在两者之间切换）
     voiceMode: false,
     // textarea 的受控 focus：切回键盘态时靠它主动唤起键盘
     inputFocus: false,
-    // 语音输入：recording = 手指按住中，recordCanceling = 已上滑到取消区
+    // 语音输入：recording = 正在聆听（再点一下收尾并发出）
     recording: false,
-    recordCanceling: false,
-    recordTip: '按住说话',
-    // 按住说话时实时识别出的文字：悬浮在输入栏上方，松手后终稿填入输入框
+    voiceTip: VOICE_TIP_IDLE,
+    // 聆听中实时识别出的文字：显示在输入栏上方的预输入框里
     voiceText: '',
     messages: [
       assistantMsg(GREETING)
     ],
+    // 首屏引导问题：onLoad 里随机生成（行情 / 资金 / 估值三类意图），
+    // 点一条即发送，省掉「我能问什么」这一轮思考
+    quickAsks: [],
     // 状态提示（「正在查询…」「重连中」）：挂在消息列表底部，done/error 后清空
     statusText: '',
     // 思考气泡：发送后到首个 token 到达前显示（占位在 AI 回复该出现的位置），
@@ -549,6 +576,9 @@ Page({
   },
 
   onLoad(options) {
+    // 首屏建议问题每次进页面重抽，股票名不固定
+    this.setData({ quickAsks: buildQuickAsks() });
+
     // 每个对话页实例 = 一条独立会话：
     // - 带 ?session=<id>（新对话注册后压栈 / 历史列表点选）：复用该会话，
     //   后端 thread_id 由它决定，打开即恢复这条对话的上下文；
@@ -1018,15 +1048,15 @@ Page({
   // 键盘 / 语音互切。语音态下整块不渲染 textarea，键盘随之收起；
   // 再点一次切回键盘态，并主动聚焦把键盘唤起来
   onToggleInputMode() {
-    // 正在录音时不允许切：切走会让手指还按着的那次录音没有归宿
-    if (this._recording) return;
+    // 聆听中点键盘键：先丢弃这次识别再切，否则终稿会落进键盘态的输入框
+    if (this._recording) this.onVoiceCancel();
 
     if (this.data.voiceMode) {
       this.setData({ voiceMode: false, inputFocus: true });
       return;
     }
 
-    this.setData({ voiceMode: true, inputFocus: false });
+    this.setData({ voiceMode: true, inputFocus: false, voiceTip: VOICE_TIP_IDLE });
     // 组件移除后键盘并不会立刻收，这里显式收一次
     if (wx.hideKeyboard) wx.hideKeyboard();
     // 键盘高度事件不一定补发 0，手动归零，防止输入栏悬在半空
@@ -1035,7 +1065,20 @@ Page({
   },
 
   onSend() {
+    // 语音态胶囊里没有文字可发：这个键的语义是「收尾并发出」，
+    // 只在聆听中有效（未聆听时是弱色，点了不做任何事）
+    if (this.data.voiceMode) {
+      if (this._recording) this.stopVoiceAndSend();
+      return;
+    }
     this.sendText(this.data.input);
+  },
+
+  // 首屏引导问题：等同把这条文本发出去
+  onQuickAsk(e) {
+    const q = (e && e.currentTarget && e.currentTarget.dataset.q) || '';
+    if (!q) return;
+    this.sendText(q);
   },
 
   // 发送一条文本：打字与语音识别结果走同一条链路，
@@ -1121,32 +1164,97 @@ Page({
     this.scheduleMeasureSender();
   },
 
-  /* ===== 语音输入 ===== */
+  /* ===== 语音输入 =====
+     点一下开始聆听（预输入框实时出字），再点一下把终稿直接发给 agent */
 
-  // 松手 / 到时长上限 / 取消的统一收尾：插件在 stop 后回调 onStop 带回终稿，
-  // 这里先复位视图，再决定是填输入框还是丢弃
+  // 语音键的唯一入口：未在聆听就开录，正在聆听就收尾并发出
+  onVoiceTap() {
+    if (this._authorizing) return; // 授权回调还没回来，忽略连点
+    if (this._recording) {
+      this.stopVoiceAndSend();
+      return;
+    }
+    if (this.data.sending) {
+      this.toast('上一条还在回答，稍等一下');
+      return;
+    }
+    this.beginVoice();
+  },
+
+  // 开录前确认麦克风权限：之前拒绝过的话 authorize 会直接失败，
+  // 那时只能让用户去设置页打开，这里给个明确出口，别点了没反应
+  beginVoice() {
+    this._authorizing = true;
+    wx.authorize({
+      scope: 'scope.record',
+      success: () => {
+        this._authorizing = false;
+        if (this._unloaded) return;
+        this.startRecord();
+      },
+      fail: () => {
+        this._authorizing = false;
+        this.setData({ voiceTip: VOICE_TIP_IDLE });
+        wx.showModal({
+          title: '需要麦克风权限',
+          content: '语音输入需要麦克风权限，是否去设置页开启？',
+          confirmText: '去设置',
+          success: (r) => {
+            if (r.confirm) wx.openSetting();
+          }
+        });
+      }
+    });
+  },
+
+  // 再点一下：停止录音，终稿回来后由 onVoiceStop 直接发出。
+  // _stopping 挡连点：等终稿的这段时间里再点会重复 stop，插件侧会抛错
+  stopVoiceAndSend() {
+    if (this._stopping) return;
+    this._stopping = true;
+    this.setData({ voiceTip: VOICE_TIP_STOP });
+    stopRecognize();
+  },
+
+  // 取消：丢弃本次结果。先置 aborted 再 abort，
+  // 否则插件迟到的终稿会把用户刚说的话发出去
+  onVoiceCancel() {
+    if (!this._recording) return;
+    this._recordCanceled = true;
+    this._recording = false;
+    this._stopping = false;
+    this.setData({ recording: false, voiceTip: VOICE_TIP_IDLE });
+    this.clearVoiceText();
+    abortRecognize();
+  },
+
+  // 停录 / 到时长上限的统一收尾：终稿直接发给 agent
   onVoiceStop(res) {
     if (this._unloaded) return;
     const canceled = this._recordCanceled;
-    const text = (res && res.text) || '';
+    const text = String((res && res.text) || '').trim();
     const ms = (res && res.duration) || Date.now() - (this._recordStartAt || 0);
 
     this._recording = false;
-    this._fingerDown = false;
+    this._stopping = false;
     this._recordCanceled = false;
-    this.setData({ recording: false, recordCanceling: false, recordTip: '按住说话' });
+    this.setData({ recording: false, voiceTip: VOICE_TIP_IDLE });
+    this.clearVoiceText();
 
-    if (canceled) {
-      this.clearVoiceText();
+    if (canceled) return;
+    // 一个字都没识别出来：当误触，不发出空消息
+    if (!text) {
+      this.toast(ms < REC_MIN_MS ? '说话时间太短' : '没听清，请再说一次', 1200);
       return;
     }
-    // 太短且一个字都没识别出来：当误触，不往输入框里塞空内容
-    if (!text.trim() && ms < REC_MIN_MS) {
-      this.clearVoiceText();
-      this.toast('说话时间太短', 1200);
+    // 上一轮还没答完：不吞掉这句话，落到输入框并切回键盘，让用户自己决定何时发
+    if (this.data.sending) {
+      this.setData({ voiceMode: false, input: text, inputFocus: true });
+      this.scheduleMeasureSender();
+      this.toast('上一条还在回答，已填到输入框');
       return;
     }
-    this.applyVoiceText(text);
+    this.sendText(text);
   },
 
   onVoiceError(message) {
@@ -1154,15 +1262,15 @@ Page({
     const canceled = this._recordCanceled;
 
     this._recording = false;
-    this._fingerDown = false;
+    this._stopping = false;
     this._recordCanceled = false;
-    this.setData({ recording: false, recordCanceling: false, recordTip: '按住说话' });
+    this.setData({ recording: false, voiceTip: VOICE_TIP_IDLE });
     this.clearVoiceText();
     if (canceled) return;
     this.toast(message || '没听清，请再说一次');
   },
 
-  // 中间结果：只更新浮层，不碰输入框（等终稿再填）
+  // 中间结果：只刷新预输入框，不碰输入框（终稿由 onVoiceStop 直接发出）
   onVoicePartial(text) {
     if (this._unloaded) return;
     this._voicePartial = String(text || '');
@@ -1174,28 +1282,6 @@ Page({
     }, VOICE_TEXT_FLUSH_MS);
   },
 
-  // 把识别结果填入输入框，等用户确认（可编辑）后手动发送
-  applyVoiceText(text) {
-    if (this._unloaded) return;
-    const value = String(text || '').trim();
-
-    if (this._voiceTextTimer) {
-      clearTimeout(this._voiceTextTimer);
-      this._voiceTextTimer = 0;
-    }
-    this._voicePartial = '';
-
-    if (!value) {
-      this.clearVoiceText();
-      this.toast('没听清，请再说一次');
-      return;
-    }
-
-    this.setData({ voiceText: '', voiceMode: false, input: value, inputFocus: true });
-    // 手动填 input 绕过了 onInput，胶囊高度变化要自己补一次测量
-    this.scheduleMeasureSender();
-  },
-
   clearVoiceText() {
     if (this._voiceTextTimer) {
       clearTimeout(this._voiceTextTimer);
@@ -1205,53 +1291,16 @@ Page({
     if (this.data.voiceText) this.setData({ voiceText: '' });
   },
 
-  onRecordStart(e) {
-    if (this._recording || this._authorizing) return;
-
-    // 手指状态必须同步记录：authorize 是异步的，等它回调时 e.touches
-    // 大概率已被系统清空，且手指可能已经抬起。若照旧在异步回调里
-    // 读 e、开录，快速点按会出现「点一下却录到自动停止」的类 toggle
-    // 怪行为（抬手时 _recording 还是 false，onRecordEnd 拦不住）
-    const touch = e && e.touches && e.touches[0];
-    this._startY = (touch && touch.clientY) || 0;
-    this._fingerDown = true;
-
-    // 麦克风权限：之前拒绝过的话 authorize 会直接失败，
-    // 那时只能让用户去设置页打开，这里给个明确出口，别点了没反应
-    this._authorizing = true;
-    wx.authorize({
-      scope: 'scope.record',
-      success: () => {
-        this._authorizing = false;
-        // 授权回来前手指已抬起：放弃这次录音，别留一条停不下来的流
-        if (!this._fingerDown) return;
-        this.startRecord();
-      },
-      fail: () => {
-        this._authorizing = false;
-        this._fingerDown = false;
-        this.setData({ recordTip: '按住说话' });
-        wx.showModal({
-          title: '需要麦克风权限',
-          content: '发送语音需要麦克风权限，是否去设置页开启？',
-          confirmText: '去设置',
-          success: (r) => {
-            if (r.confirm) wx.openSetting();
-          }
-        });
-      }
-    });
-  },
-
   startRecord() {
     this._recording = true;
+    this._stopping = false;
     this._recordCanceled = false;
     this._recordStartAt = Date.now();
     this._voicePartial = '';
 
-    this.setData({ recording: true, recordCanceling: false, recordTip: '松开 转文字', voiceText: '' });
+    this.setData({ recording: true, voiceTip: VOICE_TIP_LIVE, voiceText: '' });
 
-    // 识别全程在插件侧完成：中间结果进浮层，松手后 onStop 带终稿回来
+    // 识别全程在插件侧完成：中间结果进预输入框，收尾后 onStop 带终稿回来
     startRecognize(
       {
         onPartial: (text) => this.onVoicePartial(text),
@@ -1260,38 +1309,6 @@ Page({
       },
       { duration: REC_MAX_MS }
     );
-  },
-
-  // 上滑取消：越过阈值才算，免得手指轻微抖动就触发
-  onRecordMove(e) {
-    if (!this._recording) return;
-    const touch = e && e.touches && e.touches[0];
-    const y = (touch && touch.clientY) || this._startY;
-    const cancel = this._startY - y > CANCEL_DISTANCE;
-    if (cancel === this.data.recordCanceling) return;
-    this.setData({
-      recordCanceling: cancel,
-      recordTip: cancel ? '松开手指，取消发送' : '松开 转文字'
-    });
-  },
-
-  onRecordEnd() {
-    // 手指抬起先同步记状态：授权还没回来时 _recording 仍是 false，
-    // 这里只标记，让 authorize 的回调据此放弃开录
-    this._fingerDown = false;
-    if (!this._recording) return;
-
-    if (this.data.recordCanceling) {
-      // 上滑取消：立刻复位视图，识别结果由 asr 侧丢弃，不必等终稿
-      this._recordCanceled = true;
-      this._recording = false;
-      this.setData({ recording: false, recordCanceling: false, recordTip: '按住说话' });
-      this.clearVoiceText();
-      abortRecognize();
-      return;
-    }
-    // 正常松手：插件停止录音后回调 onStop，终稿在 onVoiceStop 里落输入框
-    stopRecognize();
   },
 
   // 滚到底：改用数值 scroll-top 定位，不再走 scroll-into-view。
@@ -1465,32 +1482,47 @@ Page({
     }).catch(() => {});
   },
 
-  // 历史列表点选：切到该会话并加载它的纯文本消息。
-  // 点的就是当前会话时只关抽屉，不重复拉消息
+  // 历史列表点选：原地切到该会话并加载它的纯文本消息。
+  // 抽屉保持打开——用户还停在抽屉上继续挑，不因为点了一下就被踢回对话区
   onSessionSelect(e) {
     const ds = (e && e.currentTarget && e.currentTarget.dataset) || {};
     const sid = ds.sid;
     if (!sid) return;
-    this.setData({ drawerOpen: false });
+    // 点的就是当前会话：什么都不做，抽屉照旧开着
     if (sid === this._sessionId) return;
 
-    // 切会话前先掐断在途流：旧会话还在回来的 token / 卡片，以及 abort 触发的
-    // error 事件，都不该落进新会话的界面（否则上下文就串了）。
-    // _myReqId 先归零再断——abort 的 error 打的正是「被掐断那一轮」的戳，
-    // 归零后它会被本页的 rid 闸门过滤掉，不会误弹「连接异常」。
-    // 只在本页确实有流在跑时才断：单例可能被栈里其它对话页实例共用
-    if (this.data.sending) {
-      this._myReqId = 0;
-      agentSocket.disconnect();
-      this._clearSendWatchdog();
-      this._flushStream({ force: true });
-      this._finishStreaming();
-      this.setData({ sending: false, statusText: '', thinking: false });
-    }
-
+    this._abortInFlight();
     this._sessionId = sid;
     this.loadSessions();
     this.loadSessionMessages(sid);
+  },
+
+  // 切会话 / 重建会话前掐断在途流：旧会话还在回来的 token、卡片，以及 abort 触发的
+  // error 事件，都不该落进新会话的界面（否则上下文就串了）。
+  // _myReqId 先归零再断——abort 的 error 打的正是「被掐断那一轮」的戳，
+  // 归零后它会被本页的 rid 闸门过滤掉，不会误弹「连接异常」。
+  // 只在本页确实有流在跑时才断：单例可能被栈里其它对话页实例共用
+  _abortInFlight() {
+    if (!this.data.sending) return;
+    this._myReqId = 0;
+    agentSocket.disconnect();
+    this._clearSendWatchdog();
+    this._flushStream({ force: true });
+    this._finishStreaming();
+    this.setData({ sending: false, statusText: '', thinking: false });
+  },
+
+  // 当前会话被删后原地换一条新会话：不跳页、不收起抽屉，
+  // 用户仍停在这一页的抽屉上，只是当前项换成了新的空会话
+  _resetToNewSession() {
+    const sid = agentSocket.freshSessionId();
+    this._abortInFlight();
+    this._sessionId = sid;
+    this.setData({ messages: [assistantMsg(GREETING)] });
+    this.scrollToBottom({ force: true });
+    // 注册失败不阻断：首条消息发出时 Go 网关仍会 registerSession 补注册
+    createSession(sid, '').catch(() => {});
+    this.loadSessions();
   },
 
   // 恢复某会话的消息（文本气泡；结构化卡片不持久化，恢复后只有文本）。
@@ -1512,31 +1544,36 @@ Page({
     });
   },
 
-  // 删除会话：二次确认后删后端（连 checkpoint 与摘要一起清，不可恢复）。
-  // 删的是当前会话时顺手开一条新对话——当前页继续留着只会对着一堆
-  // 已不属于任何 thread 的消息发问
+  // 删除会话：先弹胶囊确认框（与自选股 / 提醒页同一套 base-popup，
+  // 不再用原生 wx.showModal——两端样式不一致，也不跟主题走）
   onSessionDelete(e) {
     const ds = (e && e.currentTarget && e.currentTarget.dataset) || {};
-    const sid = ds.sid;
+    if (!ds.sid) return;
+    this._deletingSid = ds.sid;
+    this.setData({ deleteVisible: true });
+  },
+
+  cancelDeleteSession() {
+    if (!this.data.deleteVisible) return;
+    this._deletingSid = '';
+    this.setData({ deleteVisible: false });
+  },
+
+  // 确认删除：连 checkpoint 与摘要一起清，不可恢复。
+  // 删的是当前会话时原地换一条新会话（不跳页）——当前页继续留着只会对着
+  // 一堆已不属于任何 thread 的消息发问
+  confirmDeleteSession() {
+    const sid = this._deletingSid;
+    this._deletingSid = '';
+    this.setData({ deleteVisible: false });
     if (!sid) return;
-    wx.showModal({
-      title: '删除对话',
-      content: '删除后该对话的所有记录将不可恢复',
-      confirmText: '删除',
-      confirmColor: '#dc2626',
-      success: (res) => {
-        if (!res.confirm) return;
-        deleteSession(sid).then(() => {
-          if (sid === this._sessionId) {
-            // 已有新对话注册在途时沿用它的结果（同一条新会话），不再注册第二条
-            if (this._pendingMenu === 'new') return;
-            this.onNewChat(); // 当前会话被删：换一条新的
-            return;
-          }
-          this.loadSessions();
-        }).catch(() => this.toast('删除失败'));
+    deleteSession(sid).then(() => {
+      if (sid === this._sessionId) {
+        this._resetToNewSession();
+        return;
       }
-    });
+      this.loadSessions();
+    }).catch(() => this.toast('删除失败'));
   },
 
   // 轻提示：自研 base-toast（替代 wx.showToast 默认样式）

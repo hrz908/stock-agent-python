@@ -2,7 +2,7 @@
 // 字段口径见设计文档第 2 节③。营收/净利/现金流三行走「龙虎榜行」格式：
 // 名称靠左、金额与同比靠右（同比颜色由数值正负推导，不手写 up/down class）。
 // 文案只陈述事实（合规红线），卡内不出现投资建议措辞。
-const { fmtAmount, fmtPct, fmtNum, direction } = require('../../../utils/format');
+const { fmtAmount, fmtPct, fmtPctPlain, fmtNum, direction } = require('../../../utils/format');
 
 Component({
   externalClasses: ['card-class'],
@@ -54,9 +54,10 @@ Component({
         revenueRow: this.rowOf(d.revenue),
         profitRow: this.rowOf(d.netProfit),
         cashRow: this.rowOf(d.cashFlow),
-        grossMarginText: fmtPct(d.grossMargin),
-        netMarginText: fmtPct(d.netMargin),
-        roeText: fmtPct(d.roe),
+        // 三个比率都是水平值（不是同比），不能用带符号的 fmtPct
+        grossMarginText: fmtPctPlain(d.grossMargin),
+        netMarginText: fmtPctPlain(d.netMargin),
+        roeText: fmtPctPlain(d.roe),
         epsText: fmtNum(d.eps)
       });
     },

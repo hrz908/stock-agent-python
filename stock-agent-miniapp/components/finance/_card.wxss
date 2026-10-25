@@ -9,7 +9,7 @@
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-card);
-  /* shadcn：卡片默认无阴影（--shadow-card 已置 none），层次靠发丝边框 */
+  /* 与发丝描边配合的极轻投影：纯白底上只靠边框划块会显得干 */
   box-shadow: var(--shadow-card);
 }
 
@@ -69,8 +69,9 @@
 .fgrid-row {
   display: flex;
   gap: var(--gap-grid);
+}
 
-/* 行间距用显式类名，不用兄弟选择器（WXSS 禁用） */}
+/* 行间距用显式类名，不用兄弟选择器（WXSS 禁用） */
 .fgrid-row--gap {
   margin-top: var(--gap-grid);
 }
@@ -78,7 +79,7 @@
 .fcell {
   flex: 1;
   min-width: 0;
-  }
+}
 
 .fcell-k {
   font-size: var(--fs-min);

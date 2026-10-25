@@ -58,3 +58,8 @@
   text-align: right;
   white-space: nowrap;           /* 兜底：数值不跳行 */
 }
+
+/* 金额是本行主信息，比同比大一档；同比保持 caption，靠颜色表达方向 */
+.rep-amt {
+  font-size: var(--fs-body);
+}

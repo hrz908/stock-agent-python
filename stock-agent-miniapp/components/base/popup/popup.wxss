@@ -122,40 +122,36 @@
   border-top: var(--hairline);
 }
 
-/* 弹窗按钮统一沿用主题按键规格（对齐 token 的 .btn-primary / .btn-outline，
-   以及底部「添加股票」.add-btn）：96rpx 高、--r-card 圆角、--fs-body 加粗 */
+/* 弹窗按钮：全站按键规格 —— 无填充、胶囊形、描边与输入框统一用 --hairline。
+   既然描边全站一个色，主次就只能靠字色与字重表达 */
 .popup-btn {
   flex: 1;
   height: 96rpx;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
+  border: var(--hairline);
+  box-shadow: var(--shadow-card);
   font-size: var(--fs-body);
   font-weight: 600;
-  border-radius: var(--r-card);
+  border-radius: var(--r-pill);
   /* 数字与中文混排时按钮文案不抖 */
   font-variant-numeric: tabular-nums;
 }
 
-/* 取消：白底描边（.btn-outline 同款） */
 .popup-btn--cancel {
-  background: transparent;
-  color: var(--ink);
-  border: var(--hairline);
+  color: var(--ink-2);
+  font-weight: 400;
 }
 
-/* 确认：近黑底白字（.btn-primary / .add-btn 同款，shadcn primary） */
 .popup-btn--confirm {
-  background: var(--ink);
-  color: var(--primary-fg);
-  border: 2rpx solid var(--ink);
+  color: var(--ink);
 }
 
-/* 危险确认：红底白字（移出自选 / 退出登录等破坏性操作） */
+/* 危险确认：红字（移出自选 / 退出登录等破坏性操作），描边仍与输入框一致 */
 .popup-btn--danger {
-  background: var(--danger);
-  color: var(--primary-fg);
-  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* ===== 动画（WXSS 禁写 rem/vh，位移用 translate 百分比） ===== */

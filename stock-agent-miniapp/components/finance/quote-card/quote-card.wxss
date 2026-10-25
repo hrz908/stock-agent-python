@@ -40,11 +40,11 @@
   letter-spacing: -0.5rpx;
 }
 
-/* 涨跌额/涨跌幅：与现价同排，比辅助级大一档——它们是卡片上
-   第二重要的数字，用 --fs-aux（11px）会小到读不出来 */
+/* 涨跌额/涨跌幅：与现价同排，但低两档。
+   原先 36rpx 只比现价小 4rpx，三个数字看起来一样重，价格失去主导 */
 .chg,
 .pct {
-  font-size: var(--fs-title);
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 

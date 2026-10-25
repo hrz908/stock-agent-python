@@ -12,10 +12,11 @@
   line-height: 1;
 }
 
+/* 主文案比补充说明大一档：空态也要有层级，两行同号等于没说话 */
 .empty-text {
   margin-top: var(--sp-3);
-  font-size: var(--fs-aux);
-  color: var(--ink-3);
+  font-size: var(--fs-body);
+  color: var(--ink-2);
 }
 
 .empty-sub {

@@ -16,43 +16,43 @@
   padding: 0 var(--sp-4);
 }
 
-/* ===== 概览宫格（替代 t-grid card 主题） ===== */
+/* ===== 概览宫格 =====
+   两格共用一张卡：并排两个框会让「全部 / 今日触发」看起来像两个独立模块 */
 .overview {
   flex: none;
   display: flex;
-  gap: var(--gap-grid);
-}
-
-/* 单格内部左右对齐：文字靠左、数字靠右 */
-.overview-cell {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--pad-card);
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+/* 单格：标签在上、数字在下，数字明显压过标签 */
+.overview-cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--pad-card);
+}
+
+/* 格间竖分割线：class 由 wxml 按行号算（WXSS 禁兄弟选择器） */
+.overview-cell--sep {
+  border-left: var(--hairline);
 }
 
 .g-num {
-  flex: none;
   font-size: var(--fs-hero);
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.1;
   color: var(--ink);
-  text-align: right;
 }
 
-/* 标签文字：加大一档（caption -> body），不加粗 */
 .g-label {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--fs-body);
-  font-weight: 400;
-  color: var(--ink);
-  text-align: left;
+  font-size: var(--fs-aux);
+  color: var(--ink-2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -83,18 +83,19 @@
   gap: var(--gap-grid);
 }
 
-/* ===== 提醒卡 ===== */
+/* ===== 提醒卡 =====
+   顶部不留内边距：头部自带 88rpx 热区行，否则名字上方会空出一截 */
 .alert-card {
-  padding: var(--sp-3);
+  padding: 0 var(--sp-3) var(--sp-3);
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-card);
-  min-height: 80rpx;
+  box-shadow: var(--shadow-card);
 }
 
 .alert-card-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
 }
@@ -113,34 +114,40 @@
   color: var(--ink-3);
 }
 
-/* 编辑入口：价格行内右对齐的纯文字按键（打开编辑弹窗） */
+/* 文字按键的统一热区：24rpx 字撑不出 88rpx，靠 min-height 补 */
 .alert-card-editbtn {
+  display: flex;
+  align-items: center;
   flex: none;
   margin-left: auto;
-  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+  min-height: 88rpx;
+  padding: 0 0 0 var(--sp-3);
   font-size: var(--fs-aux);
   color: var(--ink-2);
 }
 
-/* 大号阈值：价格级字号，等宽 + 涨跌色；行尾放删除按键 */
+/* 大号阈值：卡片唯一的 display 数字，等宽 + 涨跌色；行尾放编辑入口 */
 .alert-card-price {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin-top: var(--sp-2);
+  margin-top: var(--sp-1);
 }
 
-/* 删除入口：头部右上角纯文字（已移除垃圾桶图标），危险红 */
+/* 删除入口：头部右侧纯文字，危险红 */
 .alert-card-delbtn {
+  display: flex;
+  align-items: center;
   flex: none;
-  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+  min-height: 88rpx;
+  padding: 0 0 0 var(--sp-3);
   font-size: var(--fs-aux);
   color: var(--danger);
 }
 
 .alert-card-price-text {
-  font-size: var(--fs-hero);
-  font-weight: 700;
+  font-size: var(--fs-display);
+  font-weight: 600;
   line-height: 1.1;
 }
 
@@ -159,24 +166,23 @@
   right: var(--sp-4);
 }
 
-/* 底部主按钮：shadcn 近黑底白字（原主行动蓝已按 DESIGN.md「强调色收口」
-   降级为链接/选中态专用，主按钮不再用蓝；重投影一并去除） */
+/* 底部主按钮：无填充，描边与输入框同款（--hairline），主次靠字色与字重 */
 .add-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--sp-1);
   height: 96rpx;
-  border-radius: var(--r-card);
-  background: var(--ink);
+  border-radius: var(--r-pill);
+  background: transparent;
+  border: var(--hairline);
   box-shadow: var(--shadow-card);
 }
 
 .add-btn-text {
   font-size: var(--fs-body);
   font-weight: 600;
-  /* 蓝底按钮上的文字反白（原金色底用深色字，主题切蓝后必须跟着换） */
-  color: var(--primary-fg); /* 深色底上的浅色文字 */
+  color: var(--ink);
 }
 
 /* ===== 新增提醒表单 ===== */
@@ -202,9 +208,10 @@
   box-sizing: border-box;
   font-size: var(--fs-body);
   color: var(--ink);
-  background: var(--surface-2);
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
 }
 
 /* 带尾部单位时给右侧留位 */
@@ -236,17 +243,19 @@
   font-size: var(--fs-body);
 }
 
-/* 已选股票行 */
+/* 已选股票行（可点，同按键规格） */
 .selected-stock {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
+  min-height: 88rpx;
   margin-top: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
-  background: var(--surface-2);
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
 }
 
 .selected-stock-text {
@@ -255,7 +264,7 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* 带标题的选择器行（替代 t-cell + arrow） */
+/* 带标题的选择器行（可点，同按键规格） */
 .option-row {
   display: flex;
   align-items: center;
@@ -263,9 +272,10 @@
   gap: var(--sp-2);
   min-height: 96rpx;
   padding: var(--sp-2) var(--sp-3);
-  background: var(--surface-2);
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
 }
 
 /* 原生 picker 触发区（按压态按需求取消，不再有 --hover 变暗） */

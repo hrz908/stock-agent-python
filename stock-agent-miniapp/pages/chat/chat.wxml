@@ -220,6 +220,23 @@
           </view>
         </block>
 
+        <!-- 首屏引导：只有问候语时给出三条可点问题，点一下等同发送。
+             不引入新接口，走与打字完全相同的链路（见 chat.js onQuickAsk） -->
+        <view wx:if="{{messages.length <= 1 && !sending}}" class="quick-asks">
+          <view class="quick-asks-title">你可以这样问</view>
+          <view
+            class="quick-ask"
+            wx:for="{{quickAsks}}"
+            wx:for-item="q"
+            wx:key="*this"
+            data-q="{{q}}"
+            bindtap="onQuickAsk"
+          >
+            <text class="quick-ask-text">{{q}}</text>
+            <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+          </view>
+        </view>
+
         <!-- 思考气泡：发送后到首个 token 到达前显示，占位在 AI 回复该出现的左侧 -->
         <view wx:if="{{thinking}}" class="msg msg--assistant">
           <view class="bubble bubble--assistant thinking-bubble">
@@ -258,25 +275,37 @@
     style="padding-bottom: {{senderPadBottom}}px; bottom: {{keyboardOffset}}px;"
     bindtouchstart="onSenderTouchStart"
   >
-    <!-- 实时转写浮层：按住说话时悬浮在输入栏上方，边说边出字。
+    <!-- 预输入文字框：点一下语音键后弹出，边说边出字，再点一下直接发给 agent。
          绝对定位（bottom:100%），不参与布局，不会挤压对话区 -->
-    <view wx:if="{{voiceText}}" class="voice-live">
-      <view class="voice-live-text">{{voiceText}}</view>
+    <view wx:if="{{recording}}" class="voice-panel">
+      <view class="voice-panel-hd">
+        <view class="voice-wave">
+          <view class="voice-wave-bar"></view>
+          <view class="voice-wave-bar"></view>
+          <view class="voice-wave-bar"></view>
+        </view>
+        <text class="voice-panel-tip">实时转写</text>
+        <!-- 误点了想收回：立刻丢弃这次识别，不发出 -->
+        <view class="voice-panel-cancel" catchtap="onVoiceCancel">取消</view>
+      </view>
+      <view class="voice-panel-text {{voiceText ? '' : 'voice-panel-text--empty'}}">{{voiceText || '请说话…'}}</view>
     </view>
 
-    <view class="sender-bar {{voiceMode ? 'sender-bar--voice' : ''}}">
-      <!-- 模式键：键盘态显示语音图标，语音态显示键盘图标。
+    <view class="sender-bar">
+      <!-- 模式键：键盘态是麦克风图标，语音态直接显示「键盘」二字。
+           antd 图标集没有键盘图标，原先语音态用铅笔（EditSOutline），
+           看不出「点它切回键盘」这层意思，改用文字。
            无 hover-class：需求要求点它不要有「暗一下」的按压特效 -->
+      <!-- 两个子节点常驻、用透明度交叉淡入：wx:if 换节点是「销毁 + 重建」，
+           切换瞬间会闪一下。antd 图标集没有键盘图标，用网格图标（Appstore）
+           代替——九宫格排布和键盘键位是同一套视觉语言 -->
       <view
-        class="bar-btn"
+        class="bar-btn {{voiceMode ? 'bar-btn--voice' : ''}}"
         aria-label="{{voiceMode ? '切换到键盘输入' : '切换到语音输入'}}"
         bindtap="onToggleInputMode"
       >
-        <!-- antd 图标集没有键盘图标：键盘态用「编辑/输入」图标，语音态用「麦克风」图标 -->
-        <ant-icon
-          type="{{voiceMode ? 'EditSOutline' : 'AudioOutline'}}"
-          style="font-size:44rpx;color:#FFFFFF;"
-        />
+        <ant-icon class="bar-btn-mic" type="AudioOutline" style="font-size:44rpx;" />
+        <ant-icon class="bar-btn-keyboard" type="AppstoreOutline" style="font-size:44rpx;" />
       </view>
 
       <!-- 键盘态：输入区紧贴模式键右侧，整块可点（主动聚焦） -->
@@ -301,28 +330,22 @@
         ></textarea>
       </view>
 
-      <!-- 语音态：胶囊整宽中央的「按住说话」（以含模式键的全宽居中），上滑可取消。
-           按住即录，识别由微信同声传译插件完成，边说边出字（浮层见上方 .voice-live）；
-           松手后终稿自动填进输入框，等用户确认后发送。
-           不是开关式 toggle，按下不加灰阶/缩放反馈，观感与手机键盘一致。
-           这里可以用 catch：本节点没有需要点击的子元素 -->
-      <view
-        wx:else
-        class="bar-hold"
-        catchtouchstart="onRecordStart"
-        catchtouchmove="onRecordMove"
-        catchtouchend="onRecordEnd"
-        catchtouchcancel="onRecordEnd"
-      >{{recordTip}}</view>
+      <!-- 语音态：胶囊整宽中央的语音键（以含模式键的全宽居中）。
+           点一下开始聆听（预输入框见上方 .voice-panel），再点一下把终稿直接发给 agent。
+           识别由微信同声传译插件完成，边说边出字；
+           不再用「按住说话」——按住时会话区被手指压住，松手即发也不好改口 -->
+      <view wx:else class="bar-hold" bindtap="onVoiceTap">{{voiceTip}}</view>
 
-      <!-- 发送键：恒为主按钮近黑底白字（无输入内容、等待回复时都不切色）。
-           常驻 DOM、不隐藏、不移动：键盘态靠输入区 flex:1 顶到最右，
-           语音态用 margin-left:auto 钉在同一右边缘（切换前后位置一致），
-           并被从右向左扫入的深色胶囊层（::after）直接盖住，形成
-           「发送键被语音胶囊盖住」的视觉效果（见 chat.wxss 的 z 轴层级） -->
-      <view class="bar-send" aria-label="发送" bindtap="onSend">
+      <!-- 发送键：键盘态是唯一的黑圆主按钮（无输入内容、等待回复时都不切色）。
+           语音态只保留图标、去掉黑圆——胶囊里没有文字可发，这个键的语义变成
+           「收尾并发出」，未在聆听时用弱色表示暂不可用（见 chat.js 的 onSend） -->
+      <view
+        class="bar-send {{voiceMode ? 'bar-send--plain' : ''}} {{recording ? 'bar-send--live' : ''}}"
+        aria-label="发送"
+        bindtap="onSend"
+      >
         <view wx:if="{{sending}}" class="bar-send-stop"></view>
-        <ant-icon wx:else type="SendOutline" style="font-size:44rpx;color:#FFFFFF;" />
+        <ant-icon wx:else type="SendOutline" style="font-size:44rpx;" />
       </view>
     </view>
   </view>
@@ -335,50 +358,38 @@
     bind:mask="onDrawerMask"
     bind:leaved="onDrawerLeaved"
   >
-    <view class="drawer-body" style="padding-top: {{drawerTop}}px;">
+    <!-- 抽屉竖向分三层：头部与导航固定，历史对话自己滚，新对话钉在底部。
+         底部内边距与聊天输入栏同源（padBottom = 安全区），
+         这样「新对话」和输入栏才会落在同一条水平线上 -->
+    <view class="drawer-body" style="padding-top: {{drawerTop}}px; padding-bottom: {{padBottom}}px;">
       <!-- 品牌头部 -->
       <view class="drawer-head">
-        <image class="drawer-logo" src="/assets/logo-bull.jpg" mode="aspectFill" />
+        <image class="drawer-logo" src="/assets/logo-bull.png" mode="aspectFill" />
         <view class="drawer-title-col">
           <view class="drawer-title">溜来</view>
-          <view class="drawer-sub">AI 溜来</view>
+          <!-- 副标题原来是「AI 溜来」，和标题重复；换成实际定位 -->
+          <view class="drawer-sub">AI 投研助手</view>
         </view>
       </view>
 
-      <!-- 导航菜单：分组卡片承载，行间分隔线由 JS 按行号算好 -->
-      <view class="drawer-section">
-        <view class="drawer-section-title">导航</view>
-        <view class="drawer-menu">
-          <view
-            class="drawer-item {{m.sep ? 'drawer-item--sep' : ''}}"
-            wx:for="{{menus}}"
-            wx:for-item="m"
-            wx:key="key"
-            data-menu="{{m.key}}"
-            bindtap="onMenuSelect"
-          >
-            <text class="drawer-item-text">{{m.label}}</text>
-            <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
-          </view>
+      <!-- 导航：纯行，左侧不再放图标，只留文字与右侧箭头 -->
+      <view class="drawer-nav">
+        <view
+          class="drawer-item"
+          wx:for="{{menus}}"
+          wx:for-item="m"
+          wx:key="key"
+          data-menu="{{m.key}}"
+          bindtap="onMenuSelect"
+        >
+          <text class="drawer-item-text">{{m.label}}</text>
+          <ant-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
         </view>
       </view>
 
-      <!-- 新对话：导航栏下方的主行动点（shadcn 近黑主按钮 + 白色前景）。
-           先注册一条新 session（立即进入历史列表），注册期间按钮转圈并挡住连点，
-           成功后再压栈全新的对话页实例；旧对话留在栈里可返回 -->
-      <view
-        class="drawer-new {{newChatting ? 'drawer-new--loading' : ''}}"
-        aria-label="开始新对话"
-        bindtap="onNewChat"
-      >
-        <ant-icon wx:if="{{!newChatting}}" type="ChatAddOutline" style="font-size:32rpx;color:var(--primary-fg);" />
-        <view wx:else class="drawer-new-spinner" />
-        <text class="drawer-new-text">{{newChatting ? '创建中…' : '新对话'}}</text>
-      </view>
-
-      <!-- 历史对话：可滚动容器。当前会话高亮（选中效果），
-           每行右侧删除入口（catchtap 防止冒泡触发选中） -->
-      <view class="drawer-section drawer-history">
+      <!-- 历史对话：只有这一块滚（占掉导航与底部按钮之间的全部高度）。
+           当前会话套框高亮，每行右侧删除入口（catchtap 防止冒泡触发选中） -->
+      <view class="drawer-history">
         <view class="drawer-section-title">历史对话</view>
         <scroll-view
           class="history-scroll"
@@ -401,8 +412,41 @@
           <view wx:if="{{!sessions.length}}" class="history-empty">暂无历史对话</view>
         </scroll-view>
       </view>
+
+      <!-- 新对话：固定在抽屉底部（不随内容滚走）。
+           先注册一条新 session（立即进入历史列表），注册期间按钮转圈并挡连点，
+           成功后再压栈全新的对话页实例；旧对话留在栈里可返回 -->
+      <view
+        class="drawer-new {{newChatting ? 'drawer-new--loading' : ''}}"
+        aria-label="开始新对话"
+        bindtap="onNewChat"
+      >
+        <!-- 内层 88rpx 与输入栏的 .bar-btn 同高，外层内边距与描边也照抄 .sender-bar，
+             两个盒子用同一个公式算高度，不会因 rpx 换算差半像素 -->
+        <view class="drawer-new-inner">
+          <ant-icon wx:if="{{!newChatting}}" type="ChatAddOutline" style="font-size:32rpx;" />
+          <view wx:else class="drawer-new-spinner" />
+          <text class="drawer-new-text">{{newChatting ? '创建中…' : '新对话'}}</text>
+        </view>
+      </view>
     </view>
   </base-popup>
+
+  <!-- 删除会话确认：与自选股 / 提醒页同一套 base-popup 胶囊弹窗。
+       放到抽屉弹层之外，避免被抽屉的 overflow 裁切；
+       DOM 顺序在后，所以会盖在抽屉之上，关掉后抽屉仍在 -->
+  <base-popup
+    visible="{{deleteVisible}}"
+    mode="center"
+    title="删除对话"
+    desc="删除后该对话的所有记录将不可恢复"
+    confirm-text="删除"
+    cancel-text="取消"
+    confirm-danger="{{true}}"
+    bind:confirm="confirmDeleteSession"
+    bind:cancel="cancelDeleteSession"
+    bind:mask="cancelDeleteSession"
+  />
 
   <base-toast id="base-toast" />
 </view>

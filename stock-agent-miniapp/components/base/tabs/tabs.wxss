@@ -1,4 +1,4 @@
-/* chips 行：底色与卡片一致，激活项用主行动蓝（单一强调色） */
+/* chips 行：无填充、发丝轮廓、胶囊形；选中只加粗并提亮描边 */
 .tabs {
   width: 100%;
   white-space: nowrap;
@@ -20,9 +20,10 @@
   min-height: 88rpx;
   padding: 0 var(--sp-3);
   box-sizing: border-box;
-  background: var(--surface-2);
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
 }
 
 .chip-text {
@@ -31,15 +32,13 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* 选中态：shadcn primary（--ink 近黑底 + --primary-fg 字）。
-   原先用 --accent 蓝，与「强调色只做链接/焦点」的收口规则冲突 */
+/* 选中态：描边全站统一，只把文字提到墨色并加粗 */
 .chip--on {
-  background: var(--ink);
-  border-color: var(--ink);
+  border-color: var(--line);
 }
 
 .chip--on .chip-text {
-  color: var(--primary-fg);
+  color: var(--ink);
   font-weight: 600;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }

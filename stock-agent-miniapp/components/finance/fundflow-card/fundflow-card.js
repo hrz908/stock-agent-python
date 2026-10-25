@@ -1,7 +1,7 @@
 // 资金流向卡：回答「主力资金流入还是流出」「北向加仓了吗」
 // 字段口径见设计文档第 2 节⑥。主数字放大（22px 级），四档拆分逐行展开，
 // 正负值自动着色（涨跌方向由数值正负推导，不手写 class）。
-const { fmtAmount, fmtSign, fmtPct, fmtNum, direction } = require('../../../utils/format');
+const { fmtAmount, fmtSign, fmtPct, fmtPctPlain, direction } = require('../../../utils/format');
 
 Component({
   externalClasses: ['card-class'],
@@ -64,10 +64,11 @@ Component({
           value: fmtAmount(t.value),
           dir: direction(t.value)
         })),
+        // 持股比例是水平值（不带号），括号里的变动才有方向
         northText:
           d.northPct == null
             ? ''
-            : fmtPct(d.northPct) + (d.northChangePct == null ? '' : '（' + fmtSign(d.northChangePct) + 'pct）'),
+            : fmtPctPlain(d.northPct) + (d.northChangePct == null ? '' : '（' + fmtSign(d.northChangePct) + 'pct）'),
         streakText: streakAbs ? '连续' + streakAbs + '日净' + (streak > 0 ? '流入' : '流出') : '',
         days5Dir: direction(d.days5 && d.days5.length ? d.days5[d.days5.length - 1] : null),
         // 龙虎榜三个量：席位 / 买入 / 卖出。正负号在 JS 里拼（wxml 不再写死 +-)：

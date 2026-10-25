@@ -17,7 +17,7 @@
 - 红涨绿跌：`--up` #F04A4A / `--down` #1AA97C；`--up` 只表示行情涨跌，删除/退出/校验错误用 `--danger`
 
 ## 验证
-- 微信开发者工具**服务端口已关闭**，不能 CLI 自动化验证，手动编译查看
+- 微信开发者工具**可 CLI 调用**（2026-10-25 复核）：`& "C:\Program Files (x86)\Tencent\微信web开发者工具\wechatide.cmd" -c CodeBuddy <tool> --project <项目绝对路径>`，已登录，`skill-call` 无需服务端口与 token；可 `open_project_window` / `simulator_open_page` / `simulator_screenshot` / `get_simulator_console` 做真机级验证
 - 改输入栏 / 弹窗 / 手势 / WS 消息渲染前必读 `.codebuddy/rules/miniapp-gotchas.md`
 
 ## 相关

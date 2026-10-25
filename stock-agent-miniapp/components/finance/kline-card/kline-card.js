@@ -6,7 +6,7 @@
 // 新建分包 + 构建 npm，与当前「主包 ≤2MB、零新增依赖」的改造节奏冲突；
 // 这里按指南对「迷你走势线」的同一思路（SVG polyline 手写）扩展到 K 线，
 // 数据字段与版式与设计稿一致，后续若要交互式图表可平滑替换图表区。
-const { fmtNum, fmtPct, direction } = require('../../../utils/format');
+const { fmtNum, fmtPct, fmtPctPlain, direction } = require('../../../utils/format');
 const { svgToDataUri } = require('../../../utils/svg-uri');
 
 // viewBox 与分区（对齐视觉稿：K 线区 ≥180rpx，下方成交量）
@@ -288,7 +288,8 @@ Component({
       this.setData({
         pctText: fmtPct(d.periodPct),
         pctDir: direction(d.periodPct),
-        amplitudeText: fmtPct(d.amplitude),
+        // 振幅没有方向，不带正负号
+        amplitudeText: fmtPctPlain(d.amplitude),
         volumeRatioText: fmtNum(d.volumeRatio),
         ma5Text: ma5Last === null ? '--' : fmtNum(ma5Last),
         supportText: fmtNum(d.support),

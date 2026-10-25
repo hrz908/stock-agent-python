@@ -47,29 +47,24 @@
 
 /* ===== 消息间距 =====
    消息之间统一用上边距（不由组件的 margin-bottom 决定）：
-   第一条上方是本容器的上边距，最后一条下方彻底为 0 */
+   第一条上方是本容器的上边距，最后一条下方彻底为 0。
+   AI 回复没有气泡外壳，轮次之间必须留足一整档才分得开 */
 .msg {
-  margin-top: var(--sp-4);
+  margin-top: var(--sp-5);
 }
 
-/* ===== 用户气泡：右对齐，主行动蓝实底 + 白字（参考图 chat 页） ===== */
+/* ===== 用户提问：右对齐浅底小块 =====
+   不用近黑实底：每次提问都是一块黑，会把视线从回答上拽走 */
 .msg--user {
   display: flex;
   justify-content: flex-end;
 }
 
-/* 用户气泡：shadcn primary 近黑底（原先用主行动蓝，属大面积强调色，
-   违反「强调色只做链接/焦点」的收口规则） */
 .bubble--user {
   max-width: 80%;
   padding: var(--sp-2) var(--sp-3);
-  background: var(--ink);
-  border-radius: var(--r-tag) var(--r-tag) 0 var(--r-tag);
-}
-
-/* 蓝底上文字必须反白，否则 var(--ink) 近黑字看不见 */
-.bubble--user .bubble-text {
-  color: var(--primary-fg); /* 深色底上的浅色文字 */
+  background: var(--surface-2);
+  border-radius: var(--r-card) var(--r-card) var(--r-tag) var(--r-card);
 }
 
 .bubble-text {
@@ -80,20 +75,21 @@
   word-break: break-word;
 }
 
-/* ===== AI 气泡：左对齐卡片面 ===== */
+/* ===== AI 回复：不包气泡，挂左侧页边线 =====
+   白底页面再套白底描边气泡只是噪音；回答靠留白与页边线定位，
+   一屏里「包起来的盒子」只剩金融卡与用户提问，数量不再随字数增长 */
 .msg--assistant {
   display: flex;
   justify-content: flex-start;
 }
 
 .bubble--assistant {
-  max-width: 92%;
-  padding: var(--sp-3) var(--pad-card);
-  background: var(--surface);
-  border: var(--hairline);
-  border-radius: var(--r-tag) var(--r-tag) var(--r-tag) 0;
-  /* 浅色主题：白气泡落在浅灰底上靠轻投影浮起来（参考图 chat 页） */
-  box-shadow: var(--shadow-card);
+  max-width: 100%;
+  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+  background: transparent;
+  border: none;
+  border-left: 2rpx solid var(--line); /* 例外：页边线是版式标记，不走 --hairline */
+  border-radius: 0;
 }
 
 /* ===== markdown 版式 =====
@@ -281,6 +277,7 @@
   padding: 0;
   background: transparent;
   border: none;
+  border-left: none; /* 卡片自带外壳，页边线也要撤掉，否则卡外多一条竖线 */
 }
 
 /* .msg-card 已上收到 styles/token.wxss（与卡片画廊测试页共用，避免两边漂移） */
@@ -295,7 +292,7 @@
 }
 
 /* ===== 状态提示（正在思考 / 工具查询 / 重连） =====
-   与 AI 气泡同一套视觉语言：卡片面、左上直角，挂在列表底部 */
+   与 AI 回复共用同一条页边线，不单独占一个盒子 */
 .status-tip {
   display: flex;
   align-items: center;
@@ -303,10 +300,8 @@
   width: fit-content;
   max-width: 80%;
   margin-top: var(--sp-4);
-  padding: var(--sp-2) var(--sp-3);
-  background: var(--surface);
-  border: var(--hairline);
-  border-radius: 0 var(--r-tag) var(--r-tag) var(--r-tag);
+  padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+  border-left: 2rpx solid var(--line); /* 例外：页边线是版式标记，不走 --hairline */
 }
 
 .status-tip-text {
@@ -342,7 +337,7 @@
 .thinking-bubble {
   display: flex;
   align-items: center;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
 }
 
 .thinking-dots {
@@ -379,13 +374,46 @@
   }
 }
 
-/* ===== 免责声明（合规兜底条，所有回答底部固定挂载） ===== */
-.disclaimer {
+/* ===== 首屏引导问题 =====
+   只有问候语时出现，点一下等于发送（chat.js onQuickAsk）。
+   省掉「我能问什么」这一轮思考，首屏不再是白纸 */
+.quick-asks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
   margin-top: var(--sp-4);
-  padding: var(--sp-2) var(--sp-3);
+}
+
+.quick-asks-title {
+  font-size: var(--fs-aux);
+  color: var(--ink-3);
+}
+
+.quick-ask {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: 88rpx;
+  padding: 0 var(--sp-3);
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-tag);
-  background: var(--surface-2);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
+}
+
+.quick-ask-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ===== 免责声明（合规兜底条，所有回答底部固定挂载） =====
+   纯文字不占盒子：每屏都在的固定元素，越安静越好 */
+.disclaimer {
+  margin-top: var(--sp-5);
   font-size: var(--fs-min);
   line-height: 1.7;
   color: var(--ink-3);
@@ -411,9 +439,9 @@
   box-sizing: border-box;
 }
 
-/* 胶囊本体：一条圆角条，左端模式键、右端发送键，中间是输入区或「按住说话」 */
+/* 胶囊本体：一条圆角条，左端模式键、右端发送键，中间是输入区或语音键。
+   键盘态与语音态**同一套底色**：切换只换文字与图标，不做整条变色 */
 .sender-bar {
-  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -427,80 +455,129 @@
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-pill);
-  /* 裁剪深色扫入层：scaleX 过程中 ::after 的圆角会被横向压扁、
-     不再贴合胶囊弧线，不加这条黑块会从右端圆角外溢出 */
-  overflow: hidden;
   box-shadow: var(--shadow-pop);
-  /* 深色底不再走整条 background 渐变：发送键被 wx:if 移除的瞬间，
-     均匀渐变会让右侧露白「闪一下」。改由 ::after 深色层从右往左扫入 */
-  transition: border-color 0.22s ease;
 }
 
-/* 语音态深色底：从右侧（发送键原位置）向左扫入填充；
-   切回键盘态时向右收回。z-index 0 垫底，内容元素都抬到它之上 */
-.sender-bar::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  border-radius: var(--r-pill);
-  background: var(--ink);
-  transform: scaleX(0);
-  transform-origin: right center;
-  transition: transform 0.3s ease;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.sender-bar--voice::after {
-  transform: scaleX(1);
-  /* 语音态抬到发送键之上：扫入时直接把它盖住。发送键本身不隐藏、
-     不移除、不移动（位置见 .bar-send 语音态的 margin-left:auto），
-     只是被这层深色压在下面——「被语音胶囊盖住」是纯绘制层效果 */
-  z-index: 2;
-}
-
-/* 模式键（语音 / 键盘）：深色圆钮（与发送键同款 --ink），图标反白。
-   比组件自带的 64rpx 放大到 88rpx，更好点按；
-   点按不再有原生「闪一下」的高亮（去掉 webview tap 高亮） */
+/* 模式键（语音 / 键盘）：无底灰图标 / 灰字，两态一致，只换内容。
+   发送键才是唯一的主按键；热区 88rpx，点按不出现原生高亮 */
 .bar-btn {
+  position: relative;
   flex: none;
   width: 88rpx;
   height: 88rpx;
+  box-sizing: border-box;
   border-radius: 50%;
-  background: var(--ink);
+  /* 与发送键同款圆圈：两个圆钮分列胶囊两端，视觉上对称 */
+  border: var(--hairline);
+  box-shadow: var(--shadow-card);
   color: var(--ink-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   -webkit-tap-highlight-color: transparent;
-  /* 背景切换不做渐变：从语音退回键盘时深色层还在向右撤，
-     若慢慢渐变回黑底，白图标会先露在浅底上闪一下，必须瞬时恢复 */
-  transition: background 0s;
+}
+
+/* 两个图标叠在同一格，靠 opacity 交叉淡入。
+   必须绝对定位 + display:block：ant-icon 渲染成行内 text，
+   行内元素不吃 transform，居中会偏 */
+.bar-btn-mic,
+.bar-btn-keyboard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  transform: translate(-50%, -50%);
+  transition: opacity 180ms ease;
+}
+
+.bar-btn-mic {
+  opacity: 1;
+}
+
+.bar-btn-keyboard {
+  opacity: 0;
+}
+
+.bar-btn--voice .bar-btn-mic {
+  opacity: 0;
+}
+
+.bar-btn--voice .bar-btn-keyboard {
+  opacity: 1;
 }
 
 /* ===== 语音输入 ===== */
-/* 实时转写浮层：贴在输入栏正上方（sender-wrap 是绝对定位容器，
-   bottom:100% 即容器上沿），不占布局高度；最多三行，超出省略
-   浮层刚出现时从下往上淡入，避免文字突然糊上来 */
-.voice-live {
+/* 预输入文字框：点一下语音键后贴在输入栏正上方（sender-wrap 是绝对定位容器，
+   bottom:100% 即容器上沿），不占布局高度，也不会把对话区挤短。
+   出现时从下往上淡入，避免文字突然糊上来 */
+.voice-panel {
   position: absolute;
   left: var(--sp-3);
   right: var(--sp-3);
   bottom: 100%;
   margin-bottom: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
+  padding: 0 var(--sp-3) var(--sp-3);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-card);
   box-shadow: var(--shadow-pop);
-  pointer-events: none;
   animation: voice-live-in 160ms ease both;
 }
 
-.voice-live-text {
+/* 头部：波形 + 说明 + 取消。88rpx 是「取消」的最小热区，
+   顺带把这一行撑成面板的标题行 */
+.voice-panel-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 88rpx;
+}
+
+.voice-panel-tip {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-aux);
+  color: var(--ink-2);
+}
+
+.voice-panel-cancel {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-left: var(--sp-3);
+  font-size: var(--fs-aux);
+  color: var(--ink-3);
+}
+
+/* 波形：三根竖条错相跳动。用强调色而不是红/绿——红绿在这里会被读成涨跌 */
+.voice-wave {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  height: 28rpx;
+}
+
+.voice-wave-bar {
+  width: 6rpx;
+  height: 10rpx;
+  border-radius: 3rpx;
+  background: var(--accent);
+  animation: voice-wave 900ms ease-in-out infinite;
+}
+
+.voice-wave-bar:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.voice-wave-bar:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes voice-wave {
+  0%, 100% { height: 10rpx; opacity: 0.45; }
+  50% { height: 28rpx; opacity: 1; }
+}
+
+/* 实时转写：最多三行，超出省略。空串时由 JS 给「请说话…」占位 */
+.voice-panel-text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -509,6 +586,10 @@
   line-height: 1.6;
   color: var(--ink);
   word-break: break-word;
+}
+
+.voice-panel-text--empty {
+  color: var(--ink-3);
 }
 
 @keyframes voice-live-in {
@@ -522,49 +603,6 @@
   }
 }
 
-/* 语音态：胶囊描边随深色底同步 */
-.sender-bar--voice {
-  border-color: var(--ink);
-}
-
-.sender-bar--voice .bar-btn {
-  /* 语音态「按住说话」层绝对铺满胶囊，需把模式键抬到它之上，
-     否则键盘图标被覆盖、点不中，切不回键盘态。
-     z-index 取 3：::after 深色扫入层已是 2（要盖住常驻的发送键），
-     模式键必须再高一档，否则会被扫入层压住点不中 */
-  position: relative;
-  z-index: 3;
-  /* 键盘切换键背景透明：胶囊已整体扫成深色，反白图标观感不变，
-     去掉圆钮自绘黑底，圆弧不再与胶囊弧线叠出接缝。
-     只改语音态：键盘态胶囊是白底，透明会让白图标隐入背景 */
-  background: transparent;
-  /* 变透明要等深色扫入层铺满再发生（0.28s，与 ::after 同步）：
-     扫入从右往左，最后才盖到左端的模式键，提前透明会露白闪一下。
-     切回键盘态走上面 .bar-btn 的 0s 无延迟规则，立即恢复黑底 */
-  transition: background 0s linear 0.28s;
-}
-
-/* 语音态「按住说话」：绝对铺满整个胶囊，「按住说话」四个字
-   在胶囊内左右上下精确居中（含左端模式键的全宽口径）。
-   注意 height 必须显式置 auto：base 规则的 88rpx 会让
-   top/bottom/height 同时非 auto（over-constrained），此时 bottom
-   被忽略、层高被钉在 88rpx 锚在顶部，铺不满胶囊全高，
-   文字会比真中心高一截——这正是「不居中」的根因 */
-.sender-bar--voice .bar-hold {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  height: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: var(--primary-fg);
-  z-index: 1;
-}
-
 /* 输入区：紧贴模式键右侧，多行时随内容长高（textarea auto-height） */
 .bar-field {
   flex: 1;
@@ -573,9 +611,6 @@
   align-items: center;
   /* 上下留白把单行文字垂直居中；多行时 auto-height 会把胶囊一起撑高 */
   padding: var(--sp-2) 0;
-  /* 抬到胶囊深色扫入层（::after）之上 */
-  position: relative;
-  z-index: 1;
 }
 
 .bar-input {
@@ -590,118 +625,115 @@
   color: var(--ink);
 }
 
-/* 语音态：模式键右侧的「按住说话」长条 */
+/* 语音键：和输入区同占中间剩余宽度。两态都在同一条白胶囊里，
+   不再需要深色底、绝对定位和那一串 z-index */
 .bar-hold {
   flex: 1;
   min-width: 0;
   height: 88rpx;
-  border-radius: var(--r-pill);
-  background: var(--surface-2);
-  color: var(--ink);
-  font-size: var(--fs-body);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: var(--fs-body);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* 发送键：恒为主按钮近黑底（无输入内容、正在等回复都不切色，只有按压态的
-   hover-class 已被全站取消，所以这里也不再写 --active / --hover） */
+/* 发送键：不填充，圆圈描边与输入框同款（--hairline），靠墨色图标表达主次 */
 .bar-send {
   flex: none;
   width: 88rpx;
   height: 88rpx;
   border-radius: 50%;
-  background: var(--ink);
+  background: transparent;
+  border: var(--hairline);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
   display: flex;
   align-items: center;
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
-  /* 抬到胶囊深色扫入层（::after）之上 */
-  position: relative;
-  z-index: 1;
+  /* 常驻节点，切换时只变描边与字色：给过渡就顺滑，不给就是硬切 */
+  transition: color 180ms ease, border-color 180ms ease;
 }
 
-/* 语音态发送键：位置与键盘态完全一致——键盘态靠输入区 flex:1 把它顶到
-   最右；语音态输入区不在场，用 margin-left:auto 把它继续钉在同一右边缘，
-   切换前后位置零位移（绝不挪到模式键旁边/语音层左侧）。
-   不隐藏、不移除、不改透明度：它只是被从右向左扫入的深色胶囊层
-   （::after，语音态 z-index 2）盖在下面；常驻 DOM 也意味着切换时不会
-   重放 bar-fade-in 淡入——重放正是白色发送图标「闪一下」的根因 */
-.sender-bar--voice .bar-send {
-  margin-left: auto;
+/* 语音态：连圆圈也去掉，只留图标。胶囊里没有文字可发，
+   这个键的语义变成「收尾并发出」——未在聆听时与左端模式键同灰，
+   聆听中才提到正文字色，表示此刻可点 */
+.bar-send--plain {
+  background: transparent;
+  border-color: transparent;
+  /* 描边都撤了，投影一起撤，否则图标像浮在半空 */
+  box-shadow: none;
+  color: var(--ink-2);
+}
+
+.bar-send--plain.bar-send--live {
+  color: var(--ink);
 }
 
 /* 加载态：方块代替发送图标（沿用 chat-sender 的「停止」观感）。
-   蓝底上用白色方块，与发送图标同色系 */
+   按键不再有填充，方块随按钮前景色走 */
 .bar-send-stop {
   width: 26rpx;
   height: 26rpx;
   border-radius: var(--r-tag);
-  background: var(--surface);
+  background: var(--ink);
 }
 
-/* 键盘 / 语音切换时，进场子元素只做透明度交叉淡入（0.3s，与键盘同速）。
-   不带位移：键盘本身正在弹出/收起，元素再自己滑一段会双重运动，
-   看起来就是「闪动跳动」；纯淡入与深色扫入层同步收放，观感是一口气 morph 完成。
-   注意 bar-send 已常驻 DOM（不随语音态移除），这段淡入只在页面首次加载时
-   播一遍，切换时不会重放——重放会让白色发送图标在扫入层退走时闪一下 */
-.bar-field,
-.bar-hold,
-.bar-send {
-  animation: bar-fade-in 300ms ease both;
+.bar-send--plain .bar-send-stop {
+  background: var(--ink-2);
 }
 
-@keyframes bar-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
+/* 中间区（输入框 / 语音键）不做进场动画：
+   这两个节点是 wx:if 互斥的，每次切换都会「销毁 + 重建」，
+   挂淡入等于每切一次就从透明淡上来一遍——那正是切换时看到的闪。
+   直接换节点、靠上面的图标交叉淡入承担过渡即可 */
 
-/* ===== 侧边抽屉 ===== */
-/* 面板本体由 base-popup 提供（surface 底 + 左滑动画），这里只管内容排版 */
+/* ===== 侧边抽屉 =====
+   竖向三层：头部与导航固定 → 历史对话自己滚（吃掉剩余高度）
+   → 「新对话」钉死在底部 */
 .drawer-body {
   width: 520rpx;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  /* padding-top 由内联样式提供（避让状态栏） */
-  padding: 0 0 var(--sp-2);
+  /* 上下内边距由内联样式提供：上方避让状态栏，下方与输入栏共用安全区 */
+  padding: 0;
   box-sizing: border-box;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .drawer-head {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  /* 上下留白加大，让品牌头部整体更突出 */
-  padding: var(--sp-3) var(--sp-3);
-  /* 品牌头部整体上移一点（负 margin 抵消 drawerTop 里多让出的空间） */
-  margin-top: var(--sp-1);
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) var(--sp-4);
 }
 
 .drawer-logo {
   flex: none;
-  width: 128rpx;
-  height: 128rpx;
+  width: 96rpx;
+  height: 96rpx;
   border-radius: 50%;
   overflow: hidden;
-  border: var(--hairline);
+  background: var(--surface-2);
 }
 
 .drawer-title-col {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
 }
 
 .drawer-title {
-  font-size: var(--fs-brand);
+  font-size: var(--fs-title);
   font-weight: 700;
   color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -713,25 +745,34 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* 新对话主按钮：导航栏下方的主行动点，shadcn 近黑主按钮——与全局 .btn-primary
-   同款（--ink 底 + --primary-fg 字）。token 规范：强调蓝只做链接/选中态/焦点 ring，
-   不再用蓝做主按钮；文字色走 token，不写死 #ffffff */
+/* 新对话按键：抽屉底部的主行动点，落在拇指区。
+   外盒的内边距 / 描边 / 内容高度全部照抄 .sender-bar（输入栏），
+   两边用同一个公式算高度——写死一个 rpx 值会在不同换算下差半像素 */
 .drawer-new {
+  flex: none;
+  /* 下边距与 .sender-bar 相同（--sp-2），配合抽屉底部安全区内边距对齐 */
+  margin: var(--sp-3) var(--sp-3) var(--sp-2);
+  padding: var(--sp-1) 12rpx;
+  box-sizing: border-box;
+  background: transparent;
+  border: var(--hairline);
+  border-radius: var(--r-tag);
+  box-shadow: var(--shadow-card);
+}
+
+/* 88rpx = .sender-bar 里 .bar-btn 的高度，撑起与输入栏一致的高度 */
+.drawer-new-inner {
+  height: 88rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  min-height: 88rpx;
-  /* 左右留白与各分区一致；上方间距由抽屉 body 的 flex gap（--sp-3）提供 */
-  margin: 0 var(--sp-3);
-  background: var(--ink);
-  border-radius: var(--r-card);
 }
 
 .drawer-new-text {
   font-size: var(--fs-body);
   font-weight: 600;
-  color: var(--primary-fg);
+  color: var(--ink);
 }
 
 /* 创建中：底色不变，只把整块压暗一档 + 转圈，提示「在忙」而不是「点了没反应」。
@@ -740,12 +781,12 @@
   opacity: 0.72;
 }
 
-/* 转圈：与图标同尺寸（32rpx），描边取按钮前景色，在近黑底上才看得见 */
+/* 转圈：与图标同尺寸（32rpx），描边随按钮前景色（按键已无填充，用墨色） */
 .drawer-new-spinner {
   width: 32rpx;
   height: 32rpx;
   box-sizing: border-box;
-  border: 4rpx solid var(--primary-fg);
+  border: 4rpx solid var(--ink);
   border-top-color: transparent;
   border-radius: 50%;
   animation: drawer-new-spin 0.8s linear infinite;
@@ -756,23 +797,11 @@
   to { transform: rotate(360deg); }
 }
 
-.drawer-section {
+/* 导航：纯行，不再套分组外框。
+   图标承担识别，所以连「导航」小标题也省掉了 */
+.drawer-nav {
+  flex: none;
   padding: 0 var(--sp-3);
-}
-
-.drawer-section-title {
-  margin-bottom: var(--sp-2);
-  font-size: var(--fs-aux);
-  font-weight: 600;
-  color: var(--ink-2);
-}
-
-/* 导航菜单：分组卡片承载 */
-.drawer-menu {
-  background: var(--surface-2);
-  border: var(--hairline);
-  border-radius: var(--r-tag);
-  overflow: hidden;
 }
 
 .drawer-item {
@@ -780,16 +809,11 @@
   align-items: center;
   gap: var(--sp-2);
   min-height: 96rpx;
-  padding: 0 var(--sp-3);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-tag);
 }
 
-/* 行间分隔线：sep 由 JS 按行号算好（WXSS 禁兄弟选择器） */
-.drawer-item--sep {
-  border-top: var(--hairline);
-}
-
-/* 文字吃满剩余宽度，右侧箭头自然贴边。
-   按压态「暗一下」按需求取消，故不再有 --hover 规则 */
+/* 文字吃满剩余宽度，右侧箭头自然贴边 */
 .drawer-item-text {
   flex: 1;
   font-size: var(--fs-body);
@@ -798,34 +822,56 @@
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* ===== 历史对话：新对话下方的可滚动容器 ===== */
-/* 抽屉 body 本身可滚，这里给列表一个上限高度做内部滚动，
-   短屏时外层照常滚，不会把导航区顶出画面 */
+/* ===== 历史对话：只有这一块滚 ===== */
 .drawer-history {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  padding: 0 var(--sp-3) var(--sp-1);
 }
 
+/* 历史区独占「历史对话」标题与底部按钮之间的全部高度：
+   内容超出由 scroll-view 自己裁掉（overflow 不外溢），
+   滚动条一律不画——enhanced + show-scrollbar=false 管原生层，
+   下面这条 webkit 兜底防某些内核仍画出细条 */
 .history-scroll {
-  max-height: 720rpx;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
 }
 
+.history-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.drawer-section-title {
+  flex: none;
+  padding: var(--sp-3) var(--sp-2) var(--sp-2);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* 会话行：平时无壳，当前会话才套一个方框。
+   透明边框常驻占位，选中时只改颜色——加边不加边会让行高与文字左右位移；
+   行与行之间留一档间距，选中框才不会和上下行贴在一起 */
 .history-item {
   display: flex;
   align-items: center;
-  min-height: 88rpx;
-  padding: 0 var(--sp-2) 0 var(--sp-3);
-  background: var(--surface-2);
-  border: var(--hairline);
-  border-radius: var(--r-tag);
+  height: 88rpx;
   margin-bottom: var(--sp-2);
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  border: 2rpx solid transparent;
+  border-radius: var(--r-tag);
 }
 
-/* 选中效果：当前会话——淡蓝底 + 蓝描边 + 蓝标题 */
+/* 当前会话：方框 + 投影，与全站「浮起面」同一套 */
 .history-item--active {
-  background: var(--accent-tint);
-  border: 2rpx solid var(--accent);
+  border-color: var(--line);
+  box-shadow: var(--shadow-card);
 }
 
 .history-item-main {
@@ -836,20 +882,20 @@
 .history-item-title {
   display: block;
   font-size: var(--fs-body);
-  color: var(--ink);
+  color: var(--ink-2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .history-item--active .history-item-title {
-  color: var(--accent);
+  color: var(--ink);
   font-weight: 600;
 }
 
-/* 删除入口：固定宽热区，catchtap 防冒泡（不会误触选中） */
+/* 删除入口：88rpx 热区，catchtap 防冒泡（不会误触选中） */
 .history-item-del {
   flex: none;
-  width: 72rpx;
-  height: 72rpx;
+  width: 88rpx;
+  height: 88rpx;
   display: flex;
   align-items: center;
   justify-content: center;

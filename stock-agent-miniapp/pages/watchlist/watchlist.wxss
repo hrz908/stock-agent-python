@@ -23,6 +23,7 @@
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
 }
 
 .overview-head {
@@ -71,11 +72,12 @@
   background: var(--down-tint);
 }
 
-/* 总浮动金额：主数字级字号（--fs-hero）+ 等宽 */
+/* 总浮动金额：本页唯一的 display 数字，与标签拉开 2.5 倍层级 */
 .hero-amount {
   margin-top: var(--sp-2);
-  font-size: var(--fs-hero);
-  font-weight: 700;
+  font-size: var(--fs-display);
+  font-weight: 600;
+  line-height: 1.2;
   letter-spacing: -0.5rpx;
 }
 
@@ -136,32 +138,18 @@
   }
 }
 
-/* ===== 筛选：占满整行的段式单选（radio） ===== */
+/* ===== 筛选：占满整行的段式单选（radio） =====
+   无槽底色、无滑动黑块：整条只有一个胶囊轮廓，选中项靠字重与字色区分 */
 .filter-radio {
-  position: relative;            /* 滑块绝对定位基准 */
   display: flex;
   margin-top: var(--sp-3);
   padding: 4rpx;
-  background: var(--surface-2);   /* 未选中槽底（zinc-100） */
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-pill);   /* 胶囊整体圆角 */
-  overflow: hidden;
-}
-/* 滑动黑块（选中态）：与「添加股票」按钮同款近黑底白字 */
-.filter-radio__thumb {
-  position: absolute;
-  top: 4rpx;
-  bottom: 4rpx;
-  left: 4rpx;
-  background: var(--ink);
   border-radius: var(--r-pill);
-  pointer-events: none;          /* 不拦截点击，事件落到文字项 */
-  transition: transform .25s cubic-bezier(.4, 0, .2, 1);  /* 滑动动画 */
-  z-index: 0;
+  box-shadow: var(--shadow-card);
 }
 .filter-radio__item {
-  position: relative;            /* 文本层压在滑块之上 */
-  z-index: 1;
   flex: 1;
   min-width: 0;
   text-align: center;
@@ -172,7 +160,7 @@
   transition: color .2s;
 }
 .filter-radio__item--on {
-  color: var(--primary-fg);      /* 选中：白字（黑底由滑块提供） */
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -195,6 +183,7 @@
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 
@@ -308,24 +297,23 @@
   right: var(--sp-4);
 }
 
-/* 底部主按钮：shadcn 近黑底白字（原主行动蓝已按 DESIGN.md「强调色收口」
-   降级为链接/选中态专用，主按钮不再用蓝；重投影一并去除） */
+/* 底部主按钮：浮起面（--hairline + --shadow-card），主次靠字色与字重 */
 .add-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--sp-1);
   height: 96rpx;
-  border-radius: var(--r-card);
-  background: var(--ink);
+  border-radius: var(--r-pill);
+  background: transparent;
+  border: var(--hairline);
   box-shadow: var(--shadow-card);
 }
 
 .add-btn-text {
   font-size: var(--fs-body);
   font-weight: 600;
-  /* 蓝底按钮上的文字反白（原金色底用深色字，主题切蓝后必须跟着换） */
-  color: var(--primary-fg); /* 深色底上的浅色文字 */
+  color: var(--ink);
 }
 
 /* ===== 添加自选表单 ===== */
@@ -350,9 +338,10 @@
   box-sizing: border-box;
   font-size: var(--fs-body);
   color: var(--ink);
-  background: var(--surface-2);
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
 }
 
 .form-input-placeholder {

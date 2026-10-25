@@ -7,8 +7,13 @@
   <view class="content">
     <!-- 概览宫格：两格（全部提醒 / 今日触发），自绘替代 t-grid -->
     <view class="overview">
-      <!-- 文字在左、数字在右（左右对齐），文字加大加粗 -->
-      <view class="overview-cell" wx:for="{{stats}}" wx:for-item="s" wx:key="key">
+      <!-- 两格共用一张卡，中间一条竖分割线（WXSS 禁兄弟选择器，按行号算 class） -->
+      <view
+        class="overview-cell {{index > 0 ? 'overview-cell--sep' : ''}}"
+        wx:for="{{stats}}"
+        wx:for-item="s"
+        wx:key="key"
+      >
         <view class="g-label">{{s.label}}</view>
         <view class="g-num num">{{s.num}}</view>
       </view>
@@ -39,15 +44,19 @@
         </view>
       </view>
 
-      <!-- 空态 -->
-      <base-empty wx:else icon="BellOutline" text="暂无提醒" />
+      <!-- 空态：带下一步动作 -->
+      <base-empty
+        wx:else
+        icon="BellOutline"
+        text="还没有提醒"
+        sub="为关注的股票设一条价格或涨幅提醒"
+      />
     </scroll-view>
   </view>
 
   <!-- 底部操作区 -->
   <view class="bottom-btn" style="bottom: {{bottomGap}}px;">
     <view class="add-btn" bindtap="onAdd">
-      <ant-icon type="AddOutline" style="font-size:36rpx;color:#FFFFFF;" />
       <text class="add-btn-text">新增提醒</text>
     </view>
   </view>

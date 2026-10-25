@@ -1,49 +1,43 @@
-<!-- 估值卡：两行估值指标，四列 + 三列，全部等距居中。
-     分位类信息（PE 分位进度条 / 近5年分位）按需求移除——分位需要标注
-     历史区间口径，卡内不再出现口径文案，故整块不出。 -->
+<!-- 估值卡：两行各三列估值指标，等距居中。
+     列序按「同一类指标挨着」排：PE 两档相邻，PB / PS 在第二行，
+     股息率与 PEG 放一起——原先 4 列 + 3 列，PE 的两个值被拆到两行看不出来。
+     副标题原文罗列了六个指标名，格子里已有标签，属纯噪音，已删。
+     分位类信息（PE 分位进度条 / 近5年分位）按需求移除：分位需要标注历史区间口径，
+     卡内不再出现口径文案，故整块不出。 -->
 <view class="fcard card-class">
   <view class="fcard-hd">
     <view class="fcard-title-col">
       <view class="fcard-name">估值与股息</view>
-      <view class="fcard-code">PE(TTM) / PE(静) / PB / PS / PEG / 股息率</view>
     </view>
-
   </view>
 
   <view class="fgrid fgrid--flat">
     <view class="fgrid-row">
       <view class="fcell">
         <view class="fcell-k">PE(TTM)</view>
-        <view class="fcell-v num">{{peTTMText}}</view>
+        <view class="fcell-v num">{{peTtmText}}</view>
+      </view>
+      <view class="fcell">
+        <view class="fcell-k">PE(静态)</view>
+        <view class="fcell-v num">{{peStaticText}}</view>
       </view>
       <view class="fcell">
         <view class="fcell-k">PB</view>
         <view class="fcell-v num">{{pbText}}</view>
       </view>
+    </view>
+    <view class="fgrid-row fgrid-row--gap">
       <view class="fcell">
         <view class="fcell-k">股息率</view>
         <view class="fcell-v num">{{yieldText}}</view>
-      </view>
-      <view class="fcell">
-        <view class="fcell-k">PEG</view>
-        <view class="fcell-v num">{{pegText}}</view>
-      </view>
-    </view>
-  </view>
-
-  <view class="fgrid fgrid-row--gap">
-    <view class="fgrid-row">
-      <view class="fcell">
-        <view class="fcell-k">PE(静态)</view>
-        <view class="fcell-v num">{{peStaticText}}</view>
       </view>
       <view class="fcell">
         <view class="fcell-k">PS</view>
         <view class="fcell-v num">{{psText}}</view>
       </view>
       <view class="fcell">
-        <view class="fcell-k">总市值</view>
-        <view class="fcell-v num">{{capText}}</view>
+        <view class="fcell-k">PEG</view>
+        <view class="fcell-v num">{{pegText}}</view>
       </view>
     </view>
   </view>

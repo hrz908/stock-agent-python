@@ -17,25 +17,23 @@
   padding: var(--sp-3) var(--sp-4) 0;
 }
 
-/* ===== 个人信息卡 ===== */
-/* 竖向居中：头像在上、两行文字在下，整组水平居中，与 navbar「我的」对齐 */
+/* ===== 个人信息卡 =====
+   行式布局：本页唯一可点的一行，居中大卡既费纵向空间，又看不出可点 */
 .profile-card {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-4) var(--sp-4);
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-card);
-  text-align: center;
 }
 
 .profile-avatar {
   flex: none;
-  width: 128rpx;
-  height: 128rpx;
+  width: 112rpx;
+  height: 112rpx;
   border-radius: 50%;
   overflow: hidden;
   background: var(--surface-2);
@@ -49,26 +47,26 @@
 }
 
 .profile-info {
-  width: 100%;
-  text-align: center;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
 }
 
 .profile-nickname {
   font-size: var(--fs-title);
   font-weight: 600;
   color: var(--ink);
-  text-align: center;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 「点击编辑头像与昵称」：整段文字居中 */
 .profile-desc {
   margin-top: var(--sp-1);
   font-size: var(--fs-aux);
   color: var(--ink-3);
-  text-align: center;
+  text-align: left;
 }
 
 /* ===== 底部操作区 ===== */
@@ -78,25 +76,24 @@
   right: var(--sp-4);
 }
 
-/* 底部按钮：shadcn 主按钮范式——近黑底白字（--ink / --primary-fg）。
-    danger 变体覆盖为红描边淡红底（退出登录不是主流程动作） */
+/* 底部按钮：无填充、胶囊轮廓，描边与输入框同款（--hairline） */
 .footer-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 96rpx;
-  border-radius: var(--r-card);
+  border-radius: var(--r-pill);
   font-size: var(--fs-body);
   font-weight: 600;
-  background: var(--ink);
-  color: var(--primary-fg);
+  background: transparent;
+  color: var(--ink);
+  border: var(--hairline);
+  box-shadow: var(--shadow-card);
 }
 
-/* 危险操作：红色描边 + 红字，不用实底（退出登录不是主流程动作） */
+/* 危险操作：只靠红字表达，描边与输入框一致 */
 .footer-btn--danger {
   color: var(--danger);
-  border: 1px solid var(--danger-border); /* 第8条例外：状态色描边，不适用中性 --hairline */
-  background: var(--danger-tint);
 }
 
 .footer-hint {
@@ -158,9 +155,10 @@
   text-align: center;
   font-size: var(--fs-body);
   color: var(--ink);
-  background: var(--surface-2);
+  background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
 }
 
 .edit-input-placeholder {

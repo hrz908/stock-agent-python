@@ -13,8 +13,10 @@
       </view>
       <view class="profile-info">
         <view class="profile-nickname">{{nickname}}</view>
-        <view class="profile-desc">点击编辑头像与昵称</view>
+        <view class="profile-desc">编辑头像与昵称</view>
       </view>
+      <!-- 右侧箭头：整行可点，没有箭头时看不出这是一行入口 -->
+      <ant-icon type="RightOutline" style="font-size:32rpx;color:var(--ink-3);" />
     </view>
 
     <!-- 消息推送卡片按需求整块移除（偏好设置组随之消失，pushEnabled 相关
