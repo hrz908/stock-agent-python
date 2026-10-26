@@ -58,7 +58,12 @@ function login() {
             }
             resolve('');
           },
-          fail: () => resolve('')
+          fail: (err) => {
+            // 手机端 vConsole 常常没有 Network 面板，失败原因只能靠这行日志暴露：
+            // url not in domain list = 域名白名单；ssl handshake = 证书；timeout = 网络
+            console.error('[login:fail]', err && err.errMsg);
+            resolve('');
+          }
         });
       },
       fail: () => resolve('')
@@ -124,7 +129,11 @@ function doRequest(url, method, data, token, retried) {
 
         reject(fail(body.code || res.statusCode, body.message));
       },
-      fail: (err) => reject(fail(-1, (err && err.errMsg) || '网络异常'))
+      fail: (err) => {
+        // 同上，手机端定位网络层失败的唯一线索
+        console.error('[request:fail]', url, err && err.errMsg);
+        reject(fail(-1, (err && err.errMsg) || '网络异常'));
+      }
     });
   });
 }
