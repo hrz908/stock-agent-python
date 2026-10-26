@@ -38,6 +38,7 @@ async def llm_stream(state: dict) -> dict:
     parts = []
     sent = []
     ttft_ms = None
+    last_usage = None
     async for chunk in llm.astream(msgs):
         if isinstance(chunk.content, str) and chunk.content:
             delta = cleaner.feed(chunk.content)
@@ -46,6 +47,11 @@ async def llm_stream(state: dict) -> dict:
                     ttft_ms = int((time.monotonic() - t0) * 1000)
                 sent.append(delta)
                 emit("token", {"delta": delta})
+        # 用量只认最后一块的累计值：chunk 相加会把 usage 反复累加，
+        # 审计里曾出现单轮 500 万 output tokens 这种不可能的数字
+        um = getattr(chunk, "usage_metadata", None)
+        if um:
+            last_usage = um
         parts.append(chunk)
     tail = cleaner.flush()
     if tail:
@@ -56,7 +62,10 @@ async def llm_stream(state: dict) -> dict:
         ai = ai + p
     # 落库/AIMessage 里也只留净化后的正文：否则下一轮历史又把这堆标签喂回模型
     if ai is not None:
-        ai = ai.model_copy(update={"content": "".join(sent)})
+        patch = {"content": "".join(sent)}
+        if last_usage:
+            patch["usage_metadata"] = last_usage
+        ai = ai.model_copy(update=patch)
     total_ms = int((time.monotonic() - t0) * 1000)
     return {
         "messages": [ai if ai is not None else AIMessage(content="")],

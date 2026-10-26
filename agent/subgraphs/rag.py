@@ -254,6 +254,7 @@ async def generate_with_citations(state: dict) -> dict:
     parts = []
     sent = []
     ttft_ms = None
+    last_usage = None
     async for chunk in llm.astream(messages):
         if isinstance(chunk.content, str) and chunk.content:
             delta = cleaner.feed(chunk.content)
@@ -262,6 +263,10 @@ async def generate_with_citations(state: dict) -> dict:
                     ttft_ms = int((time.monotonic() - t0) * 1000)
                 sent.append(delta)
                 emit("token", {"delta": delta})
+        # 只认最后一块的累计用量，避免 chunk 相加把 token 数放大几个数量级
+        um = getattr(chunk, "usage_metadata", None)
+        if um:
+            last_usage = um
         parts.append(chunk)
     tail = cleaner.flush()
     if tail:
@@ -271,7 +276,10 @@ async def generate_with_citations(state: dict) -> dict:
     for p in parts[1:]:
         ai = ai + p
     if ai is not None:
-        ai = ai.model_copy(update={"content": "".join(sent)})
+        patch = {"content": "".join(sent)}
+        if last_usage:
+            patch["usage_metadata"] = last_usage
+        ai = ai.model_copy(update=patch)
     total_ms = int((time.monotonic() - t0) * 1000)
     return {
         "messages": [ai if ai is not None else AIMessage(content="")],

@@ -141,3 +141,22 @@ def fast_intent(text: str) -> str:
     if is_realtime_data_question(q) and not is_concept_question(q):
         return "stock_agent"
     return "stock"
+
+
+# 问候/寒暄词：命中的短句直接判闲聊，不必让路由 LLM 再跑一次
+# （线上实测「你好」光分类就 1.81s，占首响 2.37s 的七成）
+_GREETING_WORDS = (
+    "你好", "您好", "hi", "hello", "hey", "在吗", "在么", "谢谢", "多谢", "感谢",
+    "好的", "好滴", "嗯", "哈", "早上好", "中午好", "晚上好", "辛苦了", "再见", "拜拜",
+)
+_CHAT_MAX_CHARS = 16
+
+
+def fast_chat(text: str) -> bool:
+    """短问候/寒暄 -> True（确定性判闲聊，跳过路由与改写的小模型调用）。"""
+    q = (text or "").strip().lower()
+    if not q or len(q) > _CHAT_MAX_CHARS:
+        return False
+    if hit_data_keyword(q) or is_document_question(q):
+        return False
+    return any(w in q for w in _GREETING_WORDS)

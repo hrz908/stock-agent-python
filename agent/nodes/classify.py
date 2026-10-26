@@ -24,7 +24,7 @@ from datetime import datetime
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
-from core.keywords import fast_intent, hit_data_keyword
+from core.keywords import fast_chat, fast_intent, hit_data_keyword
 from core.llm import get_small_llm
 from core.template import load_template, parse_route, render
 from nodes.rewrite import _format_history
@@ -142,6 +142,10 @@ async def classify(state: dict) -> dict:
     fast = fast_intent(query)
     if fast:
         return done({"intent": fast, "confidence": 1.0, "entities": {}})
+
+    # 问候寒暄：确定性判闲聊，省掉一次路由 LLM 往返（「你好」实测 1.8s）
+    if fast_chat(query):
+        return done({"intent": "chat", "confidence": 1.0, "entities": {}})
 
     # 指代不明兜底：「那个股票怎么样」无历史可消解时直接 clarify，不让路由 LLM 猜
     if _is_vague_reference(query):

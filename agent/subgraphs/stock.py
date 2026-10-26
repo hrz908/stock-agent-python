@@ -42,6 +42,7 @@ from config import (
 )
 from core.keywords import is_concept_question
 from core.llm import estimate_tokens, get_llm, is_context_overflow, message_chars
+from core.plan import fast_tool_calls
 from core.sanitize import StreamCleaner
 from core.state import AgentState, recent_turns
 from core.template import load_template, render
@@ -458,6 +459,20 @@ def _normalize_tool_call(ai: AIMessage) -> AIMessage:
     })
 
 
+async def _fast_plan(state: dict):
+    """确定性工具规划：能在本地确定工具与标的时，跳过 tool_call 的 LLM 往返。
+
+    线上实测这一跳占 1.4~2.8s（非流式、要等模型输出 tool_calls），而常见取数问句
+    的工具选择是确定的（见 core/plan.py）。只在「本轮还没有取数结果」或「本轮只
+    调过 symbol_search」时接管；拿不准返回 None，走原来的 LLM 决策。
+    """
+    results = state.get("tool_results") or []
+    if any(item.get("tool") != "symbol_search" for item in results):
+        return None
+    query = state.get("rewritten") or state.get("query") or ""
+    return await fast_tool_calls(query, results)
+
+
 async def tool_call(state: dict) -> dict:
     t0 = time.monotonic()
     prev_ms = int((state.get("timings") or {}).get("tool_call_ms", 0))
@@ -472,6 +487,11 @@ async def tool_call(state: dict) -> dict:
 
     # 首轮先懒加载工具集（进程内 @tool，见 _ensure_tools）
     await _ensure_tools()
+    # 确定性规划优先：命中规则就不必再等一次非流式的工具决策 LLM
+    planned = await _fast_plan(state)
+    if planned:
+        logger.info("fast plan, skip tool-call llm: %s", [c["name"] for c in planned])
+        return done([AIMessage(content="", tool_calls=planned)])
     # 只喂本轮消息（含本轮已取到的工具结果），逐条截断正文，防止上下文膨胀
     run_msgs = [_shrink(m) for m in _current_run_messages(state)]
     if not run_msgs:
@@ -1189,6 +1209,7 @@ async def synthesize(state: dict) -> dict:
     # 漏出的提示词标签（<user_query> 等）在 cleaner 里剥掉，正文原样透传
     cleaner = StreamCleaner()
     sent: list[str] = []
+    last_usage = None
     try:
         parts = []
         async for chunk in llm.astream(messages):
@@ -1199,6 +1220,10 @@ async def synthesize(state: dict) -> dict:
                         ttft_ms = int((time.monotonic() - t0) * 1000)
                     sent.append(delta)
                     emit("token", {"delta": delta})
+            # 只认最后一块的累计用量，避免 chunk 相加把 token 数放大几个数量级
+            um = getattr(chunk, "usage_metadata", None)
+            if um:
+                last_usage = um
             parts.append(chunk)
         tail = cleaner.flush()
         if tail:
@@ -1222,7 +1247,10 @@ async def synthesize(state: dict) -> dict:
         ai = ai + p
     # AIMessage 里也只留净化后的正文：下一轮历史不会再把标签喂回模型
     if ai is not None:
-        ai = ai.model_copy(update={"content": "".join(sent)})
+        patch = {"content": "".join(sent)}
+        if last_usage:
+            patch["usage_metadata"] = last_usage
+        ai = ai.model_copy(update=patch)
     total_ms = int((time.monotonic() - t0) * 1000)
     return {
         "messages": [ai if ai is not None else AIMessage(content="")],

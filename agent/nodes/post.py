@@ -20,9 +20,19 @@ from core.redis import get_redis
 logger = logging.getLogger("stocka.agent")
 
 def _collect_usage(messages: list) -> dict:
-    """从消息的 usage_metadata 聚合 token 用量。"""
+    """聚合「本轮」消息的 token 用量。
+
+    messages 带 checkpointer、跨轮累积：把整条会话加起来会让审计里的 tokens_*
+    随会话变长单调膨胀（线上实测出现过单轮 500 万 output tokens）。
+    因此从最后一条 HumanMessage 起算，只统计本轮——工具轮与作答轮都算在内。
+    """
+    start = 0
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], HumanMessage):
+            start = i
+            break
     total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-    for m in messages:
+    for m in messages[start:]:
         um = getattr(m, "usage_metadata", None)
         if isinstance(um, dict):
             total["input_tokens"] += um.get("input_tokens", 0) or 0

@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from config import MAX_INPUT_TOKENS
-from core.keywords import fast_intent
+from core.keywords import fast_chat, fast_intent
 from core.llm import count_message_tokens, is_context_overflow
 from core.sanitize import StreamCleaner
 from nodes.refuse import _REFUSE_TEXT, refuse
@@ -52,7 +52,7 @@ from subgraphs.stock import (
     route_after_call,
     route_after_execute,
 )
-from tools import take_latest
+from tools import take_latest, tool_cache_clear
 from tools.rag_tool import search_knowledge_base
 
 _FAILED = []
@@ -301,7 +301,14 @@ def test_graph_wiring_and_retry():
 
     fake = _FakeLLM()
     orig = stock_mod.get_llm
+    orig_plan = stock_mod._fast_plan
+
+    async def _no_plan(state):
+        # 本用例只验证「模型没调工具 -> 有界重试」的接线，不能被确定性规划接管
+        return None
+
     stock_mod.get_llm = lambda **kw: fake
+    stock_mod._fast_plan = _no_plan
     try:
         g = stock_mod.build_stock_subgraph()
         q = "查询贵州茅台（SH600519）的最新行情"
@@ -320,6 +327,7 @@ def test_graph_wiring_and_retry():
         check("子图能跑完不报 KeyError", False, f"{type(e).__name__}: {e}")
     finally:
         stock_mod.get_llm = orig
+        stock_mod._fast_plan = orig_plan
 
 
 def test_tool_short_circuit():
@@ -379,6 +387,10 @@ def test_graph_short_circuit_after_tool_success():
         async def astream(self, msgs):
             yield AIMessageChunk(content="已取到数据")
 
+    # 工具结果有进程级缓存：先清掉别的用例留下的失败结论，否则这里会命中缓存、
+    # 假工具根本不会被调用（实测表现为「明明 stub 了工具却还在打真实网关」）
+    tool_cache_clear()
+
     tool_llm = _FakeToolLLM()
     orig_tool_bound = stock_mod._tool_bound_llm
     orig_get_llm = stock_mod.get_llm
@@ -398,7 +410,8 @@ def test_graph_short_circuit_after_tool_success():
             "tool_results": [],
             "timings": {},
         }))
-        check("数据到手后只跑一轮决策", tool_llm.calls == 1, f"calls={tool_llm.calls}")
+        # 代码 + 行情词命中确定性规划：连那一轮决策 LLM 都不跑（首响省掉 1.4~2.8s）
+        check("规划命中时不跑决策 LLM", tool_llm.calls == 0, f"calls={tool_llm.calls}")
         check("最终生成回答",
               any("已取到" in (getattr(m, "content", "") or "") for m in out.get("messages", [])),
               str(out.get("messages")))
@@ -406,6 +419,20 @@ def test_graph_short_circuit_after_tool_success():
               all(k in (out.get("timings") or {})
                   for k in ("tool_call_ms", "tool_execute_ms", "synth_ttft_ms")),
               str(out.get("timings")))
+
+        # 规划拿不准的问句仍回退原来的 LLM 决策（链路没被改坏）
+        q2 = "帮我查一下这只票"
+        out2 = asyncio.run(g.ainvoke({
+            "messages": [HumanMessage(content=q2)],
+            "query": q2,
+            "rewritten": "",
+            "tool_results": [],
+            "timings": {},
+        }))
+        check("规划未命中时仍走 LLM 决策", tool_llm.calls == 1, f"calls={tool_llm.calls}")
+        check("回退路径也能出回答",
+              any("已取到" in (getattr(m, "content", "") or "") for m in out2.get("messages", [])),
+              str(out2.get("messages")))
     finally:
         stock_mod._tool_bound_llm = orig_tool_bound
         stock_mod.get_llm = orig_get_llm
@@ -1307,6 +1334,57 @@ def test_event_card_desc_clean():
     check("空正文安全", _event_desc(None) == "")
 
 
+def test_fast_plan_and_chat_shortcut():
+    print("\n[P19] 确定性快路径：工具直连与问候跳过路由 LLM")
+    check("问候判闲聊", fast_chat("你好") and fast_chat("谢谢！"))
+    check("带行情词的问候不算闲聊", not fast_chat("你好，茅台现在什么价"))
+    check("长句不算问候", not fast_chat("你好我想了解一下这只股票的估值和资金流向情况"))
+
+    import asyncio
+
+    from core.plan import fast_tool_calls
+    from rag import entity
+
+    orig = entity._stock_names
+
+    async def _names():
+        return [("宁德时代", "300750"), ("贵州茅台", "600519"), ("比亚迪", "002594")]
+
+    entity._stock_names = _names
+    try:
+        plan = asyncio.run(fast_tool_calls("600519 现在什么价"))
+        check("代码+行情 -> 直连 get_quote",
+              plan and plan[0]["name"] == "get_quote" and plan[0]["args"]["code"] == "600519",
+              str(plan))
+
+        plan = asyncio.run(fast_tool_calls("贵州茅台现在什么价"))
+        check("名称+行情 -> 名称表解析后直连",
+              plan and plan[0]["args"]["code"] == "600519", str(plan))
+
+        plan = asyncio.run(fast_tool_calls("宁德时代最近5个交易日K线走势"))
+        check("K线 -> get_history_daily 且天数解析正确",
+              plan and plan[0]["name"] == "get_history_daily"
+              and plan[0]["args"]["days"] == 5, str(plan))
+
+        plan = asyncio.run(fast_tool_calls("宁德时代估值贵不贵"))
+        check("估值 -> get_valuation",
+              plan and plan[0]["name"] == "get_valuation", str(plan))
+
+        # 名称问句第二跳：复用上一轮 symbol_search 的代码，不再跑一次 LLM 决策
+        plan = asyncio.run(fast_tool_calls(
+            "宁德时代最近资金流向", [{"tool": "symbol_search",
+                                 "result": {"ok": True, "data": [{"code": "300750"}]}}]))
+        check("复用 symbol_search 结果取数",
+              plan and plan[0]["args"]["code"] == "300750", str(plan))
+
+        check("对比类交还 LLM", asyncio.run(fast_tool_calls("宁德时代和比亚迪哪个好")) is None)
+        check("概念题交还 LLM", asyncio.run(fast_tool_calls("市盈率是什么意思")) is None)
+        check("标的解析不出时交还 LLM",
+              asyncio.run(fast_tool_calls("这个板块现在什么价")) is None)
+    finally:
+        entity._stock_names = orig
+
+
 def main():
     print("=" * 62)
     print("AI 对话故障回归测试")
@@ -1349,6 +1427,7 @@ def main():
     test_concept_not_swallowing_live_quote()
     test_stream_cleaner_strips_prompt_leak()
     test_event_card_desc_clean()
+    test_fast_plan_and_chat_shortcut()
     print("\n" + "=" * 62)
     if _FAILED:
         print(f"FAILED: {len(_FAILED)} 项 -> {_FAILED}")

@@ -16,7 +16,7 @@ from datetime import datetime
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from core.keywords import fast_intent
+from core.keywords import fast_chat, fast_intent
 from core.llm import get_small_llm
 from core.redis import get_redis
 from core.template import load_template, render
@@ -150,6 +150,15 @@ async def rewrite(state: dict) -> dict:
     # 无历史且无摘要则无需改写
     if not history and not summary:
         return {"rewritten": query, "timings": timings}
+    # 问候寒暄没有指代要消解，直接透传并定闲聊意图：合并路由那次 LLM 也一并省掉
+    if fast_chat(query):
+        return {
+            "rewritten": query,
+            "intent": "chat",
+            "confidence": 1.0,
+            "entities": {},
+            "timings": timings,
+        }
     # 有历史，但问题自己就完整（无指代、带代码/足够长）：不惊动小模型
     if not _needs_rewrite(query):
         return {"rewritten": query, "timings": timings}
