@@ -86,7 +86,7 @@
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
   line-height: var(--lh-base);
-  background: var(--surface-2);
+  background: var(--color-bg-card);
   color: var(--color-error);
 }
 

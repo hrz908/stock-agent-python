@@ -838,6 +838,7 @@
   margin: var(--space-lg) var(--space-lg) var(--space-md);
   padding: var(--space-xs);
   box-sizing: border-box;
+  /* 抽屉里唯一的主动作：白卡浮在灰底上，不加描边 */
   background: var(--color-bg-card);
   border-radius: var(--radius-sm);
 }
@@ -897,9 +898,10 @@
   align-items: center;
   gap: var(--space-md);
   min-height: 96rpx;
+  margin-bottom: var(--space-xs);
   padding: 0 var(--space-md);
   background: var(--color-bg-card);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
 }
 
 /* 文字吃满剩余宽度，右侧箭头自然贴边。
@@ -957,12 +959,15 @@
   margin-bottom: var(--space-md);
   padding: 0 var(--space-xs) 0 var(--space-md);
   background: var(--color-bg-card);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
 }
 
 /* 当前会话：浅灰底标出选中态，不加描边也不加阴影 */
+/* 当前会话：同样是白卡，靠左侧黑竖条 + 600 字重标出选中 */
 .history-item--active {
-  background: var(--surface-2);
+  background: var(--color-bg-card);
+  border-left: 4rpx solid var(--color-text-primary);
+  padding-left: var(--space-sm);
 }
 
 .history-item-main {

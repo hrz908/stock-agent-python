@@ -65,12 +65,15 @@ page {
   --gap-between: var(--space-lg);
   --gap-section: var(--space-2xl);
 
-  /* ---- 图标五档 + 触控底限 ---- */
-  --icon-xs: 28rpx;
-  --icon-sm: 36rpx;
-  --icon-base: 40rpx;
-  --icon-lg: 48rpx;
-  --icon-xl: 56rpx;
+  /* ---- 图标五档：尺寸 = 相邻字号 × 1.2，随「字体大小」设置一起缩放 ----
+     规范 §二：图标 = 相邻字号 ×1.2~1.5（线型取上限）。
+     这里用 calc 从字号推导，字号档位一变图标自动跟着变；
+     触控区 88rpx 是物理尺寸下限，不随字号缩放 */
+  --icon-xs: calc(var(--font-xs) * 1.2);
+  --icon-sm: calc(var(--font-sm) * 1.2);
+  --icon-base: calc(var(--font-base) * 1.2);
+  --icon-lg: calc(var(--font-lg) * 1.2);
+  --icon-xl: calc(var(--font-xl) * 1.2);
   --icon-touch: 88rpx;
 
   /* ---- 圆角六档 ---- */
