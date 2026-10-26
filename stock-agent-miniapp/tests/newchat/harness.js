@@ -189,6 +189,10 @@ function createChatPage(opts) {
     },
     // 只返回结构够用的最小形态：本套用例不校验 markdown 渲染
     '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] },
+    // 字号档位：本套用例不校验样式，onShow 能拿到补丁即可
+    '../../utils/font-scale': {
+      fontScalePatch: () => ({ fontScale: 'standard', fontScaleClass: '' })
+    },
     // 卡片映射用真实实现（纯函数，无 wx 依赖）：替身一旦与实现漂移，
     // 「历史会话渲染出几条消息」这类断言就失去意义
     './cards': loadModule(CARDS_JS, {

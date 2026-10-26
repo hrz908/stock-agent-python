@@ -3,11 +3,17 @@
 //
 // TODO(上线前)：第 8 节的联系方式必须换成真实可用的邮箱/主体名称，
 // 并由法务复核后发布。当前留空会在页面上显示为待补充，不允许带着上线。
+import { fontScalePatch } from '../../utils/font-scale';
+
 Page({
   data: {
     // 与小程序后台《用户隐私保护指引》的版本号保持一致
     version: '2026-10-26',
     contact: ''
+  },
+
+  onShow() {
+    this.setData(fontScalePatch());
   },
 
   goBack() {

@@ -8,6 +8,7 @@ import {
   deleteAccount
 } from '../../services/user';
 import { listSessions, deleteSession } from '../../services/sessions';
+import { FONT_SCALE_OPTIONS, fontScalePatch, setFontScale } from '../../utils/font-scale';
 
 const NICKNAME_MAX = 10;
 
@@ -66,6 +67,11 @@ Page({
     // 不应再弹面板，只能靠按键唤起，所以这次聚焦消费掉标记后即按手动处理
     nicknameArmed: false,
 
+    // 字体大小：三档全局字号，选择写入本地缓存（见 utils/font-scale）
+    fontScaleOptions: FONT_SCALE_OPTIONS,
+    fontScale: 'standard',
+    fontScaleClass: '',
+
     // 退出登录二次确认
     logoutVisible: false,
 
@@ -89,7 +95,8 @@ Page({
     } catch (e) {
       // 拿不到就用默认值
     }
-    this.setData({ bottomGap: 20 + safeBottom });
+    // 字号档位与安全区一起下发：根节点先挂好档位类，首屏就是用户选的字号
+    this.setData(Object.assign({ bottomGap: 20 + safeBottom }, fontScalePatch()));
 
     // 打开页面时确保有 token（App.onLaunch 已经静默登录过，
     // 这里只是兑底：万一 token 被清，自动重新静默登录一次）。
@@ -377,6 +384,14 @@ Page({
       .catch((err) => {
         this.toast((err && err.message) || '保存失败');
       });
+  },
+
+  // 字体大小：选中即写入缓存并立即生效；其他页面在 onShow 时同步根节点类
+  onFontScaleTap(e) {
+    const key = (e && e.currentTarget && e.currentTarget.dataset.key) || '';
+    if (!key || key === this.data.fontScale) return;
+    setFontScale(key);
+    this.setData(fontScalePatch());
   },
 
   // 隐私说明：静态页，只做跳转

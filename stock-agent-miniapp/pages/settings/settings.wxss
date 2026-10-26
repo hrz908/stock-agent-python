@@ -114,19 +114,61 @@
   text-decoration: underline;
 }
 
-/* 次级入口行（隐私说明）：与个人信息卡同一套浮起面，但更轻，
-   不带箭头以外的装饰，避免与「编辑资料」抢注意力 */
+/* ===== 直角框体（本页复用） =====
+   字体大小段控与隐私说明入口共用同一套外形：白面 + --hairline + --shadow-card，
+   96rpx 等高、四角直角（border-radius: 0，不跟随 --r-card / --r-pill）。
+   两块上下叠放，除内部分布外不允许各自改描边 / 投影 / 高度。 */
+.panel-flat {
+  height: 96rpx;
+  background: var(--surface);
+  border: var(--hairline);
+  border-radius: 0;
+  box-shadow: var(--shadow-card);
+}
+
+/* ===== 字体大小（全局档位） =====
+   段式单选：选中靠字重与字色，不铺底块。
+   每项 flex:1，保证三个档位的点击区域等宽且占满整个框体高度 */
+.font-scale {
+  margin-top: var(--sp-3);
+}
+
+.font-scale-title {
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.font-scale-radio {
+  display: flex;
+  margin-top: var(--sp-2);
+}
+
+.font-scale-radio__item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-body);
+  color: var(--ink-2);
+  transition: color .2s;
+}
+
+.font-scale-radio__item--on {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* 次级入口行（隐私说明）：框体同字体大小段控（.panel-flat），
+   内部分布为左右两端，不带箭头以外的装饰，避免与「编辑资料」抢注意力 */
 .link-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 96rpx;
   margin-top: var(--sp-3);
   padding: 0 var(--sp-3);
-  background: var(--surface);
-  border: var(--hairline);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-card);
 }
 
 .link-row-text {

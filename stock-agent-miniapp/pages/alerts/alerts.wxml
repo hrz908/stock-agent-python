@@ -1,7 +1,7 @@
 <!-- 页面结构：自研 navbar + 自绘概览宫格 + 自绘提醒卡 + base-popup 表单。
      选择器用微信原生 picker（mode="selector"）：客户端原生渲染的半屏滚轮，
      触发区是自绘行，视觉完全可控（执行指南 4.3） -->
-<view class="page">
+<view class="page {{fontScaleClass}}">
   <base-navbar left-arrow="{{true}}" bind:back="goBack" />
 
   <view class="content">

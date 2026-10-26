@@ -82,7 +82,6 @@ page {
        display 64（自选总浮动）/ hero 40（行情大数字 / 提醒阈值）/
        title 36（页面标题、次级主数字、品牌名）/ body 30（正文）/
        caption 24（辅助与弱辅助）。
-       变量名保留不动（全站 300+ 处引用），同档变量互为语义别名：
        value/brand/title 同值，aux/min 同值；price 与 hero 已分档。
        body 30rpx 高于原 28rpx 无障碍底线，方向为放大，无合规风险。 */
   --fs-display: 64rpx; /* display：每屏唯一焦点数字（自选总浮动） */
@@ -116,6 +115,37 @@ page {
   /* ---- 发丝线：全站分割线 / 边框统一用它，禁止再自定 border 粗细与颜色 ---- */
   --hairline: 2rpx solid var(--line);
   --hairline-dashed: 2rpx dashed var(--line);  /* 仅口径分隔这类「虚线」场景，需显式豁免 */
+}
+
+/* =============================================================
+   全局字号档位（设置页「字体大小」可切换）
+   唯一例外：字号变量允许在这里被页面根节点上的档位类覆盖。
+   --fs-price 涨幅克制（40/42/44）：行情卡三个数字均分一行，
+   再大会把价格挤出格子；其余字级按 标准 / 大 / 超大 依次放大。
+   档位类挂在各页根节点 .page 上，变量随 custom property 继承到所有子组件。
+   ============================================================= */
+.page.font-scale--large {
+  --fs-display: 72rpx;
+  --fs-price: 42rpx;
+  --fs-hero: 44rpx;
+  --fs-value: 39rpx;
+  --fs-brand: 40rpx;
+  --fs-title: 40rpx;
+  --fs-body: 34rpx;
+  --fs-aux: 27rpx;
+  --fs-min: 27rpx;
+}
+
+.page.font-scale--xlarge {
+  --fs-display: 80rpx;
+  --fs-price: 44rpx;
+  --fs-hero: 48rpx;
+  --fs-value: 42rpx;
+  --fs-brand: 44rpx;
+  --fs-title: 44rpx;
+  --fs-body: 38rpx;
+  --fs-aux: 30rpx;
+  --fs-min: 30rpx;
 }
 
 /* =============================================================

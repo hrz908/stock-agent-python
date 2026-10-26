@@ -1,7 +1,7 @@
 <!-- 页面结构：自研 navbar + 自绘概览卡 + chips 筛选 + 自绘列表（含左滑删除）。
      左滑删除用触摸事件自绘（替代 t-swipe-cell）：transform 位移由 data 驱动，
      拖动中关过渡、松手时开过渡归位；纵向滚动让位（先判方向再锁定）。 -->
-<view class="page">
+<view class="page {{fontScaleClass}}">
   <base-navbar left-arrow="{{true}}" bind:back="goBack" />
   <view class="content">
     <!-- 总浮动概览：自绘卡片（替代 cell-group card 主题） -->

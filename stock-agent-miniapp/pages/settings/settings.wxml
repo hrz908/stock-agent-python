@@ -1,6 +1,6 @@
 <!-- 页面骨架：自研 navbar + 自绘卡片（替代 TDesign cell-group 体系）。
      浅色专业金融视觉：--surface 卡片 / --line 描边 / --ink 文字层级。 -->
-<view class="page">
+<view class="page {{fontScaleClass}}">
   <base-navbar left-arrow="{{true}}" bind:back="goBack" />
 
   <view class="content">
@@ -19,9 +19,24 @@
       <base-icon type="RightOutline" style="font-size:32rpx;color:var(--ink-3);" />
     </view>
 
+    <!-- 字体大小：全局档位，选择后写入本地缓存，所有页面根节点的
+         font-scale--* 类在 onShow 时同步，字号变量随 custom property 向下生效 -->
+    <view class="font-scale">
+      <view class="font-scale-title">字体大小</view>
+      <view class="font-scale-radio panel-flat">
+        <view
+          wx:for="{{fontScaleOptions}}"
+          wx:key="key"
+          class="font-scale-radio__item {{fontScale === item.key ? 'font-scale-radio__item--on' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="onFontScaleTap"
+        >{{item.label}}</view>
+      </view>
+    </view>
+
     <!-- 隐私说明入口：合规要求「可查阅、可撤回、可删除」，
          说明页的文案与真实数据链路保持一致（见 pages/privacy） -->
-    <view class="link-row" bindtap="onOpenPrivacy">
+    <view class="link-row panel-flat" bindtap="onOpenPrivacy">
       <text class="link-row-text">隐私说明</text>
       <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
     </view>

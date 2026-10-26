@@ -1,3 +1,32 @@
+/* ===== 页面字级：仅聊天页放大一档（2026-10-26 用户决策）=====
+   token.wxss 的字号只在 page{} 定义、全站共用；这里在 .page 作用域内覆盖，
+   custom property 会继承进本页所有子组件（含金融卡），其他页面仍用原值。
+   层级关系不变：title 38 > body 36 > aux/min 26。
+   行情卡主价格 / 资金流主数字不随聊天页额外放大，只跟随全局档位：
+   卡内数字与涨跌额同行，再大会挤出卡宽。
+   设置页可选全局字号档位，聊天页在每个档位下都比基准大一档：
+   用 .chat-page 提高优先级，避免被 token 里的 .page.font-scale--* 拉回基准。 */
+.page.chat-page {
+  --fs-title: 38rpx;
+  --fs-body: 36rpx;
+  --fs-aux: 26rpx;
+  --fs-min: 26rpx;
+}
+
+.page.chat-page.font-scale--large {
+  --fs-title: 42rpx;
+  --fs-body: 40rpx;
+  --fs-aux: 29rpx;
+  --fs-min: 29rpx;
+}
+
+.page.chat-page.font-scale--xlarge {
+  --fs-title: 47rpx;
+  --fs-body: 44rpx;
+  --fs-aux: 32rpx;
+  --fs-min: 32rpx;
+}
+
 /* ===== 页面骨架 ===== */
 .page {
   display: flex;
@@ -316,13 +345,13 @@
   gap: var(--sp-2);
 }
 
-/* 三个点与首行文字光学居中：文字行高 45rpx、点高 12rpx，上留一档 */
+/* 三个点与首行文字光学居中：文字行高 54rpx（36 × 1.5）、点高 12rpx，上留 21rpx */
 .ai-load-dots {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
   flex: none;
-  margin-top: var(--sp-2);
+  margin-top: 21rpx;
 }
 
 .ai-load-dot {
@@ -395,7 +424,7 @@
 
 .md-caret {
   width: 4rpx;
-  height: 30rpx;
+  height: 36rpx;
   flex: none;
   border-radius: 2rpx;
   background: var(--ink);
@@ -446,16 +475,19 @@
   color: var(--ink-3);
 }
 
+/* 上下内边距 --sp-2：问句折成两行时 30×1.4×2≈84rpx 已顶到 88rpx 框边，
+   文字几乎贴着描边；补上下 16rpx 后单行高度仍被 min-height 吃掉、观感不变，
+   只有多行时框体才按内容长高 */
 .quick-ask {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
   min-height: 88rpx;
-  padding: 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-pill);
+  border-radius: 0; /* 直角：与设置页段控 / 隐私入口同一套方框（DESIGN.md 直角框体） */
   box-shadow: var(--shadow-card);
 }
 
@@ -471,7 +503,8 @@
 }
 
 /* 问句最多两行：股票名 + 代码 + 上下文一句话，单行放不下时截断会把问句砍半，
-   用户就没法判断点下去会问什么 */
+   用户就没法判断点下去会问什么。
+   字号与正文同档（--fs-body，30rpx）：引导问题也是要读的句子，不再另设小一号 */
 .quick-ask-text {
   flex: 1;
   min-width: 0;
@@ -684,13 +717,13 @@
 
 .bar-input {
   width: 100%;
-  /* 一行高度打底（line-height 44rpx）：auto-height 的空 textarea 高度可能塌成 0，
-     没有热区就点不中、placeholder 也看不见。
-     最多两行 = 88rpx，超出后 textarea 内部滚动，不再把对话区顶掉 */
-  min-height: 44rpx;
-  max-height: 88rpx;
+  /* 一行高度打底（line-height 52rpx，随正文字号放大）：auto-height 的空 textarea
+     高度可能塌成 0，没有热区就点不中、placeholder 也看不见。
+     最多两行 = 104rpx，超出后 textarea 内部滚动，不再把对话区顶掉 */
+  min-height: 52rpx;
+  max-height: 104rpx;
   font-size: var(--fs-body);
-  line-height: 44rpx;
+  line-height: 52rpx;
   color: var(--ink);
 }
 

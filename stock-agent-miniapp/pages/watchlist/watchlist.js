@@ -1,6 +1,7 @@
 import * as api from '../../services/watchlist';
 import * as stockApi from '../../services/stock';
 import { isDev } from '../../config';
+import { fontScalePatch } from '../../utils/font-scale';
 
 const FILTERS = [
   { key: 'all', label: '全部' },
@@ -138,6 +139,7 @@ Page({
   // 概览卡的总浮动直接跟行情走，进页拿到旧值会误导。
   // 首屏先用缓存列表快速出图，再串行刷一次行情（串行才不会出现缓存结果覆盖新数据）
   onShow() {
+    this.setData(fontScalePatch());
     if (this._seeded) {
       this.refreshQuotes(true);
       return;

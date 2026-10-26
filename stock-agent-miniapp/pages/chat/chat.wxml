@@ -1,4 +1,4 @@
-<view class="page" bindtouchstart="onSwipeStart" bindtouchmove="onSwipeMove" bindtouchend="onSwipeEnd" bindtouchcancel="onSwipeEnd">
+<view class="page chat-page {{fontScaleClass}}" bindtouchstart="onSwipeStart" bindtouchmove="onSwipeMove" bindtouchend="onSwipeEnd" bindtouchcancel="onSwipeEnd">
   <!-- 顶部导航栏：自研 navbar（含胶囊安全区）。
        高度 = 状态栏 + 44px 内容区，完全确定，页面直接算无需实测 -->
   <base-navbar title="溜来">
@@ -159,7 +159,7 @@
       </view>
       <!-- 键盘态：输入区紧贴模式键右侧，整块可点（主动聚焦） -->
       <view wx:if="{{!voiceMode}}" class="bar-field" bindtap="onTapInputField">
-        <textarea class="bar-input" value="{{input}}" focus="{{inputFocus}}" placeholder="问点什么…" placeholder-style="color: #9AA1AC; font-size: 30rpx;" auto-height="{{true}}" adjust-position="{{false}}" cursor-spacing="24" confirm-type="send" show-confirm-bar="{{false}}" maxlength="-1" bindinput="onInput" bindconfirm="onSend" bindfocus="onInputFocus" bindblur="onInputBlur" bindkeyboardheightchange="onKeyboardHeightChange"></textarea>
+        <textarea class="bar-input" value="{{input}}" focus="{{inputFocus}}" placeholder="问点什么…" placeholder-style="color: #9AA1AC; font-size: 36rpx;" auto-height="{{true}}" adjust-position="{{false}}" cursor-spacing="24" confirm-type="send" show-confirm-bar="{{false}}" maxlength="-1" bindinput="onInput" bindconfirm="onSend" bindfocus="onInputFocus" bindblur="onInputBlur" bindkeyboardheightchange="onKeyboardHeightChange"></textarea>
       </view>
       <!-- 语音态：胶囊整宽中央的语音键（以含模式键的全宽居中）。
            点一下开始聆听（预输入框见上方 .voice-panel），再点一下把终稿直接发给 agent。

@@ -2,7 +2,7 @@
      卡片分支与 chat 主页面保持同一套写法；样式唯一真相源是
      components/finance/* 的组件 wxss 与 styles/token.wxss 的 .msg-card，
      所以调这里的效果 = 调 chat 主页面的效果（约定见 DESIGN.md「卡片画廊」节） -->
-<view class="page">
+<view class="page {{fontScaleClass}}">
   <base-navbar left-arrow="{{true}}" bind:back="onBack" />
 
   <scroll-view class="gallery" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">

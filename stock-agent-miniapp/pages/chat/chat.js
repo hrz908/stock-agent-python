@@ -14,6 +14,7 @@ import {
   deleteSession
 } from '../../services/sessions';
 import { parseMarkdown } from '../../utils/markdown';
+import { fontScalePatch } from '../../utils/font-scale';
 // 消息与卡片映射：纯函数模块，字段口径与 components/finance/* 的 props 一一对应
 import {
   assistantMsg,
@@ -707,6 +708,11 @@ Page({
       clearTimeout(this._stallTimer);
       this._stallTimer = 0;
     }
+  },
+
+  // 每次回到本页（含从设置页返回）同步全局字号档位
+  onShow() {
+    this.setData(fontScalePatch());
   },
 
   onReady() {

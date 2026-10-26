@@ -1,5 +1,6 @@
 import * as stockApi from '../../services/stock';
 import * as alertApi from '../../services/alert';
+import { fontScalePatch } from '../../utils/font-scale';
 
 // 提醒列表数据来自后端 GET /api/v1/alerts，字段与「新增提醒」弹窗一一对应
 // （股票 / 触发条件 / 阈值 / 基准周期 / 检查频率）；
@@ -155,6 +156,7 @@ Page({
   // 进入页面时加载一次。与自选股页同一套节奏：
   // 只在首次进入时拉数据，从子页面返回时不重复请求
   onShow() {
+    this.setData(fontScalePatch());
     if (!this._loaded) {
       this._loaded = true;
       this.loadList();

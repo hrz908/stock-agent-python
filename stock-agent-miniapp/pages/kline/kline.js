@@ -6,6 +6,7 @@
 // 2) 均线、区间统计都在这里按卡片口径算：后端只返回 OHLCV，
 //    避免每个周期都在服务端重复算一遍同样的派生指标
 import { search, kline } from '../../services/stock';
+import { fontScalePatch } from '../../utils/font-scale';
 
 // 下拉最多展示几条联想结果（与自选股 / 提醒页一致）
 const SEARCH_LIMIT = 5;
@@ -104,6 +105,11 @@ Page({
     loading: false,
     // 五张预设空卡
     cards: PERIODS.map(emptyCard)
+  },
+
+  // 每次进入 / 从子页返回都同步全局字号档位
+  onShow() {
+    this.setData(fontScalePatch());
   },
 
   onUnload() {

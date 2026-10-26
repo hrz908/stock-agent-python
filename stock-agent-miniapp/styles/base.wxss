@@ -54,6 +54,12 @@ page {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 页面根节点显式接一档字号：page 元素上的 --fs-body 不参与 .page 档位类的覆盖，
+   没有单写 font-size 的文本靠这里继承，才跟得上「字体大小」设置 */
+.page {
+  font-size: var(--fs-body);
+}
+
 /* 数字等宽：所有金额、比例、涨跌幅所在节点必须挂 class="num"，
    否则数值跳动时整行宽度抖动。两个属性都写：iOS 认前者，旧 Android 认后者 */
 .num {

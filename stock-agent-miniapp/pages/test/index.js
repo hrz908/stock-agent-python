@@ -14,10 +14,15 @@
 //
 // 入口：watchlist 股票行点击、chat 页行情卡点击（仅 isDev）。
 import { isDev } from '../../config';
+import { fontScalePatch } from '../../utils/font-scale';
 
 Page({
   onLoad() {
     if (!isDev) wx.reLaunch({ url: '/pages/chat/chat' });
+  },
+
+  onShow() {
+    this.setData(fontScalePatch());
   },
 
   data: {
