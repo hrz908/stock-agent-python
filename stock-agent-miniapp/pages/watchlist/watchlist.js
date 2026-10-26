@@ -74,7 +74,6 @@ Page({
   data: {
     bottomGap: 20,
     filter: 'all',
-    filterIndex: 0,
     filters: FILTERS,
     stocks: [],
     filtered: [],
@@ -135,26 +134,16 @@ Page({
     this.setData({ bottomGap });
   },
 
-  // 每次进入页面（含从子页返回）都同步一次列表。
-  // 只读缓存（GET /watchlist）：refresh 接口会并发拉第三方行情、写缓存并广播
-  // 「行情已更新」触发提醒检查——每次进页都调它等于把第三方配额和推送都放大一遍。
-  // 真正的取数留给「刷新」按钮。
+  // 每次进入页面（含从子页返回、从后台回前台）都刷一次最新行情：
+  // 概览卡的总浮动直接跟行情走，进页拿到旧值会误导。
+  // 首屏先用缓存列表快速出图，再串行刷一次行情（串行才不会出现缓存结果覆盖新数据）
   onShow() {
-    this.loadOnEnter();
-  },
-
-  loadOnEnter() {
-    if (this.data.refreshing) return;
-    this.setData({ refreshing: true, errorMsg: '' });
-    api
-      .fetchList()
-      .then((data) => {
-        this.setData({ refreshing: false });
-        this.applyData(data);
-      })
-      .catch((err) => {
-        this.setData({ refreshing: false, errorMsg: (err && err.message) || '加载失败' });
-      });
+    if (this._seeded) {
+      this.refreshQuotes(true);
+      return;
+    }
+    this._seeded = true;
+    this.loadList().then(() => this.refreshQuotes(true));
   },
 
   onUnload() {
@@ -167,19 +156,9 @@ Page({
   },
 
   /* ================= 筛选（段式单选 radio） ================= */
-  // 段式单选点击：data-key 即选项 key，效果与原 tabs change 完全一致
+  // 段式单选点击：data-key 即选项 key；切换后重排列表并在渲染完成后重测滚动区
   onFilterTap(e) {
     const key = e.currentTarget.dataset.key;
-    if (!key || key === this.data.filter) return;
-    // 滑块位置：按 key 在 filters 中的下标，驱动 thumb 滑动
-    const idx = this.data.filters.findIndex((f) => f.key === key);
-    this.closeSwipe();
-    this.setData({ filter: key, filterIndex: idx, filtered: this.filterList(key) }, () => this.updateScrollable());
-  },
-
-  // tabs 的 change 事件（旧实现保留，供兼容）
-  onTabsChange(e) {
-    const key = e.detail && e.detail.value;
     if (!key || key === this.data.filter) return;
     this.closeSwipe();
     this.setData({ filter: key, filtered: this.filterList(key) }, () => this.updateScrollable());
@@ -397,9 +376,10 @@ Page({
   },
 
   /* ================= 数据同步 ================= */
-  // 手动刷新：后端会并发拉行情 → 写缓存 → 检查提醒并推送，
-  // 返回的全量列表（filter=all）直接替换本地数据
-  onRefresh() {
+  // 拉最新行情并整表替换：后端并发取行情 → 写缓存 → 检查提醒并推送，
+  // 返回的全量列表（filter=all）与列表接口同构。
+  // quiet：进页自动刷新用的静默模式，不弹成功提示，失败时退回读缓存，别让首屏空着
+  refreshQuotes(quiet) {
     if (this.data.refreshing) return;
     this.setData({ refreshing: true, errorMsg: '' });
 
@@ -408,11 +388,17 @@ Page({
       .then((data) => {
         this.setData({ refreshing: false });
         this.applyData(data);
-        this.toast('行情已刷新');
+        if (!quiet) this.toast('行情已刷新');
       })
       .catch((err) => {
         this.setData({ refreshing: false, errorMsg: (err && err.message) || '刷新失败' });
+        if (quiet) this.loadList();
       });
+  },
+
+  // 刷新按钮
+  onRefresh() {
+    this.refreshQuotes(false);
   },
 
   // 统一入口：列表与刷新接口返回结构一致，都走这里更新列表与统计
