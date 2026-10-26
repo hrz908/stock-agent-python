@@ -187,8 +187,31 @@ function createChatPage(opts) {
       list: () => Promise.resolve({ quick_asks: [] }),
       click: noop
     },
-    // 只返回结构够用的最小形态：本套用例不校验 markdown 渲染
-    '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] },
+    // 只返回结构够用的最小形态：本套用例不校验 markdown 渲染。
+    // 流式解析器按实现的同一套语义（空行定型）产出最小块，页面侧的尾段下标推进才可测
+    '../../utils/markdown': {
+      parseMarkdown: (t) => (String(t || '').trim() ? [{ type: 'text', text: t }] : []),
+      createMarkdownStream: () => {
+        let stable = 0;
+        let blocks = [];
+        return {
+          update(text) {
+            const src = String(text == null ? '' : text);
+            const at = src.lastIndexOf('\n\n');
+            const end = at >= 0 && at + 2 > stable ? at + 2 : -1;
+            const committed = end > stable;
+            if (committed) {
+              if (src.slice(stable, end).trim()) {
+                blocks = blocks.concat([{ type: 'text', text: src.slice(stable, end) }]);
+              }
+              stable = end;
+            }
+            const tail = src.slice(stable);
+            return { blocks: blocks, tail: tail.trim() ? [{ type: 'text', text: tail }] : [], committed: committed };
+          }
+        };
+      }
+    },
     // 字号档位：本套用例不校验样式，onShow 能拿到补丁即可
     '../../utils/font-scale': {
       fontScalePatch: () => ({ fontScale: 'standard', fontScaleClass: '' })

@@ -263,4 +263,57 @@ function parseMarkdown(md) {
   return blocks;
 }
 
-export { parseMarkdown };
+// ===== 流式增量解析 =====
+// 流式回答是逐帧揭示的。若每帧都对整段文本跑 parseMarkdown，视图层每帧都要收下整篇
+// blocks（长答几十 KB × 每秒几十次跨线程传输），已读完的段落还会被反复重建、版式跟着抖。
+// 这里把文本切成「已定型的段落」+「正在写的尾段」：
+//   - 遇到空行边界就把这一段解析一次、永久定格（每个字全生命周期只解析一次）；
+//   - 尾段每帧重解析，但它只有最后一段，长度有限。
+// 视图层因此可以只 patch 尾部下标，长答也不会越写越慢。
+const FENCE_LINE_RE = /^[ \t]*(?:```|~~~)/;
+
+// 空行是否落在代码围栏内部：围栏行出现奇数次即「还没闭合」。
+// 在那种位置切段会把一个代码块拆成两半（等宽块当场断掉）
+function fenceClosed(text) {
+  if (text.indexOf('```') === -1 && text.indexOf('~~~') === -1) return true;
+  const lines = text.split('\n');
+  let open = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (FENCE_LINE_RE.test(lines[i])) open += 1;
+  }
+  return open % 2 === 0;
+}
+
+// 在 [from, text.length) 里找最后一个可安全切段的空行，返回切点之后的下标（-1 没找到）
+function stableEnd(text, from) {
+  const fenced = text.indexOf('```') !== -1 || text.indexOf('~~~') !== -1;
+  let at = text.length;
+  while ((at = text.lastIndexOf('\n\n', at - 1)) >= from) {
+    if (!fenced || fenceClosed(text.slice(0, at))) return at + 2;
+  }
+  return -1;
+}
+
+// 流式解析器：update(text) 返回 { blocks, tail, committed }
+//   blocks    已定型段落（没有新段落定型时引用不变，可拿来判断能否只 patch 尾段）
+//   tail      正在写的尾段，每帧重新给
+//   committed 这次有段落被定型，视图层必须整段重写 blocks（下标整体后移了）
+function createMarkdownStream() {
+  let stableLen = 0;
+  let blocks = [];
+  return {
+    update(text) {
+      const src = String(text == null ? '' : text);
+      const end = src.length > stableLen ? stableEnd(src, stableLen) : -1;
+      const committed = end > stableLen;
+      if (committed) {
+        const added = parseMarkdown(src.slice(stableLen, end));
+        if (added.length) blocks = blocks.concat(added);
+        stableLen = end;
+      }
+      return { blocks: blocks, tail: parseMarkdown(src.slice(stableLen)), committed: committed };
+    }
+  };
+}
+
+export { parseMarkdown, createMarkdownStream };

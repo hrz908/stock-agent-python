@@ -1,5 +1,6 @@
-// 对话页：消息收发走 Agent SSE（services/agent.js 单例），token 逐字追加；
-// 纯文本走自绘气泡 + markdown（utils/markdown.js），行情/K线等结构化数据走自绘卡片消息；
+// 对话页：消息收发走 Agent SSE（services/agent.js 单例），token 边收边按帧逐字揭示；
+// 纯文本走自绘气泡 + markdown（utils/markdown.js：段落定型后不再重算，只重解析尾段），
+// 行情/K线等结构化数据走自绘卡片消息；
 // 「新对话」压栈本页新实例，每实例一条独立 session + 独立消息状态（见 onNewChat / NEW_CHAT_URL）。
 
 // 注意：这里只能用默认导入。「默认 + 命名」混合导入会让 devtools 的 SWC 热编译引入
@@ -13,7 +14,7 @@ import {
   sessionMessages,
   deleteSession
 } from '../../services/sessions';
-import { parseMarkdown } from '../../utils/markdown';
+import { createMarkdownStream } from '../../utils/markdown';
 import { fontScalePatch } from '../../utils/font-scale';
 // 消息与卡片映射：纯函数模块，字段口径与 components/finance/* 的 props 一一对应
 import {
@@ -104,9 +105,9 @@ const SEND_TIMEOUT_MS = 45000;
 // 输入栏胶囊高度（rpx）：按「两行」预估，见 chat.wxss 的 .sender-bar。
 // 首屏按最大高度预留才不会盖住最后一条消息，onReady 实测后会按真实高度修正。
 const SENDER_BAR_RPX = 136;
-// 胶囊上方留白（rpx）：取自 .sender-wrap 的 padding-top（--sp-2）
+// 输入栏上方留白（rpx）：取自 .sender-wrap 的 padding-top（--space-md）
 const SENDER_PAD_TOP_RPX = 16;
-// 胶囊下方留白（rpx）：取自 .sender-bar 的 margin-bottom（--sp-2）；
+// 输入栏下方留白（rpx）：取自 .sender-bar 的 margin-bottom（--space-md）；
 // 必须与 chatHeight 的估算一起算，否则首帧会少让出这 8px
 const SENDER_BAR_MARGIN_BOTTOM_RPX = 16;
 // 卡片外边距：自绘胶囊后没有组件外边距了，只保留底部与安全区之间的距离
@@ -145,15 +146,13 @@ const VOICE_TEXT_FLUSH_MS = 100;
 // 滚动跟随的去抖间隔(ms)。
 // 逐字而非整段落视图：token 到达速度远快于人的阅读速度，一次性铺满会让
 // 文字「跳」出来；这里按帧揭示，正常节奏下每帧 1 字，服务端一次给一大段时
-// 按积压比例加速，把延迟稳定在半秒左右，既不卡顿也不会拖成长篇打字动画
+// 按积压比例加速，把延迟稳定在半秒左右，既不卡顿也不会拖成长篇打字动画。
+// 版式与文字同帧推进（见 _renderStream）：每帧只 patch 正在写的那一段，
+// 所以帧间隔不必为了省的 CPU 再拉长
 const TYPE_TICK_MS = 28;
 const TYPE_CATCHUP = 18;
 const TYPE_MAX_STEP = 12;
 const SCROLL_FOLLOW_MS = 80;
-
-// 流式版式重解析间隔(ms)：逐帧对整段文本跑 markdown 解析是 O(n²)，
-// 是这条链路最大的 CPU 开销。文字仍按帧更新，只有版式按这个节奏重排
-const MD_PARSE_MS = 120;
 
 // 历史消息分片：首屏只渲染最近一批，更早的按页向前补，
 // 避免长会话一次性解析 + 渲染几百条消息把首屏拖住
@@ -311,10 +310,10 @@ Page({
     this._streamIndex = -1;
     this._streamText = '';
     this._streamShown = 0;
-    // 已落到视图的字数 / 上次版式重解析时刻 / 版式是否落后于文字
-    this._renderedShown = 0;
-    this._mdAt = 0;
-    this._mdDirty = false;
+    // 流式 markdown 解析器（已定型段落 + 正在写的尾段）与尾段块数：
+    // 尾段块数变化（或段落定型）时视图层要整段重写 blocks，否则只 patch 尾部下标
+    this._mdStream = null;
+    this._mdTailLen = 0;
     // 历史消息分片：池子里是尚未渲染的更早消息
     this._historyPool = [];
     this._typeTimer = 0;
@@ -382,8 +381,8 @@ Page({
 
     // 流式 token：逐字追加到当前 streaming 状态的 assistant 消息。
     // 性能约束：token 频率很高，不能每次都把整个 messages 回传给视图层——
-    // 增量先积在 _streamText 里，按帧（约 100ms）合批后用路径级 setData
-    // （messages[i].content[0].data）只更新那一段文本
+    // 增量先积在 _streamText 里，交给逐字定时器按帧揭示（见 _typeTick /
+    // _renderStream）：每帧只把正在写的那一段补进 blocks
     on('token', (data) => {
       const delta = (data && data.delta) || '';
       if (!delta) return;
@@ -476,26 +475,25 @@ Page({
     if (this._streamIndex < 0) {
       const messages = this.data.messages;
       const last = messages[messages.length - 1];
+      // 解析器随流重建：已定型的段落从空开始，首帧把已有文本整段补进 blocks
+      this._mdStream = createMarkdownStream();
+      this._mdTailLen = 0;
       if (last && last.role === 'assistant' && last.status === 'streaming') {
         this._streamIndex = messages.length - 1;
         this._streamText = (last.content[0] && last.content[0].data) || '';
         this._streamShown = this._streamText.length;
-        this._renderedShown = this._streamShown;
       } else {
         const idx = messages.length;
         this._streamIndex = idx;
         this._streamText = '';
         this._streamShown = 0;
-        this._renderedShown = 0;
-        this._mdAt = 0;
-        this._mdDirty = false;
         // 只写新追加的那一项：整表回传会把历史消息（含已解析的 blocks）重传一遍
         this.setData({
           ['messages[' + idx + ']']: {
             role: 'assistant',
             status: 'streaming',
             content: [{ type: 'markdown', data: '' }],
-            // 流式消息同样带 blocks：每帧重解析，版式随文本逐字收敛
+            // 流式消息同样带 blocks：每帧只补正在写的那一段，版式随文字一起长
             blocks: []
           }
         });
@@ -538,30 +536,35 @@ Page({
   },
 
   // 把当前应显示的文本落到视图。
-  // 文字每帧都更新；markdown 版式按 MD_PARSE_MS 一档重解析——整段重新 lex
-  // 是流式渲染里最贵的一步（字数 × 帧数），逐帧做等于 O(n²)。
+  // 版式与文字同帧推进：已读完的段落由 mdStream 定格（每段只解析一次），
+  // 每帧只重解析正在写的尾段，且只 patch 尾部的下标。
+  // 反过来做（每帧整篇重解析 + 整份 blocks 回传）视图层每帧都要重建整条气泡，
+  // 长答下就是肉眼可见的「一段一段地跳」。
   // 刻意不跟随滚动：正文变长只让它向下溢出，视口停在用户正在读的位置。
   _renderStream(force) {
     const idx = this._streamIndex;
-    if (idx < 0) return;
+    if (idx < 0 || !this._mdStream) return;
     const text = this._streamText.slice(0, this._streamShown);
+    const r = this._mdStream.update(text);
+    const tailLen = r.tail.length;
     const patch = {};
-    patch['messages[' + idx + '].content[0].data'] = text;
-    const now = Date.now();
-    if (force || now - (this._mdAt || 0) >= MD_PARSE_MS) {
-      patch['messages[' + idx + '].blocks'] = parseMarkdown(text);
-      this._mdAt = now;
-      this._mdDirty = false;
+    if (force || r.committed || tailLen !== this._mdTailLen) {
+      // 有段落定型 / 尾段块数变了：下标整体后移，只能整段重写
+      patch['messages[' + idx + '].blocks'] = r.blocks.concat(r.tail);
+      // 全文只在段落定型时补一次：视图层不读 content，它是「重进本页恢复在途流」的底稿
+      patch['messages[' + idx + '].content[0].data'] = text;
     } else {
-      // 版式暂时落后于文字：收尾时必须强制补一次，否则最后一段没有排版
-      this._mdDirty = true;
+      const base = r.blocks.length;
+      for (let j = 0; j < tailLen; j++) {
+        patch['messages[' + idx + '].blocks[' + (base + j) + ']'] = r.tail[j];
+      }
     }
-    this._renderedShown = this._streamShown;
+    this._mdTailLen = tailLen;
     this.setData(patch);
   },
 
   // 立刻把剩下的字全部显示：出错、切会话、新一轮发送这类不能等打字机的场合。
-  // 即使字已经追平，只要版式还是脏的也要再落一次（见 _renderStream 的 _mdDirty）
+  // 即使字已经追平也要再落一次：尾段要定型、content 要留全文（见 _renderStream）
   _snapStreamEnd() {
     if (this._typeTimer) {
       clearTimeout(this._typeTimer);
@@ -569,9 +572,7 @@ Page({
     }
     if (this._streamIndex < 0) return;
     this._streamShown = this._streamText.length;
-    if (this._mdDirty || this._renderedShown !== this._streamShown) {
-      this._renderStream(true);
-    }
+    this._renderStream(true);
   },
 
   // 流式消息收尾：status 转 complete，复位流式追踪状态。
@@ -582,9 +583,8 @@ Page({
     this._streamIndex = -1;
     this._streamText = '';
     this._streamShown = 0;
-    this._renderedShown = 0;
-    this._mdAt = 0;
-    this._mdDirty = false;
+    this._mdStream = null;
+    this._mdTailLen = 0;
     this._streamClosing = false;
     if (idx < 0) return;
     const patch = {};

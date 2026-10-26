@@ -3,7 +3,7 @@
 原生小程序，**零 UI 库、零图标库**：navbar / tabs(已删) / empty / popup / toast / icon 与 8 张金融卡全部自研。设计 token 集中在 `styles/token.wxss`（浅色 zinc 色阶，`--up #dc2626` / `--down #16a34a` / `--accent #2559EB`）。
 
 ## 页面要点
-- `pages/chat`：自绘输入栏胶囊 + 语音转文字（**微信同声传译插件 WechatSI**，`services/asr.js`，app.json 需声明 plugins）；流式渲染走 `services/agent.js` 单例（`enableChunked` + 自写 UTF-8 增量解码 + `\n\n` 切帧，事件带 `__rid` 供多页实例过滤）；markdown 版式重解析有 120ms 节流；发送看门狗是**空闲超时**（每个 token 重置 45s）；发送前必须 `ensureLogin`（SSE 不走 request 的 401 重登）。
+- `pages/chat`：自绘输入栏胶囊 + 语音转文字（**微信同声传译插件 WechatSI**，`services/asr.js`，app.json 需声明 plugins）；流式渲染走 `services/agent.js` 单例（`enableChunked` + 自写 UTF-8 增量解码 + `\n\n` 切帧，事件带 `__rid` 供多页实例过滤）；流式版式由 `utils/markdown.js` 的 `createMarkdownStream` 增量解析：空行定型的段落只解析一次，逐帧只重解析尾段、只 patch `messages[i].blocks[k]`（**视图渲染的是 blocks，不是 content[0].data**；每帧整份 blocks 回传会退化成「一段一段地跳」）；发送看门狗是**空闲超时**（每个 token 重置 45s）；发送前必须 `ensureLogin`（SSE 不走 request 的 401 重登）。
 - `pages/settings`：昵称输入焦点铁律 —— `nicknameFocus` 必须镜像真实焦点，收键盘统一用 `wx.hideKeyboard()`；`type=nickname` 仅在「取微信昵称」期间存在；注销账号需先逐条删会话再删账号。
 - `pages/watchlist`：进页只调 `fetchList()`（读缓存），`refresh()` 仅在用户点刷新时调（会拉第三方行情 + 广播提醒检查）。
 

@@ -134,6 +134,58 @@ test('markdown：原始 HTML 一律丢弃（安全边界）', () => {
   assert.ok(flat.indexOf('<script>') === -1, '不得把原始 HTML 透给视图层');
 });
 
+test('markdown 流式：逐字喂入，定型段落不再重建，收尾结构与整篇解析一致', () => {
+  const src = '## 结论\n\n当前价格 **1680.50** 元，成交量放大。\n\n- 支撑位 1650\n- 压力位 1720\n';
+  const stream = md.createMarkdownStream();
+  let prev = [];
+  let r = null;
+  for (let i = 1; i <= src.length; i++) {
+    r = stream.update(src.slice(0, i));
+    // 已定型的段落一个字都不许再变：视图层已经把它们画出来了，
+    // 回退或重建就是肉眼看到的「版式抖一下」
+    for (let k = 0; k < prev.length; k++) {
+      assert.strictEqual(
+        JSON.stringify(r.blocks[k]),
+        JSON.stringify(prev[k]),
+        '第 ' + i + ' 个字时第 ' + k + ' 段被改写'
+      );
+    }
+    assert.ok(r.blocks.length >= prev.length, '定型段落只增不减');
+    prev = r.blocks;
+  }
+  // 对象产在 vm 沙箱里，与本进程不同源，先过一遍 JSON 归一化再深比较
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(r.blocks.concat(r.tail))),
+    JSON.parse(JSON.stringify(md.parseMarkdown(src))),
+    '流式拼出的结构必须与整篇一次性解析等价'
+  );
+});
+
+test('markdown 流式：没有新段落定型时复用同一份定型结果', () => {
+  const stream = md.createMarkdownStream();
+  const a = stream.update('第一段\n\n第二段正在写');
+  const b = stream.update('第一段\n\n第二段正在写，还没写完');
+  assert.strictEqual(b.blocks, a.blocks, '定型结果不该每帧重建');
+  assert.strictEqual(b.committed, false, '没有新空行边界就不算定型');
+  assert.strictEqual(b.tail[0].tag, 'p');
+});
+
+test('markdown 流式：代码块内部的空行不算段落边界', () => {
+  const stream = md.createMarkdownStream();
+  // 围栏还没闭合：这个空行不能切，否则代码块会被拆成两个半截
+  // （未闭合期间 marked 本就把围栏当段落渲染，这里只校验「什么都没定型」）
+  const mid = stream.update('```\na = 1\n\nb = 2');
+  assert.strictEqual(mid.blocks.length, 0, '围栏内部不得定型');
+  assert.strictEqual(mid.committed, false);
+  assert.ok(JSON.stringify(mid.tail).indexOf('b = 2') !== -1, '整段都还在尾段里，没被切走');
+
+  const done = stream.update('```\na = 1\n\nb = 2\n```\n\n收尾');
+  const codes = done.blocks.filter((b) => b.tag === 'code');
+  assert.strictEqual(codes.length, 1, '围栏闭合后整块一次性定型');
+  assert.ok(codes[0].text.indexOf('b = 2') !== -1);
+  assert.strictEqual(done.tail[0].tag, 'p');
+});
+
 /* ===================== services/agent 分帧 ===================== */
 const agent = loadModule(path.join(ROOT, 'services', 'agent.js'), {
   '../config': { apiBase: 'https://x', agentSsePath: '/api/v1/agent/stream' },
