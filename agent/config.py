@@ -103,6 +103,14 @@ APP_POOL_MAX = int(os.getenv("APP_POOL_MAX", "4"))
 # 对话 token 超过该值触发滚动摘要
 SUMMARY_TOKEN_LIMIT = int(os.getenv("SUMMARY_TOKEN_LIMIT", "6000"))
 
+# ===== checkpoint 后台清理 =====
+# 孤儿线程（benchmark / 调试等不在 chat_sessions 里的 thread）最后活跃超过该天数
+# 即清理；用户会话不在此列（由 SESSION_KEEP_MAX 与手动删除管理，避免误删历史）
+CHECKPOINT_ORPHAN_DAYS = int(os.getenv("CHECKPOINT_ORPHAN_DAYS", "1"))
+# 后台清理间隔（小时）；0 表示启动后只跑一次。durability="exit" 已把每轮行数
+# 压到 1 份，这里只负责回收跑批/调试留下的线程，防止行数随跑批累积
+CHECKPOINT_CLEANUP_INTERVAL_HOURS = int(os.getenv("CHECKPOINT_CLEANUP_INTERVAL_HOURS", "24"))
+
 # ===== 会话历史（chat_sessions 注册表）=====
 # 单用户保留的会话数上限：超出自动淘汰最旧的（删注册行 + checkpoints + 摘要）。
 # 限额取足，正常使用碰不到；防的是脚本/误用导致的会话数无限增长

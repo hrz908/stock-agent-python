@@ -15,7 +15,7 @@ import re
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from config import SESSION_KEEP_MAX, SESSION_LIST_MAX
+from config import CHECKPOINT_ORPHAN_DAYS, SESSION_KEEP_MAX, SESSION_LIST_MAX
 from core.pg import get_pool
 from core.redis import get_redis
 
@@ -228,3 +228,36 @@ async def _evict_old_sessions(user_id: str) -> None:
     for sid in stale:
         logger.info("evict stale session: user=%s session=%s", user_id, sid)
         await _drop_thread(thread_id_of(user_id, session_id=sid))
+
+
+async def prune_orphan_threads(older_than_days: int | None = None) -> int:
+    """清理不在 chat_sessions 里的孤儿线程 checkpoint，返回清理数量。
+
+    只动 benchmark / 调试这类一次性线程（thread_id 不以 default: 开头），
+    用户会话由 SESSION_KEEP_MAX 与手动删除管理，这里绝不碰。
+    checkpoints 表没有时间列，用同线程最近一条 agent_runs.created_at 作为活跃时间；
+    没有审计行的线程无法判龄，留给下一轮（有 run 就会补上）。
+    """
+    days = CHECKPOINT_ORPHAN_DAYS if older_than_days is None else older_than_days
+    if days <= 0:
+        return 0
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT c.thread_id
+                FROM (SELECT DISTINCT thread_id FROM checkpoints) c
+                JOIN agent_runs r ON r.thread_id = c.thread_id
+                WHERE c.thread_id NOT LIKE 'default:%%'
+                GROUP BY c.thread_id
+                HAVING max(r.created_at) < now() - make_interval(days => %s)
+                """,
+                (days,),
+            )
+            stale = [r[0] for r in await cur.fetchall()]
+    for tid in stale:
+        await _drop_thread(tid)
+    if stale:
+        logger.info("prune orphan threads: %d（> %d 天）", len(stale), days)
+    return len(stale)

@@ -45,7 +45,8 @@ WITH vec AS (
 ),
 lex AS (
   SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(c.tsv_zh, q) DESC) AS rk
-  FROM chunks c, to_tsquery('simple', %(q_ts)s) q
+  FROM chunks c
+  CROSS JOIN to_tsquery('simple', %(q_ts)s) q
   {join}
   {where_lex}
   ORDER BY ts_rank_cd(c.tsv_zh, q) DESC LIMIT 50
@@ -91,6 +92,17 @@ def _normalize_stock_code(value) -> str:
     return digits[-6:] if len(digits) >= 6 else ""
 
 
+def _normalize_stock_codes(value) -> list[str]:
+    """str / list -> 去重后的 6 位代码列表；空值返回 []。"""
+    items = value if isinstance(value, (list, tuple, set)) else [value]
+    out: list[str] = []
+    for item in items:
+        code = _normalize_stock_code(item)
+        if code and code not in out:
+            out.append(code)
+    return out
+
+
 def _normalize_source_type(value) -> str:
     text = str(value or "").strip().lower()
     text = _SOURCE_TYPE_ALIASES.get(text, text)
@@ -110,18 +122,25 @@ def _normalize_since(value) -> str:
 
 
 def _build_search_sql(
-    stock_code: str = "", source_type: str = "", since: str = ""
+    stock_codes=None, source_type: str = "", since: str = ""
 ) -> tuple[str, dict]:
     """按过滤条件拼 SQL；过滤列都在 ashare_documents 上，文件 ingest 的文档不会被选中。
 
     过滤必须下推到 vec/lex 两个 CTE 内：先过滤再取 Top50，否则特定股票/类型的
     片段可能根本进不了候选池，外层再过滤只会得到空结果。
+    stock_codes 支持单个代码或代码列表（问题里可能同时点名多家公司）。
     """
+    codes = _normalize_stock_codes(stock_codes)
     conditions: list[str] = []
     params: dict = {}
-    if stock_code:
-        conditions.append("a.stock_codes && ARRAY[%(code)s]::text[]")
-        params["code"] = stock_code
+    if codes:
+        # 单代码沿用原参数名（测试与既有调用口径不变）；多代码才走数组参数
+        if len(codes) == 1:
+            conditions.append("a.stock_codes && ARRAY[%(code)s]::text[]")
+            params["code"] = codes[0]
+        else:
+            conditions.append("a.stock_codes && %(codes)s::text[]")
+            params["codes"] = codes
     if source_type:
         conditions.append("a.source_type = %(stype)s")
         params["stype"] = source_type
@@ -185,6 +204,7 @@ class HybridRetriever(BaseRetriever):
         timings: dict | None = None,
         *,
         stock_code: str = "",
+        stock_codes=None,
         source_type: str = "",
         since: str = "",
     ) -> list[Document]:
@@ -193,7 +213,7 @@ class HybridRetriever(BaseRetriever):
         保持 RRF 序而非重排分序：线上 limit=N 拿到的是 RRF 前 N 条，
         候选池扫描靠这个顺序切片重放，顺序混了重放结果就和真实执行对不上。
         timings 传入时回填 embed_ms / sql_ms / rerank_ms。
-        stock_code/source_type/since 是可选过滤，下推到 SQL 两路召回里。
+        stock_code / stock_codes / source_type / since 是可选过滤，下推到 SQL 两路召回里。
         """
         t0 = time.monotonic()
         emb = await self._get_embedder().aembed_query(query)
@@ -201,8 +221,9 @@ class HybridRetriever(BaseRetriever):
             timings["embed_ms"] = int((time.monotonic() - t0) * 1000)
         vl = _vec_literal(emb)
         limit = max(self.k, self.candidates) if RERANK_ENABLED else self.k
+        codes = _normalize_stock_codes(stock_codes if stock_codes else stock_code)
         sql, filter_params = _build_search_sql(
-            stock_code=_normalize_stock_code(stock_code),
+            stock_codes=codes,
             source_type=_normalize_source_type(source_type),
             since=_normalize_since(since),
         )
@@ -265,17 +286,20 @@ class HybridRetriever(BaseRetriever):
         query: str,
         *,
         stock_code: str = "",
+        stock_codes=None,
         source_type: str = "",
         since: str = "",
         timings: dict | None = None,
     ) -> list[Document]:
         """带过滤的检索入口（工具层用）；非法过滤值会被忽略而不是报错。
 
+        stock_codes 支持代码列表（问题同时点名多家公司时按 OR 过滤）；
         timings 传入时回填 embed_ms / sql_ms / rerank_ms，供图节点做阶段计时。
         """
         return await self._run_search(
             query, timings=timings,
-            stock_code=stock_code, source_type=source_type, since=since,
+            stock_code=stock_code, stock_codes=stock_codes,
+            source_type=source_type, since=since,
         )
 
     def _get_relevant_documents(

@@ -18,6 +18,7 @@
 
 运行: uvicorn main:app --host 0.0.0.0 --port 8000
 """
+import asyncio
 import json
 import logging
 import time
@@ -63,6 +64,29 @@ def _check_ownership(user_id: str, session_id: str) -> str:
         raise HTTPException(status_code=400, detail="invalid user_id or session_id")
     return thread_id_of(uid, session_id)
 
+
+async def _checkpoint_cleanup_loop() -> None:
+    """后台回收孤儿 checkpoint：启动 60s 后跑一次，之后按间隔循环。
+
+    durability="exit" 已把每轮 run 的行数压到 1 份，但 benchmark / 调试线程
+    不在 chat_sessions 里、也没人删，行数会随跑批累积。这里只清理这类线程，
+    用户会话仍由 SESSION_KEEP_MAX 与手动删除管理。
+    """
+    from config import CHECKPOINT_CLEANUP_INTERVAL_HOURS
+    from core.sessions import prune_orphan_threads
+
+    # 启动后稍等，避开建池/预热与首个请求的高峰
+    await asyncio.sleep(60)
+    while True:
+        try:
+            removed = await prune_orphan_threads()
+            logger.info("checkpoint cleanup: removed %d orphan threads", removed)
+        except Exception as e:  # noqa: BLE001 - 后台任务失败不影响服务
+            logger.warning("checkpoint cleanup failed: %s", e)
+        if CHECKPOINT_CLEANUP_INTERVAL_HOURS <= 0:
+            return
+        await asyncio.sleep(CHECKPOINT_CLEANUP_INTERVAL_HOURS * 3600)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 预热图与 checkpointer（建表 + 连接池）
@@ -91,7 +115,14 @@ async def lifespan(app: FastAPI):
         logger.info("stock tools warmed: %d", await warm_tools())
     except Exception as e:  # noqa: BLE001 - 预热失败不阻断启动
         logger.warning("tool warmup failed: %s", e)
+    # 后台清理孤儿 checkpoint（benchmark/调试线程）；失败不影响主流程
+    cleanup_task = asyncio.create_task(_checkpoint_cleanup_loop())
     yield
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     await close_checkpointer()
     # 主数据只读池 / 应用写池 / Redis：与 checkpointer 分开收尾，任一失败不影响其它
     try:
