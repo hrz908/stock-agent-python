@@ -1,12 +1,14 @@
-"""资金流工具（数据源：akshare 东财 stock_individual_fund_flow）。
+"""资金流工具（数据源：akshare 东财 + 新浪兜底）。
 
 东财口径：主力（超大单+大单）/超大单/大单/中单/小单的净流入净额，单位元。
 与原 Tushare 的「买卖双边金额」不同——这里只有净额，故工具出口直接给净额（元），
 资金流向卡由 stock 子图发射层换算成万元并做正负拆分（保持前端卡片契约不变）。
 
 可靠性：push2his 历史端点偶发被东财 WAF 断连（换 UA 无效、按 IP 限流），
-失败时兜底直连 push2 主站的当日资金流快照（同源不同节点）——
-兜底只有当日一行，days>1 时如实返回 1 行，不编造历史。
+失败时先兜底直连 push2 主站的当日资金流快照（同源不同节点），
+再兜底新浪历史资金流（独立域名：东财整站封 IP 时仍可用）。
+新浪只有「超大/大/中/小单」净额，主力净额按「超大单 + 大单」确定性地相加；
+其涨跌幅是小数比率，出口乘 100 转成与东财一致的百分数。
 """
 from langchain_core.tools import tool
 
@@ -100,18 +102,78 @@ async def _fetch_flow_snapshot_today(code: str) -> list:
     })]
 
 
+async def _fetch_flow_sina(code: str, days: int) -> list:
+    """兜底 2：新浪历史资金流（与东财不同域名，东财封 IP 时仍可用）。
+
+    字段口径：r0/r1/r2/r3 = 超大/大/中/小单净额；主力净额 = r0 + r1；
+    changeratio 是小数比率，乘 100 后与东财的「涨跌幅(%)」一致。
+    """
+    import requests
+
+    d = digits(code)
+
+    def _get() -> list:
+        r = requests.get(
+            "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+            "MoneyFlow.ssl_qsfx_lscjfb",
+            params={
+                "page": "1",
+                "num": str(max(1, min(int(days), _MAX_MONEYFLOW_ROWS))),
+                "sort": "opendate", "asc": "0",
+                "daima": f"{to_market(code)}{d}",
+            },
+            headers={
+                "User-Agent": BROWSER_UA,
+                "Referer": "https://finance.sina.com.cn/",
+            },
+            timeout=8,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    body = await run_ds(_get)
+    rows = []
+    for item in body or []:
+        if not isinstance(item, dict):
+            continue
+        super_net = num(item.get("r0_net"))
+        large_net = num(item.get("r1_net"))
+        main_net = None
+        if super_net is not None or large_net is not None:
+            main_net = round((super_net or 0) + (large_net or 0), 4)
+        ratio = num(item.get("changeratio"))
+        rows.append(_flow_row({
+            "code": code,
+            "trade_date": str(item.get("opendate") or "").replace("-", ""),
+            "close": num(item.get("trade")),
+            "pct_chg": None if ratio is None else round(ratio * 100, 2),
+            "main_net": main_net,
+            "super_net": super_net,
+            "large_net": large_net,
+            "mid_net": num(item.get("r2_net")),
+            "small_net": num(item.get("r3_net")),
+        }))
+    return rows
+
+
 async def _fetch_flow(code: str, trade_date: str, days: int) -> list:
+    rows = []
     try:
         rows = await _fetch_flow_eastmoney_history(code)
-    except Exception:  # noqa: BLE001 - 历史端点被 WAF 断连时走当日快照兜底
+    except Exception:  # noqa: BLE001 - 历史端点被 WAF 断连时继续走兜底
         rows = []
     if not rows:
-        rows = await _fetch_flow_snapshot_today(code)
+        try:
+            rows = await _fetch_flow_snapshot_today(code)
+        except Exception:  # noqa: BLE001 - 东财整站封 IP 时快照也会失败，转新浪
+            rows = []
+    if not rows:
+        rows = await _fetch_flow_sina(code, days)
     if trade_date:
         filtered = [r for r in rows if r["trade_date"] == trade_date]
-        rows = filtered or rows  # 快照兜底只有当日：请求别的日期时如实返回当日行
-    # 转倒序（最新在前）并截断
-    rows.reverse()
+        rows = filtered or rows  # 兜底源只有近期：请求别的日期时如实返回可得的行
+    # 各源返回顺序不一致，统一按交易日期倒序（最新在前）后截断
+    rows.sort(key=lambda r: str(r.get("trade_date") or ""), reverse=True)
     return rows[:max(1, min(int(days), _MAX_MONEYFLOW_ROWS))]
 
 

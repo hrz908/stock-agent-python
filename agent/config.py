@@ -82,6 +82,9 @@ TOOL_CACHE_TTL = int(os.getenv("TOOL_CACHE_TTL", "300"))
 TOOL_CACHE_TTL_REALTIME = int(os.getenv("TOOL_CACHE_TTL_REALTIME", "30"))
 # 缓存条目上限（LRU）：防止长时间运行把不同股票的结果都攒在内存里
 TOOL_CACHE_MAX = int(os.getenv("TOOL_CACHE_MAX", "256"))
+# 失败结果短 TTL：数据源整站连不上时，同一轮里反复重试只会重复等待，
+# 30s 内直接复用失败结论；成功结果仍按上面的档位缓存，失败不会污染正常缓存
+TOOL_CACHE_TTL_FAILURE = int(os.getenv("TOOL_CACHE_TTL_FAILURE", "30"))
 # 同一轮内并发执行几个工具：akshare 走线程池，全放开会让多个 DataFrame 同时驻留
 TOOL_CONCURRENCY = int(os.getenv("TOOL_CONCURRENCY", "4"))
 

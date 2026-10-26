@@ -23,6 +23,7 @@ from config import (
     GO_SERVER_URL,
     TOOL_CACHE_MAX,
     TOOL_CACHE_TTL,
+    TOOL_CACHE_TTL_FAILURE,
     TOOL_CACHE_TTL_REALTIME,
     TOOL_TIMEOUT,
 )
@@ -126,8 +127,9 @@ def _cache_key(name: str, args: dict) -> str:
 def tool_cache_get(name: str, args: dict) -> dict | None:
     """命中返回结果副本，未命中/已过期返回 None。"""
     # 必须按工具档位判断：全局 TTL=0（关闭）时，盘口类仍按 30s 写入，
-    # 用全局值先返回 None 会让这些缓存永远命中不了
-    if tool_cache_ttl(name) <= 0:
+    # 用全局值先返回 None 会让这些缓存永远命中不了。
+    # 失败缓存有独立 TTL：全局成功缓存关闭时，失败结论仍要能命中。
+    if tool_cache_ttl(name) <= 0 and TOOL_CACHE_TTL_FAILURE <= 0:
         return None
     key = _cache_key(name, args)
     item = _cache.get(key)
@@ -142,10 +144,15 @@ def tool_cache_get(name: str, args: dict) -> dict | None:
 
 
 def tool_cache_put(name: str, args: dict, value: Any) -> None:
-    """写入缓存；失败结果不缓存——上游限流/抖动是瞬时的，
-    缓存住会把一次失败放大成整个 TTL 都不可用。"""
-    ttl = tool_cache_ttl(name)
-    if ttl <= 0 or not isinstance(value, dict) or not value.get("ok"):
+    """写入缓存；成功按工具档位、失败按短 TTL——数据源整站不可用时，
+    同一轮里的重试不该反复等待同一个必挂的接口。"""
+    if not isinstance(value, dict):
+        return
+    if value.get("ok"):
+        ttl = tool_cache_ttl(name)
+    else:
+        ttl = TOOL_CACHE_TTL_FAILURE
+    if ttl <= 0:
         return
     key = _cache_key(name, args)
     _cache[key] = (time.monotonic() + ttl, copy.deepcopy(value))
