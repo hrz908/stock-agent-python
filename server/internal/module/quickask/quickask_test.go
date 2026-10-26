@@ -136,6 +136,100 @@ func TestBuildAskRotatesDimensionsInBatch(t *testing.T) {
 	}
 }
 
+// allTemplateGroups 全量模板组：新增维度时记得挂进来，下面的约束测试才会覆盖到。
+func allTemplateGroups() map[string][]tpl {
+	return map[string][]tpl{
+		"snapshot":    snapshotTemplates,
+		"closed":      closedSnapshotTemplates,
+		"capital":     capitalTemplates,
+		"fundamental": fundamentalTemplates,
+		"technical":   technicalTemplates,
+		"risk":        riskTemplates,
+		"watch":       watchTemplates,
+	}
+}
+
+// TestTemplatesStickToAnswerableDimensions 模板只能问「取数工具答得出」的东西。
+// 北向持仓 / 筹码分布 / 周线形态都没有数据源，问出去只会答「取不到」；
+// 止损、仓位属于投资建议红线；「用一句话总结，再补一句」是提示词口吻，会被原样显示在气泡里。
+func TestTemplatesStickToAnswerableDimensions(t *testing.T) {
+	banned := []string{
+		"北向", "筹码", "周线", "分钟线", "止损", "仓位", "多空",
+		"用一句话", "再补一句", "按重要性排序", "可执行", "亮点和雷点",
+	}
+	for group, list := range allTemplateGroups() {
+		for _, tp := range list {
+			for _, w := range banned {
+				if strings.Contains(tp.display, w) || strings.Contains(tp.ask, w) {
+					t.Fatalf("%s 组模板含可疑表述 %q: %+v", group, w, tp)
+				}
+			}
+		}
+	}
+}
+
+// TestTemplatesNeedOnlyStockName 每条模板只靠 name/code 就能拼出完整问句。
+func TestTemplatesNeedOnlyStockName(t *testing.T) {
+	replacer := strings.NewReplacer("{name}", "宇树科技", "{code}", "688836")
+	for group, list := range allTemplateGroups() {
+		for _, tp := range list {
+			if !strings.Contains(tp.display, "{name}") {
+				t.Fatalf("%s 组 display 缺 {name}: %+v", group, tp)
+			}
+			if !strings.Contains(tp.ask, "{code}") {
+				t.Fatalf("%s 组 ask 缺 {code}（取数要代码落地）: %+v", group, tp)
+			}
+			out := replacer.Replace(tp.display + " | " + tp.ask)
+			if strings.ContainsAny(out, "{}") {
+				t.Fatalf("%s 组仍有未替换占位符: %s", group, out)
+			}
+			if !strings.Contains(out, "宇树科技") || !strings.Contains(out, "688836") {
+				t.Fatalf("%s 组拼装后缺名称或代码: %s", group, out)
+			}
+		}
+	}
+}
+
+// TestBatchHasNoRepeatedSentence 同一批四条建议不出现两句一模一样的话。
+// 覆盖三种取模板路径：盘中异动（只准问盘面）、盘中横盘（技术/观察/风险）、盘后（基本面/风险/观察）。
+func TestBatchHasNoRepeatedSentence(t *testing.T) {
+	now := time.Date(2026, 10, 26, 16, 0, 0, 0, shanghaiLoc)
+	cases := []struct {
+		name string
+		p    phase
+		chg  float64
+		vr   float64
+	}{
+		{"盘中异动", phaseTrading, 6.5, 0},
+		{"盘中横盘", phaseTrading, 0.5, 0},
+		{"盘中放量", phaseTrading, 1.2, 3},
+		{"盘后横盘", phaseAfterClose, 0.5, 0},
+	}
+	for _, tc := range cases {
+		for trial := 0; trial < 50; trial++ {
+			used := map[string]int{}
+			seen := map[string]bool{}
+			for i := 0; i < 4; i++ {
+				ask := buildAsk(
+					Candidate{
+						Code:        "SH60000" + string(rune('1'+i)),
+						Name:        "测试股",
+						ChangePct:   tc.chg,
+						VolumeRatio: tc.vr,
+					},
+					tc.p,
+					now,
+					used,
+				)
+				if seen[ask.Query] {
+					t.Fatalf("%s 批内出现重复问句: %s", tc.name, ask.Query)
+				}
+				seen[ask.Query] = true
+			}
+		}
+	}
+}
+
 func TestParseRankItems(t *testing.T) {
 	body := []byte(`[
       {"symbol":"sz300308","code":"300308","name":"中际旭创","changepercent":3.816,"amount":27918480076,"turnoverratio":4.31},

@@ -40,6 +40,18 @@ func phaseAt(now time.Time) phase {
 
 // tpl 一条问句模板：display 是前端展示的一句话，ask 是真正发给 Agent 的完整问题。
 // 拆成两份是因为展示要短（像随口一问），发出去的 query 要信息完整（带上代码与维度）。
+//
+// 写模板的两条硬约束（2026-10-26 按线上反馈重写）：
+//  1. 只代入 {name}/{code} 就要通顺：模板不能假设「今天涨了」「刚出财报」这类前置事实，
+//     否则套到任意一只票上都会出现「奇怪的股票名 + 句子」组合；
+//  2. 必须能被现有取数工具答出来（括号里是对应工具）：行情/量能（get_quote）、
+//     资金四档（get_money_flow）、估值（get_valuation）、财报与指标（get_financial_report /
+//     get_financial_indicator）、近 15 个交易日走势（get_history_daily）、当日资讯
+//     （get_stock_news）、机构研报（get_research_reports）、龙虎榜（get_top_list）、
+//     同业对比（get_peer_compare）。北向持仓、筹码分布、周线/分钟线、买卖点建议都没有
+//     对应数据源，一律不写进模板——问了只会答「取不到」。
+//
+// ask 里也不要写「用一句话总结，再补一句」这类提示词式要求：它会被原样显示在用户气泡里。
 type tpl struct {
 	tag     string
 	display string
@@ -47,61 +59,97 @@ type tpl struct {
 }
 
 var (
+	// 盘中异动（涨跌幅超 5%）：只问当下就能答的盘面
 	snapshotTemplates = []tpl{
 		{
 			tag:     "盘面",
-			display: "快速看一下{name}（{code}）现在的盘面",
-			ask:     "{name}（{code}）现在什么价？今天这波涨跌是什么逻辑，关键价位在哪",
+			display: "{name}现在什么价？",
+			ask:     "{name}（{code}）现在什么价？涨跌幅、成交额和换手率分别是多少",
 		},
 		{
 			tag:     "盘面",
-			display: "{name}今天这波涨跌背后是什么逻辑？",
-			ask:     "{name}（{code}）今天这波涨跌背后是什么逻辑？结合量价和消息面说",
+			display: "{name}今天这波涨跌是什么原因？",
+			ask:     "{name}（{code}）今天这波涨跌是什么原因？结合量价和今日消息说",
 		},
 		{
 			tag:     "盘面",
-			display: "用一句话总结{name}当前的多空博弈",
-			ask:     "{name}（{code}）现在多空双方谁占优？用一句话总结，再补一句主要依据",
+			display: "{name}今天的最高价和最低价到过多少？",
+			ask:     "{name}（{code}）今天的开盘价、最高价和最低价分别是多少",
+		},
+		{
+			tag:     "盘面",
+			display: "{name}今天的成交额和换手率是多少？",
+			ask:     "{name}（{code}）今天的成交额、换手率和量比分别是多少",
+		},
+		{
+			tag:     "盘面",
+			display: "{name}现在的总市值是多少？",
+			ask:     "{name}（{code}）现在的最新价、涨跌幅和总市值分别是多少",
 		},
 	}
 
-	// 休市（盘后 / 周末 / 盘前）不能复用「今天为什么涨」，改成复盘与下一个交易日
+	// 休市（盘后 / 周末 / 盘前）不能复用「今天为什么涨」，改成复盘
 	closedSnapshotTemplates = []tpl{
 		{
 			tag:     "盘面",
-			display: "复盘一下{name}（{code}）最近的走势",
-			ask:     "{name}（{code}）最近几个交易日怎么走的？量价和资金面各有什么变化",
+			display: "复盘一下{name}最近的走势",
+			ask:     "{name}（{code}）最近10个交易日的走势和量能怎么样",
 		},
 		{
 			tag:     "盘面",
-			display: "{name}下一个交易日值得盯哪些价位？",
-			ask:     "{name}（{code}）下一个交易日的关键价位和需要盯的信号是什么",
+			display: "{name}现在离近期高点还有多远？",
+			ask:     "{name}（{code}）近15个交易日的最高价和最低价是多少？现在处在区间什么位置",
+		},
+		{
+			tag:     "盘面",
+			display: "{name}最近成交量的变化怎么样？",
+			ask:     "{name}（{code}）最近10个交易日的成交量有什么变化",
+		},
+		{
+			tag:     "盘面",
+			display: "{name}最近有没有放量？",
+			ask:     "{name}（{code}）最近几个交易日有放量吗？量比和换手率是什么水平",
 		},
 	}
 
 	capitalTemplates = []tpl{
 		{
 			tag:     "资金",
-			display: "{name}最近主力资金和北向持仓有什么变化？",
-			ask:     "拆解一下{name}（{code}）近5日的资金流向和筹码结构，主力资金和北向持仓有什么变化",
+			display: "{name}最近主力资金在流入还是流出？",
+			ask:     "{name}（{code}）最近5个交易日主力资金净流入情况怎么样",
 		},
 		{
 			tag:     "资金",
-			display: "拆解一下{name}近5日的筹码结构",
-			ask:     "{name}（{code}）近5日的资金流向和筹码结构怎么样？大单和散户分别在做什么",
+			display: "{name}最近的超大单和大单在做什么？",
+			ask:     "{name}（{code}）最新一个交易日的超大单、大单、中单、小单分别净流入多少",
+		},
+		{
+			tag:     "资金",
+			display: "{name}最近上过龙虎榜吗？",
+			ask:     "{name}（{code}）最近上过龙虎榜吗？上榜的话席位买卖情况怎么样",
+		},
+		{
+			tag:     "资金",
+			display: "{name}的主力资金是连续流入吗？",
+			ask:     "{name}（{code}）最近主力资金是连续净流入还是流出？连续了几天",
 		},
 	}
 
 	fundamentalTemplates = []tpl{
 		{
 			tag:     "基本面",
-			display: "{name}最新财报的亮点和雷点分别是什么？",
-			ask:     "{name}（{code}）最新财报的亮点和雷点分别是什么？关键科目各说一句",
+			display: "{name}最新财报的营收和净利润是多少？",
+			ask:     "{name}（{code}）最新一期财报的营业收入和净利润分别是多少？同比变化如何",
 		},
 		{
 			tag:     "基本面",
-			display: "{name}的ROE和毛利在同行里算什么水平？",
-			ask:     "对比{name}（{code}）的ROE、毛利率和同业水平，现在的估值贵不贵",
+			display: "{name}的毛利率和ROE是什么水平？",
+			ask:     "{name}（{code}）最新的毛利率、净利率和ROE分别是多少",
+		},
+		{
+			tag:     "基本面",
+			display: "{name}最近有机构研报吗？",
+			ask:     "{name}（{code}）最近有哪些机构研报？评级和目标价是多少",
 		},
 	}
 
@@ -109,33 +157,38 @@ var (
 		{
 			tag:     "技术",
 			display: "{name}现在的关键支撑位和阻力位在哪？",
-			ask:     "{name}（{code}）现在的关键支撑位和阻力位在哪？结合量价说明",
+			ask:     "{name}（{code}）现在的关键支撑位和阻力位在哪？结合最近10个交易日的量价说",
 		},
 		{
 			tag:     "技术",
-			display: "从周线看{name}处于什么形态？",
-			ask:     "从周线看{name}（{code}）处于什么形态？量价配合如何",
+			display: "{name}最近15个交易日的日K线怎么走的？",
+			ask:     "{name}（{code}）最近15个交易日的日K线怎么走的？量能有什么变化",
 		},
 	}
 
 	riskTemplates = []tpl{
 		{
 			tag:     "风险",
-			display: "{name}当前最大的三个风险点是什么？",
-			ask:     "{name}（{code}）当前最大的三个风险点是什么？按重要性排序",
+			display: "{name}最近有哪些需要留意的风险？",
+			ask:     "{name}（{code}）从最近的消息和财务数据看，有哪些需要留意的风险",
 		},
 		{
 			tag:     "风险",
-			display: "如果现在买{name}，止损和仓位怎么考虑？",
-			ask:     "如果现在买{name}（{code}），止损位和仓位怎么考虑？给一个可执行的方案",
+			display: "{name}最近的股价波动主要受什么影响？",
+			ask:     "{name}（{code}）最近股价波动主要受什么影响？资金面和消息面各说一点",
 		},
 	}
 
 	watchTemplates = []tpl{
 		{
 			tag:     "观察",
-			display: "把{name}加进观察池，给我后续的触发条件清单",
-			ask:     "{name}（{code}）加进观察池，给出后续关键价位和触发条件清单",
+			display: "{name}最近有哪些值得关注的信号？",
+			ask:     "{name}（{code}）最近有哪些值得关注的信号？量价、资金和消息面各说一句",
+		},
+		{
+			tag:     "观察",
+			display: "{name}最近有需要跟踪的公告或事件吗？",
+			ask:     "{name}（{code}）最近有需要跟踪的公告或事件吗？有的话说清是什么",
 		},
 	}
 )
@@ -164,15 +217,16 @@ func pickTemplate(c Candidate, p phase) tpl {
 	return randTpl(eligibleDims(c, p)[0])
 }
 
-// pickTemplateFor 在一批里挑「当前用得最少」的维度，同分随机。
+// pickTemplateFor 在一批里挑「当前用得最少」的维度，同分随机；组内再优先挑没用过的模板。
 // 一次给四条建议，若每条都走首选维度，盘后会四条全是基本面，像复读机；
-// 这里用批内计数把它打散，但不会越过状态约束（大涨的票仍然只问盘面）。
+// 维度打散之后仍可能抽到同一句（实测同屏出现两条「多空博弈」），所以模板也要计一次。
+// 两者都只是批内偏好，不会越过状态约束（大涨的票仍然只问盘面）。
 func pickTemplateFor(c Candidate, p phase, used map[string]int) tpl {
 	dims := eligibleDims(c, p)
 	best := make([][]tpl, 0, len(dims))
 	bestCount := -1
 	for _, g := range dims {
-		n := used[g[0].tag]
+		n := used[tagKey(g[0].tag)]
 		switch {
 		case bestCount < 0 || n < bestCount:
 			bestCount = n
@@ -182,8 +236,36 @@ func pickTemplateFor(c Candidate, p phase, used map[string]int) tpl {
 		}
 	}
 	g := best[rand.Intn(len(best))]
-	used[g[0].tag]++
-	return randTpl(g)
+	used[tagKey(g[0].tag)]++
+	t := pickLeastUsed(g, used)
+	used[tplKey(t)]++
+	return t
+}
+
+// 批内计数的 key 前缀：维度与模板共用一张 map，避免 buildAsk 再多一个参数。
+const (
+	tagKeyPrefix = "tag:"
+	tplKeyPrefix = "tpl:"
+)
+
+func tagKey(tag string) string { return tagKeyPrefix + tag }
+func tplKey(t tpl) string      { return tplKeyPrefix + t.display }
+
+// pickLeastUsed 组内挑本批用得最少的模板，同分随机。
+func pickLeastUsed(group []tpl, used map[string]int) tpl {
+	pool := make([]tpl, 0, len(group))
+	lowest := -1
+	for _, t := range group {
+		n := used[tplKey(t)]
+		switch {
+		case lowest < 0 || n < lowest:
+			lowest = n
+			pool = append(pool[:0], t)
+		case n == lowest:
+			pool = append(pool, t)
+		}
+	}
+	return pool[rand.Intn(len(pool))]
 }
 
 func randTpl(list []tpl) tpl {

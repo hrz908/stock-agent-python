@@ -53,11 +53,12 @@ const FALLBACK_STOCKS = [
   { code: '601899', name: '紫金矿业' },
   { code: '002475', name: '立讯精密' }
 ];
+// 兜底问句：与后端 template.go 同一口径（只代入股票名也通顺，且现有工具答得出）
 const FALLBACK_TEMPLATES = [
   { tag: '盘面', build: (s) => `${s.name}现在什么价？` },
-  { tag: '资金', build: (s) => `${s.name}最近的资金流向怎么样？` },
-  { tag: '基本面', build: (s) => `${s.name}的估值贵不贵？` },
-  { tag: '风险', build: (s) => `${s.name}当前最大的风险点是什么？` }
+  { tag: '资金', build: (s) => `${s.name}最近主力资金在流入还是流出？` },
+  { tag: '估值', build: (s) => `${s.name}现在的市盈率和市净率是多少？` },
+  { tag: '风险', build: (s) => `${s.name}最近有哪些需要留意的风险？` }
 ];
 
 // 抽三条不重复的股票，逐个套模板；展示与发送用同一句（兜底态不拼额外限定）
