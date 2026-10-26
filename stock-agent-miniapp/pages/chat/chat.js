@@ -134,8 +134,8 @@ const KEYBOARD_GAP_RPX = 16;
 const REC_MIN_MS = 1000;
 const REC_MAX_MS = 60000;
 // 语音键的三态文案
-const VOICE_TIP_IDLE = '点一下说话';
-const VOICE_TIP_LIVE = '聆听中 · 再点发送';
+const VOICE_TIP_IDLE = '点击聆听';
+const VOICE_TIP_LIVE = '再点发送';
 const VOICE_TIP_STOP = '正在转写…';
 // 中间结果的视图刷新间隔：识别回调远快于渲染需要，合批后只落最后一次
 const VOICE_TEXT_FLUSH_MS = 100;
