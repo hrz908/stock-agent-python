@@ -79,6 +79,9 @@ git release --dry-run   # 打印本地与服务器当前提交，不推送
 
 - **CRLF**：`.git/hooks/pre-push` 必须是 LF，否则 `sh` 报 syntax error（脚本用 heredoc 写入，天然 LF；手工拷文件要确认）。
 - **别用 WSL 的 bash**：本机 `bash` 指向 WSL，`git release` 走的是 Git 自带的 bash，没这个问题。
+- **服务器连不上 GitHub**（`[release] 错误: 服务器更新失败`，服务器上 `git fetch` 报
+  `Failed to connect to github.com port 443`）：改用 `git release --via-ssh`，本地把提交直推服务器，
+  服务器侧跳过 fetch；线路恢复后照旧 `git release`。
 - **代理端口**：全局 `http.proxy` 写死 `127.0.0.1:7897`，换代理端口后 push 会卡住或报 `Failed to connect`。
 - **`JWT_SECRET` 换机器迁移服务器时要保持不变**：换了等于所有用户 token 失效，小程序强制重新登录。
 

@@ -15,6 +15,9 @@
 # 备份与探活是独立脚本：scripts/backup.sh、scripts/watchdog.sh（各自有 install-cron）。
 #
 # 前置条件：已 git clone 本仓库到 /opt/stock-agent（见 deploy/README.prod.md 第 1 步）。
+#
+# 环境变量 REMOTE_REF=refs/heads/<分支>：update 时跳过 git fetch，直接快进到该 ref。
+# 服务器到 GitHub 不通时由 scripts/release.sh --via-ssh 传入（本地把提交直推进来）。
 
 set -euo pipefail
 
@@ -235,13 +238,23 @@ cmd_update() {
     # 防止服务器上的手工改动被 pull 覆盖或阻塞快进
     [ -z "$(git status --porcelain)" ] || die "服务器有未提交改动，先导出 diff 并回滚，禁止直接更新"
 
-    log "拉取最新代码（$BRANCH）..."
-    git fetch origin "$BRANCH"
-    # 门禁 2：只允许快进；服务器与 origin 分叉时中止，交给人工处理
-    git merge-base --is-ancestor HEAD "origin/$BRANCH" || die "服务器与 origin/$BRANCH 已分叉，先人工处理"
+    # 两条取代码的通道：默认走 origin（GitHub）；服务器连不上 GitHub 时，
+    # release.sh --via-ssh 已把提交直推到 REMOTE_REF，这里跳过 fetch 直接合并
+    local src_ref
+    if [ -n "${REMOTE_REF:-}" ]; then
+        log "使用本地直推的 $REMOTE_REF（跳过 git fetch origin）"
+        git rev-parse --verify -q "$REMOTE_REF" >/dev/null || die "服务器上没有 $REMOTE_REF：确认本地推成功了"
+        src_ref="$REMOTE_REF"
+    else
+        log "拉取最新代码（$BRANCH）..."
+        git fetch origin "$BRANCH"
+        src_ref="origin/$BRANCH"
+    fi
+    # 门禁 2：只允许快进；分叉时中止，交给人工处理
+    git merge-base --is-ancestor HEAD "$src_ref" || die "服务器与 $src_ref 已分叉，先人工处理"
     PREV=$(git rev-parse --short HEAD)
     log "更新前提交：$PREV"
-    git merge --ff-only "origin/$BRANCH"
+    git merge --ff-only "$src_ref"
 
     # 新版本可能引入新配置项：模板变了但已存在的 .env 不会被更新，这里提示差异
     cmd_env_check
