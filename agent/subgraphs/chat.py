@@ -7,11 +7,12 @@ token 在 astream 循环里显式 emit("token", ...) 经 main.py 的 custom 模�
 import time
 from datetime import datetime
 
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
 from config import ANSWER_ENABLE_THINKING
 from core.llm import get_llm
+from core.sanitize import StreamCleaner
 from core.state import AgentState, recent_turns
 from core.template import render
 from subgraphs import emit
@@ -23,23 +24,39 @@ async def llm_stream(state: dict) -> dict:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system = render("chat.xml", now=now, query=query)
 
-    # 保留最近历史以维持连贯（复用 recent_turns 统一口径，跳过当前问题避免重复）
+    # 历史在前、本轮问题作为真正的用户消息压在末尾。
+    # 问句绝不能只写在 system 提示里：单轮会话没有 HumanMessage 时，模型会把
+    # system 当成待补全的文档，直接吐出 <user_query>…</user_query>（线上实测），
+    # 用户看到的就是「AI 把问题当成了回答」。
     history = recent_turns(state, 10, query=query)
-    msgs = [SystemMessage(content=system)] + history
+    msgs = [SystemMessage(content=system)] + history + [HumanMessage(content=query)]
 
     llm = get_llm(streaming=True, temperature=0.7, thinking=ANSWER_ENABLE_THINKING)
-    # 流式生成：逐块 emit token（经 custom 模式透传），同时累加成完整 AIMessage 写回 state
+    # 流式生成：逐块 emit token（经 custom 模式透传），同时累加成完整 AIMessage 写回 state。
+    # 漏出的提示词标签在 cleaner 里剥掉，正文原样透传
+    cleaner = StreamCleaner()
     parts = []
+    sent = []
     ttft_ms = None
     async for chunk in llm.astream(msgs):
         if isinstance(chunk.content, str) and chunk.content:
-            if ttft_ms is None:
-                ttft_ms = int((time.monotonic() - t0) * 1000)
-            emit("token", {"delta": chunk.content})
+            delta = cleaner.feed(chunk.content)
+            if delta:
+                if ttft_ms is None:
+                    ttft_ms = int((time.monotonic() - t0) * 1000)
+                sent.append(delta)
+                emit("token", {"delta": delta})
         parts.append(chunk)
+    tail = cleaner.flush()
+    if tail:
+        sent.append(tail)
+        emit("token", {"delta": tail})
     ai = parts[0] if parts else None
     for p in parts[1:]:
         ai = ai + p
+    # 落库/AIMessage 里也只留净化后的正文：否则下一轮历史又把这堆标签喂回模型
+    if ai is not None:
+        ai = ai.model_copy(update={"content": "".join(sent)})
     total_ms = int((time.monotonic() - t0) * 1000)
     return {
         "messages": [ai if ai is not None else AIMessage(content="")],

@@ -7,24 +7,26 @@ import { fmtPrice, fmtSign, fmtPct, fmtAmount, fmtNum, direction } from '../../.
 Component({
   externalClasses: ['card-class'],
   properties: {
+    // 数值一律用 type: null（任意类型）而不是 Number：声明成 Number 时，
+    // 页面传进来的 null 会被框架转成 0，缺失字段就渲染成「0.00」而不是「--」
     name: { type: String, value: '' },
     // 含交易所前缀的代码，如 SH600519
     code: { type: String, value: '' },
     // 交易状态：已收盘 / 交易中 / 停牌 / 涨停 / 跌停 / 复牌
     status: { type: String, value: '' },
-    price: { type: Number, value: null },
-    change: { type: Number, value: null },
-    changePct: { type: Number, value: null },
-    open: { type: Number, value: null },
-    high: { type: Number, value: null },
-    low: { type: Number, value: null },
-    prevClose: { type: Number, value: null },
+    price: { type: null, value: null },
+    change: { type: null, value: null },
+    changePct: { type: null, value: null },
+    open: { type: null, value: null },
+    high: { type: null, value: null },
+    low: { type: null, value: null },
+    prevClose: { type: null, value: null },
     // 成交额（元）
-    amount: { type: Number, value: null },
+    amount: { type: null, value: null },
     // 换手率（% 数值，如 0.42）
-    turnoverRate: { type: Number, value: null },
+    turnoverRate: { type: null, value: null },
     // 总市值（元）
-    totalCap: { type: Number, value: null },
+    totalCap: { type: null, value: null },
     // 分时点位数组（画迷你走势线）
     points: { type: Array, value: [] },
     // 悬浮标签 [{ text, theme }]，theme: '' | 'hot' | 'gold'

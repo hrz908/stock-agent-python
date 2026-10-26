@@ -18,9 +18,11 @@ const RATING_TONES = {
 Component({
   externalClasses: ['card-class'],
   properties: {
+    // 数值一律用 type: null（任意类型）而不是 Number：声明成 Number 时，
+    // 页面传进来的 null 会被框架转成 0，缺失字段就渲染成「0.00」而不是「--」
     org: { type: String, value: '' },
     rating: { type: String, value: '' },
-    targetPrice: { type: Number, value: null },
+    targetPrice: { type: null, value: null },
     publishDate: { type: String, value: '' },
     reportType: { type: String, value: '' },
     // 核心观点摘要（1-2 句）
@@ -28,7 +30,7 @@ Component({
     // 盈利预测调整方向：上调 / 维持 / 下调
     forecastDir: { type: String, value: '' },
     // 上行空间（% 数值，调用方按现价算好）
-    upside: { type: Number, value: null },
+    upside: { type: null, value: null },
     // 来源（合规必填）：机构名 + 原文链接
     sourceName: { type: String, value: '' },
     sourceUrl: { type: String, value: '' }

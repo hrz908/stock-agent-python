@@ -7,16 +7,18 @@ Component({
   externalClasses: ['card-class'],
   properties: {
     // 主力净流入额（元）
-    mainNet: { type: Number, value: null },
-    // 占成交额比（% 数值）
-    mainNetPct: { type: Number, value: null },
+    mainNet: { type: null, value: null },
+    // 占成交额比（% 数值）。type 用 null（任意类型）：声明成 Number 时，
+    // 页面传 null 会被组件框架转成 0，卡片就凭空显示「占成交额 0.00%」
+    // （该指标数据源已下线，必须保持缺失态不渲染）
+    mainNetPct: { type: null, value: null },
     // 四档拆分 [{ label, value }]（元）
     tiers: { type: Array, value: [] },
     // 北向持股比例（% 数值）及变动（pct）
-    northPct: { type: Number, value: null },
-    northChangePct: { type: Number, value: null },
+    northPct: { type: null, value: null },
+    northChangePct: { type: null, value: null },
     // 连续流入 / 流出天数：正数=流入，负数=流出
-    streakDays: { type: Number, value: null },
+    streakDays: { type: null, value: null },
     // 近 5 日流向趋势（数值数组，画迷你线）
     days5: { type: Array, value: [] },
     // 龙虎榜 [{ seat, buy, sell }]（元）

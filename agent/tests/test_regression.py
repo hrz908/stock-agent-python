@@ -15,6 +15,7 @@
   P11 卡片选择（一次回复最多一张，K 线话题不出卡）
   P12 正文不追加免责声明
   P17 回答版式规范（分段 / 标点 / 不用加粗）
+  P18 闲聊分支不再把问句当回答（提示词结构 + 流式标签净化）+ 行情问句不被概念词误判
 
 用法：python tests/test_regression.py
 """
@@ -26,7 +27,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from config import MAX_INPUT_TOKENS
+from core.keywords import fast_intent
 from core.llm import count_message_tokens, is_context_overflow
+from core.sanitize import StreamCleaner
 from nodes.refuse import _REFUSE_TEXT, refuse
 from subgraphs.cards import validate_card, validate_table
 from subgraphs.stock import (
@@ -1250,6 +1253,46 @@ def test_entity_codes():
         entity._stock_names = orig
 
 
+def test_concept_not_swallowing_live_quote():
+    print("\n[P18] 行情问句不被「是什么」误判成概念问题")
+    # 线上复现：问「襄阳轴承（000678）现在什么价？今天这波涨跌是什么逻辑」，命中了
+    # 概念词「是什么」→ RAG 未命中时被置 intent=chat → 答「我这边没有实时行情接口」
+    st = {"query": "襄阳轴承（000678）现在什么价？今天这波涨跌是什么逻辑，关键价位在哪",
+          "rewritten": ""}
+    check("不是概念问题", not _is_concept_question(st))
+    check("快路径判为取数", fast_intent(st["query"]) == "stock_agent",
+          repr(fast_intent(st["query"])))
+    # 首屏引导问题模板就是「<股票名>现在什么价？」，不能落到路由 LLM 手里
+    check("口语「什么价」也走取数", fast_intent("宁德时代现在什么价？") == "stock_agent")
+    # 真概念题仍保持概念口径（否则会被迫去取数）
+    check("概念题不受影响", _is_concept_question({"query": "市盈率是什么，和市净率有什么区别",
+                                              "rewritten": ""}))
+
+
+def test_stream_cleaner_strips_prompt_leak():
+    print("\n[P18] 模型漏出的提示词标签在流式层被剥掉")
+    # 按线上真实的增量边界喂（闭合标签被拆成 "</" / "user" / "_query" / ">"）
+    deltas = ["<", "user", "_query", ">\n襄阳", "轴承", "</", "user", "_query", ">\n\n",
+              "<", "system", "_context", ">\n内部推理", "</", "system", "_context", ">\n\n",
+              "<", "assistant", "_response", ">\n抱歉，这轮没取到。", "</", "assistant",
+              "_response", ">"]
+    c = StreamCleaner()
+    out = "".join(c.feed(d) for d in deltas) + c.flush()
+    check("问句块被整块丢弃", "襄阳轴承" not in out, repr(out))
+    check("推理块被整块丢弃", "内部推理" not in out, repr(out))
+    check("答案正文保留", out.strip() == "抱歉，这轮没取到。", repr(out))
+    check("没有残留标签", "<" not in out and ">" not in out, repr(out))
+    # 正常回答零改动（逐字喂也一样）
+    normal = "贵州茅台（SH600519）最新价 1338 元。\n\n- 今开 1325.4 元"
+    c2 = StreamCleaner()
+    got = "".join(c2.feed(normal[i:i + 2]) for i in range(0, len(normal), 2)) + c2.flush()
+    check("正常文本原样透传", got == normal, repr(got[:40]))
+    # 正文里的数学尖括号不能被当成标签
+    c3 = StreamCleaner()
+    got3 = "".join(c3.feed(s) for s in ["若 PE ", "<", " 10 则低估"]) + c3.flush()
+    check("普通尖括号保留", got3 == "若 PE < 10 则低估", repr(got3))
+
+
 def main():
     print("=" * 62)
     print("AI 对话故障回归测试")
@@ -1289,6 +1332,8 @@ def main():
     test_rewrite_route_merge()
     test_kb_sources_event()
     test_entity_codes()
+    test_concept_not_swallowing_live_quote()
+    test_stream_cleaner_strips_prompt_leak()
     print("\n" + "=" * 62)
     if _FAILED:
         print(f"FAILED: {len(_FAILED)} 项 -> {_FAILED}")

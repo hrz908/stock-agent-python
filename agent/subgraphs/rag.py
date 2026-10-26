@@ -30,6 +30,7 @@ from config import (
 )
 from core.keywords import is_concept_question
 from core.llm import get_llm, get_small_llm
+from core.sanitize import StreamCleaner
 from core.state import AgentState, recent_turns
 from core.template import render
 from rag.entity import entity_codes
@@ -247,18 +248,30 @@ async def generate_with_citations(state: dict) -> dict:
     messages.append(HumanMessage(content=state.get("query", "") or query))
 
     llm = get_llm(streaming=True, temperature=0.3, thinking=ANSWER_ENABLE_THINKING)
-    # 流式生成：逐块 emit token，同时累加成完整 AIMessage 写回 state
+    # 流式生成：逐块 emit token，同时累加成完整 AIMessage 写回 state。
+    # 漏出的提示词标签（<user_query> 等）在 cleaner 里剥掉，正文原样透传
+    cleaner = StreamCleaner()
     parts = []
+    sent = []
     ttft_ms = None
     async for chunk in llm.astream(messages):
         if isinstance(chunk.content, str) and chunk.content:
-            if ttft_ms is None:
-                ttft_ms = int((time.monotonic() - t0) * 1000)
-            emit("token", {"delta": chunk.content})
+            delta = cleaner.feed(chunk.content)
+            if delta:
+                if ttft_ms is None:
+                    ttft_ms = int((time.monotonic() - t0) * 1000)
+                sent.append(delta)
+                emit("token", {"delta": delta})
         parts.append(chunk)
+    tail = cleaner.flush()
+    if tail:
+        sent.append(tail)
+        emit("token", {"delta": tail})
     ai = parts[0] if parts else None
     for p in parts[1:]:
         ai = ai + p
+    if ai is not None:
+        ai = ai.model_copy(update={"content": "".join(sent)})
     total_ms = int((time.monotonic() - t0) * 1000)
     return {
         "messages": [ai if ai is not None else AIMessage(content="")],

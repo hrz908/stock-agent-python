@@ -7,16 +7,18 @@ import { fmtAmount, fmtPct, fmtPctPlain, fmtNum, direction } from '../../../util
 Component({
   externalClasses: ['card-class'],
   properties: {
+    // 数值一律用 type: null（任意类型）而不是 Number：声明成 Number 时，
+    // 页面传进来的 null 会被框架转成 0，缺失指标就渲染成「0.00%」而不是「--」
     // 报告期标签，如「2026 三季报」（报告期日期行已按需求移除）
     periodLabel: { type: String, value: '' },
     // { value: 金额(元), yoy: 同比(% 数值) }
     revenue: { type: Object, value: null },
     netProfit: { type: Object, value: null },
     cashFlow: { type: Object, value: null },
-    grossMargin: { type: Number, value: null },
-    netMargin: { type: Number, value: null },
-    roe: { type: Number, value: null },
-    eps: { type: Number, value: null },
+    grossMargin: { type: null, value: null },
+    netMargin: { type: null, value: null },
+    roe: { type: null, value: null },
+    eps: { type: null, value: null },
     // 一致预期对比结论：'超预期' | '不及预期' | ''（当前数据源没有，保留字段不出卡）
     beat: { type: String, value: '' },
     note: { type: String, value: '' }

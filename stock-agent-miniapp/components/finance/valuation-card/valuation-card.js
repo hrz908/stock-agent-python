@@ -7,18 +7,21 @@ import { fmtNum, fmtPctPlain, fmtAmount } from '../../../utils/format';
 Component({
   externalClasses: ['card-class'],
   properties: {
+    // 数值一律用 type: null（任意类型）而不是 Number：声明成 Number 时，
+    // 页面传进来的 null 会被框架转成 0，缺失指标就渲染成「0.00%」而不是「--」
+    //（线上实测：dv_ttm / peg 为 null，卡片显示成 0.00）
     // 属性名不能用全大写缩略词：微信把 wxml 的 dash-case 转 camelCase 时
     // 只把连字符后的「首字母」大写——pe-ttm 映射成 peTtm，不是 peTTM。
     // 写成 peTTM 会让 wxml 传进来的值落空（PE(TTM) 恒显示「--」），
     // 且组件读不到任何报错。同类命名一律用 peTtm / psTtm 这种首字母大写形式
-    peTtm: { type: Number, value: null },
-    peStatic: { type: Number, value: null },
-    pb: { type: Number, value: null },
-    ps: { type: Number, value: null },
-    peg: { type: Number, value: null },
+    peTtm: { type: null, value: null },
+    peStatic: { type: null, value: null },
+    pb: { type: null, value: null },
+    ps: { type: null, value: null },
+    peg: { type: null, value: null },
     // 股息率（% 数值，如 3.42）
-    dividendYield: { type: Number, value: null },
-    totalCap: { type: Number, value: null },
+    dividendYield: { type: null, value: null },
+    totalCap: { type: null, value: null },
     note: { type: String, value: '' }
   },
   data: {

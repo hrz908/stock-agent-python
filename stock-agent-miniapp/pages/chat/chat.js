@@ -34,7 +34,7 @@ import { isDev } from '../../config';
 // 侧边抽屉导航项：每行 = 文字 + 右侧箭头（左侧不放图标）
 // 不列「主页」：抽屉本来就只在主页存在，这一项点了没地方去
 const MENUS = [
-  { key: 'kline', label: 'K线卡片' },
+  { key: 'kline', label: '卡片K线' },
   { key: 'watchlist', label: '自选股浮动' },
   { key: 'alerts', label: '提醒推送' },
   { key: 'settings', label: '设置' }
@@ -439,9 +439,10 @@ Page({
     });
 
     // 错误：不再逐字往外吐，已收到的正文一次性显示完再收尾；
-    // 已经暂存的卡仍然放出来（数据是好的），别让用户白等一轮
+    // 已经暂存的卡仍然放出来（数据是好的），别让用户白等一轮。
+    // 两种载荷都要认：agent 直出的 error 是 {message}，网关补发的 error 是 {code,msg}
     on('error', (data) => {
-      this._failSend((data && data.msg) || '服务异常');
+      this._failSend((data && (data.msg || data.message)) || '服务异常');
     });
 
     // 本轮回答结束：先记下「该收尾了」，等逐字打完再真正结束（_endTurn）。
@@ -496,6 +497,8 @@ Page({
             }
           ])
         });
+        // 正文气泡刚建出来：把它顶进视口（之后逐字增长不再跟随，见本文件顶部说明）
+        this.scrollToBottom();
       }
     }
     this._streamText += delta;
@@ -598,18 +601,21 @@ Page({
 
   // 落位在正文之前。正常时序下正文还没开始，直接追加（正文随后新建在它之后）；
   // 卡片迟到时插到那条正文消息之前，流式下标后移一格，否则逐字更新会写到卡上。
-  // 不滚动：视口停在用户正在读的位置
+  // 落位后跟一次底：卡片有 200px 级高度，不跟随会把它自己和下方的加载块
+  // 一起顶出视口（实测表现就是「发送后什么都没有，加载气泡不显示」）
   _placeCard(msg) {
     const messages = this.data.messages;
     const idx = this._streamIndex;
     if (idx < 0) {
       this.setData({ messages: messages.concat([msg]) });
+      this.scrollToBottom();
       return;
     }
     const next = messages.slice();
     next.splice(idx, 0, msg);
     this._streamIndex = idx + 1;
     this.setData({ messages: next });
+    this.scrollToBottom();
   },
 
   // 一轮真正结束：收尾流式消息，最后才解锁发送
