@@ -14,6 +14,7 @@
 2026-10-26 新增：
   P11 卡片选择（一次回复最多一张，K 线话题不出卡）
   P12 正文不追加免责声明
+  P17 回答版式规范（分段 / 标点 / 不用加粗）
 
 用法：python tests/test_regression.py
 """
@@ -898,6 +899,26 @@ def test_fewshot_examples_wired():
     check("toolcall 新规则在位（概念检索无果用通识）", "基于通用知识直接作答" in toolcall_prompt)
 
 
+def test_answer_format_rules():
+    print("\n[P17] 回答版式规范（分段 / 标点 / 不用加粗）")
+    from core.template import load_template, render
+
+    stock_prompt = render("stock.xml", now="2026-10-24", query="q",
+                          tool_results="[]", examples=load_template("stock_examples.xml"))
+    check("stock.xml 分段规则在位", "段落结构" in stock_prompt)
+    check("stock.xml 标点规则在位", "标点规范" in stock_prompt)
+    check("stock.xml 禁用加粗", "不用加粗（**）" in stock_prompt)
+    check("stock.xml 分点限 1-2 句", "每条只讲一件事，控制在 1-2 句" in stock_prompt)
+
+    chat_prompt = render("chat.xml", now="2026-10-24", query="q")
+    check("chat.xml 版式规则在位", "版式：" in chat_prompt)
+    check("chat.xml 禁用加粗", "不用标题（#）、分隔线、加粗（**）" in chat_prompt)
+
+    examples = load_template("stock_examples.xml")
+    check("示例不再示范加粗", "**市盈率" not in examples)
+    check("示例声明每条分点 1-2 句", "每条分点 1-2 句" in examples)
+
+
 # ===== P9：会话历史与 checkpoint 增长治理（2026-10-24）=====
 def test_history_trim_and_session_utils():
     print("\n[P9] 消息窗口裁剪与会话注册表工具")
@@ -1260,6 +1281,7 @@ def main():
     test_vague_reference_guard()
     test_graceful_empty_fallback()
     test_fewshot_examples_wired()
+    test_answer_format_rules()
     test_history_trim_and_session_utils()
     test_retrieval_knobs()
     test_zh_tokenize()

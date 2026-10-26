@@ -29,7 +29,7 @@
               <!-- 行情卡片：金融卡组件（components/finance/quote-card），
                    数据字段在 chat.js 的 quoteCard() 里映射；
                    点卡进卡片画廊（pages/test，静态八卡样式页）。
-                   一轮最多一张卡，且排在正文之后（时序见 chat.js 的 _drainCards） -->
+                   一轮最多一张卡，且排在正文之前（时序见 chat.js 的 _placeCard） -->
               <finance-quote-card wx:if="{{msg.card === 'quote'}}" card-class="msg-card" bindtap="onQuoteCardTap" data-code="{{msg.quote.code}}" data-name="{{msg.quote.name}}" name="{{msg.quote.name}}" code="{{msg.quote.code}}" status="{{msg.quote.status}}" price="{{msg.quote.price}}" change="{{msg.quote.change}}" change-pct="{{msg.quote.changePct}}" open="{{msg.quote.open}}" high="{{msg.quote.high}}" low="{{msg.quote.low}}" amount="{{msg.quote.amount}}" turnover-rate="{{msg.quote.turnoverRate}}" total-cap="{{msg.quote.totalCap}}" points="{{msg.quote.points}}" tags="{{msg.quote.tags}}" note="{{msg.quote.note}}" />
               <!-- K 线卡片：金融卡组件（components/finance/kline-card） -->
               <finance-kline-card wx:elif="{{msg.card === 'kline'}}" card-class="msg-card" name="{{msg.klineName}}" code="{{msg.klineCode}}" subtitle="{{msg.klineSub}}" klines="{{msg.kline}}" ma="{{msg.klineMa}}" period-pct="{{msg.klinePct}}" amplitude="{{msg.klineAmplitude}}" volume-ratio="{{msg.klineVolumeRatio}}" support="{{msg.klineSupport}}" resistance="{{msg.klineResistance}}" note="{{msg.klineNote}}" />
@@ -48,42 +48,30 @@
               <finance-event-card wx:elif="{{msg.card === 'event'}}" card-class="msg-card" events="{{msg.event.events}}" range="{{msg.event.range}}" note="{{msg.event.note}}" />
               <!-- 同业对比卡片：金融卡组件（components/finance/compare-card） -->
               <finance-compare-card wx:elif="{{msg.card === 'compare'}}" card-class="msg-card" items="{{msg.compare.items}}" note="{{msg.compare.note}}" />
-              <!-- 纯文本回答：markdown 块渲染（见页面底部 md-* 模板与样式） -->
+              <!-- 纯文本回答：markdown 块渲染（见页面底部 md-* 模板与样式）。
+                   注意：行内块与 <template> 之间不能留缩进，md-i 开了 pre-wrap，
+                   模板里的空白会被渲染成换行/空格，每段凭空多出空白行 -->
               <block wx:else>
                 <block wx:for="{{msg.blocks}}" wx:for-item="b" wx:key="index">
-                  <view wx:if="{{b.tag === 'h'}}" class="md-h {{b.depth <= 2 ? 'md-h--lg' : 'md-h--sm'}}">
-                    <template is="mdInline" data="{{inlines: b.inlines}}" />
-                  </view>
-                  <view wx:if="{{b.tag === 'p'}}" class="md-p">
-                    <template is="mdInline" data="{{inlines: b.inlines}}" />
-                  </view>
-                  <view wx:if="{{b.tag === 'quote'}}" class="md-quote">
-                    <template is="mdInline" data="{{inlines: b.inlines}}" />
-                  </view>
+                  <view wx:if="{{b.tag === 'h'}}" class="md-h {{b.depth <= 2 ? 'md-h--lg' : 'md-h--sm'}}"><template is="mdInline" data="{{inlines: b.inlines}}" /></view>
+                  <view wx:if="{{b.tag === 'p'}}" class="md-p"><template is="mdInline" data="{{inlines: b.inlines}}" /></view>
+                  <view wx:if="{{b.tag === 'quote'}}" class="md-quote"><template is="mdInline" data="{{inlines: b.inlines}}" /></view>
                   <view wx:if="{{b.tag === 'code'}}" class="md-code">
                     <text class="md-code-text" selectable="{{true}}">{{b.text}}</text>
                   </view>
                   <view wx:if="{{b.tag === 'hr'}}" class="md-hr" />
                   <view wx:if="{{b.tag === 'ul' || b.tag === 'ol'}}" class="md-list">
                     <view class="md-li {{item.depth ? 'md-li--sub' : ''}}" wx:for="{{b.items}}" wx:for-item="item" wx:key="index">
-                      <text class="md-li-marker num">
-                        {{b.tag === 'ol' ? index + 1 + '.' : (item.depth ? '◦' : '•')}}
-                      </text>
-                      <view class="md-li-body">
-                        <template is="mdInline" data="{{inlines: item.inlines}}" />
-                      </view>
+                      <text class="md-li-marker num">{{b.tag === 'ol' ? index + 1 + '.' : (item.depth ? '◦' : '•')}}</text>
+                      <view class="md-li-body"><template is="mdInline" data="{{inlines: item.inlines}}" /></view>
                     </view>
                   </view>
                   <view wx:if="{{b.tag === 'table'}}" class="md-table">
                     <view class="md-tr md-tr--head">
-                      <view class="md-th" wx:for="{{b.head}}" wx:for-item="c" wx:key="index">
-                        <template is="mdInline" data="{{inlines: c}}" />
-                      </view>
+                      <view class="md-th" wx:for="{{b.head}}" wx:for-item="c" wx:key="index"><template is="mdInline" data="{{inlines: c}}" /></view>
                     </view>
                     <view class="md-tr {{ri > 0 ? 'md-tr--sep' : ''}}" wx:for="{{b.rows}}" wx:for-item="r" wx:for-index="ri" wx:key="index">
-                      <view class="md-td" wx:for="{{r}}" wx:for-item="c" wx:key="index">
-                        <template is="mdInline" data="{{inlines: c}}" />
-                      </view>
+                      <view class="md-td" wx:for="{{r}}" wx:for-item="c" wx:key="index"><template is="mdInline" data="{{inlines: c}}" /></view>
                     </view>
                   </view>
                 </block>
@@ -249,16 +237,9 @@
 </view>
 <!-- ===== markdown 行内片段模板 =====
      结构由 utils/markdown.js 生成：带样式标记的扁平文本段。
-     链接点击统一走 onMdLinkTap（复制链接，不用 webview 直接打开外部站点） -->
+     链接点击统一走 onMdLinkTap（复制链接，不用 webview 直接打开外部站点）。
+     这里刻意压成一行、标签与 {{i.text}} 紧贴：md-i 是 pre-wrap，
+     标签内外的缩进都会变成一个空格甚至换行，行内片段就被拆散了 -->
 <template name="mdInline">
-  <block wx:for="{{inlines}}" wx:for-item="i" wx:key="index">
-    <!-- 链接与非链接分成两支：普通文本节点不绑事件。
-         长回答里行内片段成千上万，给每个节点挂 tap 会白白增加事件注册与派发成本 -->
-    <text wx:if="{{i.t !== 'br' && !i.href}}" class="md-i {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code-inline' : ''}} {{i.del ? 'md-del' : ''}}">
-      {{i.text}}
-    </text>
-    <text wx:elif="{{i.t !== 'br'}}" class="md-i md-link {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code-inline' : ''}} {{i.del ? 'md-del' : ''}}" data-href="{{i.href}}" bindtap="onMdLinkTap">
-      {{i.text}}
-    </text>
-  </block>
+  <block wx:for="{{inlines}}" wx:for-item="i" wx:key="index"><text wx:if="{{i.t !== 'br' && !i.href}}" class="md-i {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code-inline' : ''}} {{i.del ? 'md-del' : ''}}">{{i.text}}</text><text wx:elif="{{i.t !== 'br'}}" class="md-i md-link {{i.strong ? 'md-strong' : ''}} {{i.em ? 'md-em' : ''}} {{i.code ? 'md-code-inline' : ''}} {{i.del ? 'md-del' : ''}}" data-href="{{i.href}}" bindtap="onMdLinkTap">{{i.text}}</text></block>
 </template>

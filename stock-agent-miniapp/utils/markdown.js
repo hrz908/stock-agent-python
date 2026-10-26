@@ -125,8 +125,31 @@ function mergeBreaks(inlines) {
   return out;
 }
 
+// 折叠连续换行：视图容器开了 pre-wrap，'\n\n' 会撑出一整行空白。
+// marked 的列表项 text token 自带尾部 '\n'，再叠上分段拼接的那一个，就成了空行；
+// 段间距统一交给 .md-p 等块的 margin，这里只保证「一次换行 = 一次换行」。
+// 返回新数组：blocks 可能已经 patch 到视图层，不能原地改写其中的对象
+function tidy(inlines) {
+  const items = [];
+  (inlines || []).forEach((n) => {
+    if (n.t === 'br') return; // br 已由 mergeBreaks 并入前一段文本
+    const text = String(n.text == null ? '' : n.text).replace(/\n{2,}/g, '\n');
+    items.push(text === n.text ? n : Object.assign({}, n, { text: text }));
+  });
+  // 块首/块尾的换行与块间距重复，裁掉；裁空的段一并丢弃
+  while (items.length && !items[0].text.replace(/^\n+/, '')) items.shift();
+  while (items.length && !items[items.length - 1].text.replace(/\n+$/, '')) items.pop();
+  if (items.length) {
+    const last = items.length - 1;
+    items[0] = Object.assign({}, items[0], { text: items[0].text.replace(/^\n+/, '') });
+    items[last] = Object.assign({}, items[last], { text: items[last].text.replace(/\n+$/, '') });
+  }
+  // 视图层不渲染 undefined：空块兜底成一个空文本段
+  return items.length ? items : [{ t: 'text', text: '' }];
+}
+
 function inlineOf(token) {
-  return mergeBreaks(flattenInline(token.tokens || [{ type: 'text', text: token.text || '' }]));
+  return tidy(mergeBreaks(flattenInline(token.tokens || [{ type: 'text', text: token.text || '' }])));
 }
 
 // 列表：嵌套列表摊平成带 depth 的条目（视觉缩进由 depth 决定），
@@ -159,16 +182,20 @@ function listBlock(tk) {
     if (pending) items.push(pending);
   });
 
-  return { tag: tk.ordered ? 'ol' : 'ul', start: tk.start || 1, items: items };
+  return {
+    tag: tk.ordered ? 'ol' : 'ul',
+    start: tk.start || 1,
+    items: items.map((it) => ({ depth: it.depth, inlines: tidy(it.inlines) }))
+  };
+}
+
+function cellOf(c) {
+  return tidy(mergeBreaks(flattenInline(c.tokens || [{ type: 'text', text: c.text || '' }])));
 }
 
 function tableBlock(tk) {
-  const head = (tk.header || []).map((c) =>
-    mergeBreaks(flattenInline(c.tokens || [{ type: 'text', text: c.text || '' }]))
-  );
-  const rows = (tk.rows || []).map((r) =>
-    r.map((c) => mergeBreaks(flattenInline(c.tokens || [{ type: 'text', text: c.text || '' }])))
-  );
+  const head = (tk.header || []).map(cellOf);
+  const rows = (tk.rows || []).map((r) => r.map(cellOf));
   // 不输出 tk.align：WXML 侧没有对应的对齐实现，带出去只会变成一份没人读的数据
   return { tag: 'table', head: head, rows: rows };
 }
@@ -206,7 +233,7 @@ function parseMarkdown(md) {
           if (inlines.length) inlines.push({ t: 'text', text: '\n' });
           inlines.push.apply(inlines, mergeBreaks(flattenInline(b.tokens || [{ type: 'text', text: b.text || '' }])));
         });
-        if (inlines.length) blocks.push({ tag: 'quote', inlines: inlines });
+        if (inlines.length) blocks.push({ tag: 'quote', inlines: tidy(inlines) });
         break;
       }
       case 'code':

@@ -124,9 +124,8 @@ const KEYBOARD_GAP_RPX = 16;
 // 这里只负责把 SSE 事件转成 message 塞进列表，不再写字段映射。
 
 // ===== 卡片 =====
-// 一次回复最多出一张卡（后端按问题意图只挑一张），且一律排在正文之后：
-// card / table 事件先暂存到 _pendingCard，整轮结束（正文逐字打完）后由 _drainCards 落位。
-// 不做 loading 占位卡：占位卡要排在正文之前才有意义，而这一版卡片必须在正文之后。
+// 一次回复最多出一张卡（后端按问题意图只挑一张），排在正文之前：
+// 后端在正文开始生成前就下发，收到即落位（见 _placeCard），正文随后在卡下方逐字长出。
 
 // ===== 语音输入 =====
 // 点一下开始聆听、再点一下把识别结果直接发给 agent（不是「按住说话」）
@@ -327,8 +326,8 @@ Page({
     this._streamClosing = false;
     // 本轮是否已经开始出正文：正文一出现，加载块就让位（加载文案不再刷）
     this._roundTextStarted = false;
-    // 本轮待落位的卡片（最多一条）：整轮结束前先存着，绝不插到正文中间
-    this._pendingCard = null;
+    // 本轮是否已落过卡：一轮最多一张，收到即落位
+    this._cardPlaced = false;
 
     // 抽屉内容避让状态栏：statusBarHeight 下方再留 28px（原 44，按需求整体上移一点）。
     // 抽屉在左侧、胶囊菜单在右上，横向不重叠，故减小留白不会撞上菜单按钮
@@ -390,8 +389,7 @@ Page({
     });
 
     // 结构化卡片：八类（事件契约见 agent 的 _emit_structured 与 server/README.md）。
-    // 后端一次回复只发一张，这里先暂存，等正文逐字打完再落位：
-    // 文字还在长、卡片已经蹦出来，注意力会被劈成两半
+    // 后端一次回复只发一张，且发在正文之前，收到即落位（见 _queueCard）
     on('card', (data) => {
       if (!data || !data.payload) return;
       let msg = null;
@@ -426,8 +424,7 @@ Page({
       this._refreshLoad();
     });
 
-    // 工具调用/结束：只驱动加载态文案。取数进度不再用占位卡表达——
-    // 卡片一律排在正文之后，占位卡没有能站住的位置。
+    // 工具调用/结束：只驱动加载态文案，不用占位卡表达取数进度。
     // 取数回来到首个 token 之间是模型在组织语言，换成「正在整理」
     on('tool_start', (data) => {
       this._toolLabel = (data && data.label) || '正在获取数据';
@@ -516,9 +513,7 @@ Page({
   },
 
   // 一帧：按积压量决定这一帧揭示几个字，重绘后继续下一帧。
-  // 积压归零即停帧（等下一个 token 拉起）：done 已经来过就收尾整轮。
-  // 卡片不在这里放行——打字追上 token 只是缓冲空了，正文随时还会续写，
-  // 落卡一律等到整轮结束（见 _drainCards）
+  // 积压归零即停帧（等下一个 token 拉起）：done 已经来过就收尾整轮
   _typeTick() {
     if (this._streamIndex < 0) return;
     const total = this._streamText.length;
@@ -592,36 +587,39 @@ Page({
     this.setData(patch);
   },
 
-  // ===== 卡片落位时序：暂存 -> 正文打完 -> 插到末尾 =====
+  // ===== 卡片落位：收到即插到正文之前 =====
 
-  // 收下后端下发的那张卡。一轮只留一张：真有多张也只用第一张，
-  // 与后端「一次回复最多一张」的产品规则对齐
+  // 一轮只留一张：真有多张也只用第一张，与后端「一次回复最多一张」的产品规则对齐
   _queueCard(msg) {
-    if (!this._pendingCard) this._pendingCard = msg;
-    this._drainCards();
-  },
-
-  // 落位。只认一个闸门：整轮结束（done 已到、正文逐字打完、sending 已解锁）。
-  // 「这一帧把缓冲区放完了」不等于「正文写完了」——后端在开始生成正文之前
-  // 就下发卡片，若在打字追上 token 的空档插卡，视觉上就是「先卡片、后文字」。
-  _drainCards() {
-    if (!this._pendingCard) return;
-    if (this.data.sending) return;
-    const msg = this._pendingCard;
-    this._pendingCard = null;
+    if (this._cardPlaced) return;
+    this._cardPlaced = true;
     this._placeCard(msg);
   },
 
-  // 一轮真正结束：收尾流式消息、放行暂存的卡片，最后才解锁发送
+  // 落位在正文之前。正常时序下正文还没开始，直接追加（正文随后新建在它之后）；
+  // 卡片迟到时插到那条正文消息之前，流式下标后移一格，否则逐字更新会写到卡上。
+  // 不滚动：视口停在用户正在读的位置
+  _placeCard(msg) {
+    const messages = this.data.messages;
+    const idx = this._streamIndex;
+    if (idx < 0) {
+      this.setData({ messages: messages.concat([msg]) });
+      return;
+    }
+    const next = messages.slice();
+    next.splice(idx, 0, msg);
+    this._streamIndex = idx + 1;
+    this.setData({ messages: next });
+  },
+
+  // 一轮真正结束：收尾流式消息，最后才解锁发送
   // （解锁早了会把新一轮 token 续进这条旧气泡）
   _endTurn() {
     this._streamClosing = false;
     this._snapStreamEnd();
     this._finishStreaming();
-    // 先解锁发送（「等正文」那道闸门随之打开），再落卡
     this._endLoad();
     this.setData({ sending: false });
-    this._drainCards();
   },
 
   // ===== 加载态 =====
@@ -702,12 +700,6 @@ Page({
       clearTimeout(this._stallTimer);
       this._stallTimer = 0;
     }
-  },
-
-  // 卡片插到消息列表末尾：落位时整轮正文已经写完，所以卡片永远排在这轮文字之后。
-  // 同样不滚动：整轮结束也不是「回到底部」的理由，视口留在用户正在读的地方
-  _placeCard(msg) {
-    this.setData({ messages: this.data.messages.concat([msg]) });
   },
 
   onReady() {
@@ -856,10 +848,10 @@ Page({
     if (!text || this.data.sending) return;
 
     // 上一轮先落定（正常情况下 _endTurn 已经收过尾，这里是兜底）：
-    // 剩余文字一次性铺完，上一轮没落位的卡片作废
+    // 剩余文字一次性铺完，卡片闸门复位
     this._snapStreamEnd();
     this._finishStreaming();
-    this._pendingCard = null;
+    this._cardPlaced = false;
 
     this._roundTextStarted = false;
     this.setData({
@@ -915,7 +907,7 @@ Page({
     }
   },
 
-  // 一轮失败/超时的统一收尾：剩余文字铺完、已到的卡片放出来、解锁发送、提示一次。
+  // 一轮失败/超时的统一收尾：剩余文字铺完、解锁发送、提示一次。
   // error / 看门狗 / 登录失败三条路径共用，避免某一处漏掉某一步（如 _streamClosing）
   _failSend(message) {
     this._clearSendWatchdog();
@@ -923,7 +915,6 @@ Page({
     this._finishStreaming();
     this._endLoad();
     this.setData({ sending: false });
-    this._drainCards();
     if (message) this.toast(message);
   },
 
@@ -1288,7 +1279,6 @@ Page({
     if (!this.data.sending) return;
     this._myReqId = 0;
     agentSocket.disconnect();
-    this._pendingCard = null;
     // _failSend 负责铺完剩余文字 / 复位 _streamClosing / 解锁 sending；用户主动切走
     // 不需要再弹提示，故不传文案
     this._failSend('');
@@ -1296,6 +1286,8 @@ Page({
 
   // 当前会话被删后原地换一条新会话：不跳页、不收起抽屉，
   // 用户仍停在这一页的抽屉上，只是当前项换成了新的空会话。
+  // 这里只生成 id、不注册：注册会立刻在历史列表里多出一条「新对话」顶在原位，
+  // 看起来就是「删了没删掉」；首条消息发出时 Go 网关会 registerSession 补注册。
   // deletedSid 用于在刷新回来的列表里再兜一次底：删除刚落库，
   // 列表接口可能还带着那条，不滤掉它就会「删了又回来」
   _resetToNewSession(deletedSid) {
@@ -1308,8 +1300,6 @@ Page({
     this._msgSeq += 1;
     this.setData({ messages: [], hasEarlier: false, earlierCount: 0 });
     this.scrollToBottom();
-    // 注册失败不阻断：首条消息发出时 Go 网关仍会 registerSession 补注册
-    createSession(sid, '').catch(() => {});
     this.loadSessions().then(() => {
       if (!deletedSid || this._unloaded) return;
       this.setData({

@@ -109,6 +109,15 @@ test('markdown：嵌套列表摊平成 depth，子项 depth+1', () => {
   assert.strictEqual(blocks[0].items[1].depth, 1);
 });
 
+test('markdown：连续换行折叠成单次，空行不再撑出整行空白', () => {
+  // 还原截图里的松散排版：条目内「小标题 + 空行 + 正文」
+  const blocks = md.parseMarkdown('引言：周线三连阴。\n\n- **形态**\n\n  ：周收盘价依次为 1546.63 → 1117。');
+  const flat = JSON.stringify(blocks);
+  assert.ok(flat.indexOf('\\n\\n') === -1, 'pre-wrap 容器里不得出现空行');
+  const body = blocks[1].items[0].inlines.map((n) => n.text).join('');
+  assert.strictEqual(body, '形态\n：周收盘价依次为 1546.63 → 1117。', '条目内只保留一次换行');
+});
+
 test('markdown：表格拆表头与行，且不再输出无人消费的 align', () => {
   const blocks = md.parseMarkdown('| 指标 | 值 |\n| --- | --- |\n| PE | 24.18 |');
   const table = blocks[0];

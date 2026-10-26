@@ -69,7 +69,7 @@
 
 .bubble-text {
   font-size: var(--fs-body);
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--ink);
   white-space: pre-wrap;
   word-break: break-word;
@@ -93,7 +93,8 @@
 }
 
 /* ===== markdown 版式 =====
-   容器开 pre-wrap：换行由 utils/markdown.js 合并进行内文本段 */
+   换行只由行内片段（.md-i 的 pre-wrap）承接，块容器保持默认 white-space：
+   容器一旦 pre-wrap，WXML 里的模板缩进就会变成空白行（见 chat.wxml 的 mdInline） */
 .md-h {
   font-weight: 600;
   color: var(--ink);
@@ -114,8 +115,13 @@
   font-size: var(--fs-body);
   line-height: 1.7;
   color: var(--ink);
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 段间距只留一档：换行已由 markdown.js 折叠，块与块之间靠外边距呼吸。
+   用 --sp-2 而不是 --sp-1：行距放宽后 8rpx 已看不出段与段的分界 */
+.md-p + .md-p {
+  margin-top: var(--sp-2);
 }
 
 /* 引用：左竖线 + 次级文字（视觉稿 .quote 规格） */
@@ -126,7 +132,6 @@
   font-size: var(--fs-aux);
   line-height: 1.7;
   color: var(--ink-2);
-  white-space: pre-wrap;
   word-break: break-word;
 }
 
@@ -149,7 +154,7 @@
 .md-code-text {
   font-family: Menlo, Consolas, "Liberation Mono", monospace;
   font-size: var(--fs-aux);
-  line-height: 1.6;
+  line-height: 1.5;
   color: var(--ink-2);
   white-space: pre;
 }
@@ -163,7 +168,11 @@
   display: flex;
   align-items: flex-start;
   gap: var(--sp-1);
-  margin-top: var(--sp-1);
+}
+
+/* 条目之间才留间距：首条贴着列表上沿，不额外顶出一档 */
+.md-li + .md-li {
+  margin-top: var(--sp-2);
 }
 
 .md-li--sub {
@@ -174,7 +183,7 @@
   flex: none;
   min-width: var(--sp-3);
   font-size: var(--fs-body);
-  line-height: 1.7;
+  line-height: 1.7; /* 与 .md-li-body 同值，否则标记与首行文字光学错位 */
   color: var(--ink-3);
 }
 
@@ -184,7 +193,6 @@
   font-size: var(--fs-body);
   line-height: 1.7;
   color: var(--ink);
-  white-space: pre-wrap;
   word-break: break-word;
 }
 

@@ -183,7 +183,7 @@ test('新对话页发送：带上新会话的 session_id（上下文不串到上
 });
 
 // ---------- 10. 删除当前会话后原地重置为新对话 ----------
-test('删除当前会话：确认后自动开一条新对话，原地重置（不跳页）', async () => {
+test('删除当前会话：原地换一条新会话，且不得自动注册空会话', async () => {
   const { page, calls, flush } = createChatPage();
   page.onLoad({ session: 'sess_gone' });
 
@@ -193,7 +193,9 @@ test('删除当前会话：确认后自动开一条新对话，原地重置（�
   await flush();
 
   assert.deepStrictEqual(calls.deleteSession, ['sess_gone']);
-  assert.strictEqual(calls.createSession.length, 1, '删掉当前会话后应自动开一条新的');
+  // 自动注册会立刻在历史列表原地补一条「新对话」，用户看到的就是「第一条删不掉」
+  assert.strictEqual(calls.createSession.length, 0, '删除后不得自动注册空会话');
+  assert.ok(/^sess_/.test(page._sessionId) && page._sessionId !== 'sess_gone', '当前页要换成一条全新会话');
   assert.strictEqual(calls.navigateTo.length, 0, '原地换会话，不跳页（抽屉仍开着）');
   assert.strictEqual(page.data.messages.length, 0, '新会话首屏不留旧消息');
 });
