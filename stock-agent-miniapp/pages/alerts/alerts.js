@@ -15,8 +15,8 @@ const { CONDITION_OPTIONS, VOLUME_BASE_OPTIONS, FREQUENCY_OPTIONS, THRESHOLD_CON
 // 列表文案：把弹窗里的字段拆成两段——条件（左）与检查频率（右），
 // 卡片里左右分栏显示，不再拼成一句用「·」连接
 function describeAlert(a) {
-  const condOpt = CONDITION_OPTIONS.filter(o => o.value === a.conditionType)[0];
-  const freqOpt = FREQUENCY_OPTIONS.filter(o => o.value === a.checkFrequency)[0];
+  const condOpt = CONDITION_OPTIONS.find(o => o.value === a.conditionType);
+  const freqOpt = FREQUENCY_OPTIONS.find(o => o.value === a.checkFrequency);
 
   let condText;
   if (a.conditionType === 'volume') {

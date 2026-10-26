@@ -481,22 +481,22 @@ Page({
         this._streamShown = this._streamText.length;
         this._renderedShown = this._streamShown;
       } else {
-        this._streamIndex = messages.length;
+        const idx = messages.length;
+        this._streamIndex = idx;
         this._streamText = '';
         this._streamShown = 0;
         this._renderedShown = 0;
         this._mdAt = 0;
         this._mdDirty = false;
+        // 只写新追加的那一项：整表回传会把历史消息（含已解析的 blocks）重传一遍
         this.setData({
-          messages: messages.concat([
-            {
-              role: 'assistant',
-              status: 'streaming',
-              content: [{ type: 'markdown', data: '' }],
-              // 流式消息同样带 blocks：每帧重解析，版式随文本逐字收敛
-              blocks: []
-            }
-          ])
+          ['messages[' + idx + ']']: {
+            role: 'assistant',
+            status: 'streaming',
+            content: [{ type: 'markdown', data: '' }],
+            // 流式消息同样带 blocks：每帧重解析，版式随文本逐字收敛
+            blocks: []
+          }
         });
         // 正文气泡刚建出来：把它顶进视口（之后逐字增长不再跟随，见本文件顶部说明）
         this.scrollToBottom();
@@ -608,7 +608,7 @@ Page({
     const messages = this.data.messages;
     const idx = this._streamIndex;
     if (idx < 0) {
-      this.setData({ messages: messages.concat([msg]) });
+      this.setData({ ['messages[' + messages.length + ']']: msg });
       this.scrollToBottom();
       return;
     }
@@ -861,8 +861,11 @@ Page({
     this._cardPlaced = false;
 
     this._roundTextStarted = false;
+    // 追加用路径写法：整表回传会把历史消息（含已解析的 blocks）重传一遍，
+    // 长会话下这是发送路径上最贵的一步
+    const appendAt = this.data.messages.length;
     this.setData({
-      messages: this.data.messages.concat([userMsg(text)]),
+      ['messages[' + appendAt + ']']: userMsg(text),
       input: '',
       sending: true
     });

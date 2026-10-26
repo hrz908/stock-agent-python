@@ -71,22 +71,18 @@ function statsOf(bars) {
   const first = bars[0];
   const last = bars[bars.length - 1];
   const base = first.o || first.c;
+  // 一次遍历同时取区间高低与「除末根外」的均量，避免为均量另建临时切片
+  const priorCount = bars.length - 1;
   let maxH = -Infinity;
   let minL = Infinity;
-  bars.forEach((b) => {
+  let priorVol = 0;
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
     if (b.h > maxH) maxH = b.h;
     if (b.l < minL) minL = b.l;
-  });
-
-  const prior = bars.slice(0, -1);
-  let avgV = 0;
-  if (prior.length) {
-    let sum = 0;
-    prior.forEach((b) => {
-      sum += b.v;
-    });
-    avgV = sum / prior.length;
+    if (i < priorCount) priorVol += b.v;
   }
+  const avgV = priorCount > 0 ? priorVol / priorCount : 0;
 
   return {
     pct: base ? ((last.c - base) / base) * 100 : null,

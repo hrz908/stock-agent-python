@@ -120,7 +120,6 @@ async def fast_tool_calls(query: str, tool_results: list | None = None) -> list[
     text = (query or "").strip()
     if not text:
         return None
-    low = text.lower()
     if any(w in text for w in _DEFER_WORDS):
         return None
     if is_concept_question(text) or not hit_data_keyword(text):

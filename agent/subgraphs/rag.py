@@ -192,7 +192,6 @@ async def sufficiency_check(state: dict) -> dict:
                 "judge_ms": 0,
             },
         }
-    query = state.get("rewritten") or state.get("query", "") or ""
     t_judge = time.monotonic()
     can_answer = await _judge_can_answer(query, retrieved)
     timings = {

@@ -99,7 +99,7 @@ return 1
 // Allow 依次过三道闸门：全部通过返回 nil，此时已占用一个并发槽，
 // 调用方必须在请求结束后 defer ReleaseConcurrent 归还。
 // Redis 故障导致无法判定时按 fail-open 放行——限流是旁路保护，
-// 不应因 Redis 抖动打断业务，与 middleware.RateLimit 策略一致。
+// 不应因 Redis 抖动打断业务，与 middleware 的限流策略一致。
 func (l *Limiter) Allow(ctx context.Context, uid int64) error {
 	// 闸门一：QPS 令牌桶
 	qpsKey := fmt.Sprintf("rl:qps:%d", uid)

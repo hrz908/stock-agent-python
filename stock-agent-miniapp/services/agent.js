@@ -187,14 +187,19 @@ class AgentSSE {
     return s;
   }
 
-  // 按 SSE 帧分隔符 \n\n 切出完整事件块并解析
+  // 按 SSE 帧分隔符 \n\n 切出完整事件块并解析。
+  // 逐个 slice 缓冲是 O(帧数 × 缓冲长)；这里只游标前进、结束时一次性裁掉已消费前缀
   _drain() {
+    const buf = this._buffer;
+    let start = 0;
     let idx;
-    while ((idx = this._buffer.indexOf('\n\n')) !== -1) {
-      const block = this._buffer.slice(0, idx);
-      this._buffer = this._buffer.slice(idx + 2);
-      this._parseBlock(block);
+    while ((idx = buf.indexOf('\n\n', start)) !== -1) {
+      this._parseBlock(buf.slice(start, idx));
+      start = idx + 2;
+      // 监听器里可能已开新流（_open 重置了缓冲），此时不能把旧缓冲写回去
+      if (this._buffer !== buf) return;
     }
+    if (start > 0) this._buffer = buf.slice(start);
   }
 
   _parseBlock(block) {
@@ -276,13 +281,13 @@ class AgentSSE {
     });
   }
 
-  // 给事件数据补 __rid；非对象数据包一层，保证页面侧取戳不炸
+  // 给事件数据补 __rid；非对象数据包一层，保证页面侧取戳不炸。
+  // 直接写回解析产物：每个事件都是 JSON.parse 的新对象，不必为打戳再拷一份（token 事件最频繁）
   _tag(data) {
     const rid = this._reqId || 0;
     if (data && typeof data === 'object') {
-      const tagged = Object.assign({}, data);
-      if (tagged.__rid == null) tagged.__rid = rid;
-      return tagged;
+      if (data.__rid == null) data.__rid = rid;
+      return data;
     }
     return { __rid: rid, data: data };
   }

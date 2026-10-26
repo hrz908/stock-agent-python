@@ -106,9 +106,8 @@ func GetWatchlist(c *gin.Context) {
 	}
 
 	filter := c.DefaultQuery("filter", "all")
-	items, totalProfit, totalCostValue := assembleItems(rows, quotes, nil, filter)
-	sortItems(items, filter, c.DefaultQuery("order", ""))
-	writeWatchlist(c, items, totalProfit, totalCostValue)
+	list, totalProfit, totalCostValue := assembleItems(rows, quotes, nil, filter)
+	resp.OK(c, listResponse(list, totalProfit, totalCostValue, filter, c.DefaultQuery("order", "")))
 }
 
 /* ===================== 添加自选 ===================== */
@@ -292,25 +291,31 @@ func RefreshWatchlist(c *gin.Context) {
 	// 刷新是 POST，小程序把参数放在 body 里，只读 query 会静默丢掉过滤条件
 	filter, order := refreshParams(c)
 	// 组装与列表接口共用一套：行情优先级 fresh > stale > 无行情
-	items, totalProfit, totalCostValue := assembleItems(rows, fresh, staleMap, filter)
-	sortItems(items, filter, order)
+	list, totalProfit, totalCostValue := assembleItems(rows, fresh, staleMap, filter)
 
 	// 行情更新完成，异步广播给关心方（提醒检查等），不拖慢本接口响应
 	hook.EmitQuoteUpdatedAsync(userID, ctx)
 
 	// 返回结构与列表接口一致，前端可整段替换列表与统计
-	writeWatchlist(c, items, totalProfit, totalCostValue)
+	resp.OK(c, listResponse(list, totalProfit, totalCostValue, filter, order))
 }
 
-// writeWatchlist 统一写列表响应：查询与刷新两个接口结构完全一致
-func writeWatchlist(c *gin.Context, items []WatchItem, totalProfit, totalCostValue decimal.Decimal) {
-	resp.OK(c, WatchListResp{
+// listResponse 查询与刷新共用：先统计涨跌再排序（统计与顺序无关），返回结构与列表接口一致。
+func listResponse(list []listEntry, totalProfit, totalCostValue decimal.Decimal, filter, order string) WatchListResp {
+	upCount, downCount := countDirections(list)
+	sortItems(list, filter, order)
+
+	items := make([]WatchItem, len(list))
+	for i, e := range list {
+		items[i] = e.item
+	}
+	return WatchListResp{
 		List:            items,
 		TotalProfit:     util.Money(totalProfit),
 		TotalProfitRate: sumRate(totalProfit, totalCostValue),
-		UpCount:         countUp(items),
-		DownCount:       countDown(items),
-	})
+		UpCount:         upCount,
+		DownCount:       downCount,
+	}
 }
 
 // sumRate 总盈亏比例 = 总盈亏 ÷ 总成本；成本为 0 记 0，避免除零
@@ -353,8 +358,17 @@ func DeleteWatchlist(c *gin.Context) {
 
 /* ===================== 组装返回项 ===================== */
 
-// buildItem 把「数据库行 + 行情快照」组装成列表项，盈亏在后端算好
-func buildItem(row UserWatchlist, snap *quote.StockSnapshot, stale bool) WatchItem {
+// listEntry 组装期的中间结构：涨跌幅与浮盈随条目一起流转。
+// 列表项里的这两个字段是展示串，回读再解析会让每条多一次 decimal 解析。
+type listEntry struct {
+	item   WatchItem
+	pct    decimal.Decimal
+	profit decimal.Decimal
+}
+
+// buildItem 把「数据库行 + 行情快照」组装成列表项，盈亏在后端算好；
+// 同时回传未格式化的涨跌幅与浮盈，供排序与统计复用
+func buildItem(row UserWatchlist, snap *quote.StockSnapshot, stale bool) listEntry {
 	item := WatchItem{
 		ID:        row.ID,
 		StockCode: row.StockCode,
@@ -373,24 +387,26 @@ func buildItem(row UserWatchlist, snap *quote.StockSnapshot, stale bool) WatchIt
 		item.PctText = noQuote
 		item.ProfitAmount = "0.00"
 		item.ProfitRate = "0.00"
-		return item
+		return listEntry{item: item}
 	}
 
+	amount, rate := calcProfit(snap.Price, row.CostPrice, row.Quantity)
 	item.Price = util.Money(snap.Price)
 	item.PriceText = util.Thousands(snap.Price)
 	item.ChangePct = snap.ChangePercent.StringFixed(2)
 	item.PctText = util.WithSign(snap.ChangePercent) + "%"
 	item.Up = snap.ChangePercent.IsPositive()
-	item.ProfitAmount, item.ProfitRate = calcProfit(snap.Price, row.CostPrice, row.Quantity)
-	return item
+	item.ProfitAmount = util.Money(amount)
+	item.ProfitRate = rate.StringFixed(2)
+	return listEntry{item: item, pct: snap.ChangePercent, profit: amount}
 }
 
 // assembleItems 列表 / 刷新共用的组装逻辑：涨跌幅榜过滤掉无行情的（与前端 filterList 口径一致），
 // 并顺手累计总盈亏；fresh 优先于 stale（stale 表示用的是旧缓存降级数据）
-func assembleItems(rows []UserWatchlist, fresh, stale map[string]*quote.StockSnapshot, filter string) ([]WatchItem, decimal.Decimal, decimal.Decimal) {
+func assembleItems(rows []UserWatchlist, fresh, stale map[string]*quote.StockSnapshot, filter string) ([]listEntry, decimal.Decimal, decimal.Decimal) {
 	skipPending := filter == "up" || filter == "down"
 
-	items := make([]WatchItem, 0, len(rows))
+	list := make([]listEntry, 0, len(rows))
 	totalProfit := zero
 	totalCostValue := zero
 
@@ -400,41 +416,36 @@ func assembleItems(rows []UserWatchlist, fresh, stale map[string]*quote.StockSna
 			snap, isStale = stale[r.StockCode], true
 		}
 
-		it := buildItem(r, snap, isStale)
-		if skipPending && it.Pending {
+		entry := buildItem(r, snap, isStale)
+		if skipPending && entry.item.Pending {
 			continue
 		}
-		items = append(items, it)
-		if it.Pending {
-			// 无行情不计入盈亏统计
-			continue
+		list = append(list, entry)
+		if entry.item.Pending {
+			continue // 无行情不计入盈亏统计
 		}
-		if amt, err := decimal.NewFromString(it.ProfitAmount); err == nil {
-			totalProfit = totalProfit.Add(amt)
-		}
+		totalProfit = totalProfit.Add(entry.profit)
 		totalCostValue = totalCostValue.Add(r.CostPrice.Mul(decimal.NewFromInt(int64(r.Quantity))))
 	}
-	return items, totalProfit, totalCostValue
+	return list, totalProfit, totalCostValue
 }
 
-// calcProfit 浮动盈亏 =（最新价 - 成本价）× 数量。
-// 全程 decimal 避免 3682.4000000000005 这类误差；成本为 0（用户没填）时比例记 0，避免除零
-func calcProfit(price, cost decimal.Decimal, quantity int) (amount string, rate string) {
+// calcProfit 浮动盈亏 =（最新价 - 成本价）× 数量，全程 decimal 避免浮点误差。
+// 成本为 0（用户没填）时比例记 0，避免除零
+func calcProfit(price, cost decimal.Decimal, quantity int) (amount, rate decimal.Decimal) {
 	qty := decimal.NewFromInt(int64(quantity))
-	amountDec := price.Sub(cost).Mul(qty)
+	amount = price.Sub(cost).Mul(qty)
 	costValue := cost.Mul(qty)
-
-	rateDec := zero
 	if costValue.IsPositive() {
-		rateDec = amountDec.Div(costValue).Mul(hundred)
+		rate = amount.Div(costValue).Mul(hundred)
 	}
-	return util.Money(amountDec), rateDec.StringFixed(2)
+	return amount, rate
 }
 
 // sortItems 按涨跌幅排序：filter=up 降序、down 升序；
 // all 时只有显式传 order 才排序，否则保持 SQL 的 created_at DESC 顺序
-func sortItems(items []WatchItem, filter, order string) {
-	desc := true
+func sortItems(list []listEntry, filter, order string) {
+	var desc bool
 	switch filter {
 	case "up":
 		desc = true
@@ -449,54 +460,35 @@ func sortItems(items []WatchItem, filter, order string) {
 		return
 	}
 
-	// 先解析成 decimal：比较器里每次 NewFromString 会把成本乘到 O(n log n)，
-	// 且 sort.Slice 不稳定，同涨跌幅的顺序会随机
-	pcts := make([]decimal.Decimal, len(items))
-	for i, it := range items {
-		v, err := decimal.NewFromString(it.ChangePct)
-		if err != nil {
-			v = zero
-		}
-		pcts[i] = v
-	}
-	sort.SliceStable(items, func(i, j int) bool {
+	// 用 SliceStable：同涨跌幅的条目保持 SQL 顺序，列表不会在两次刷新间随机换位
+	sort.SliceStable(list, func(i, j int) bool {
 		if desc {
-			return pcts[i].GreaterThan(pcts[j])
+			return list[i].pct.GreaterThan(list[j].pct)
 		}
-		return pcts[i].LessThan(pcts[j])
+		return list[i].pct.LessThan(list[j].pct)
 	})
 }
 
-func countUp(items []WatchItem) int {
-	n := 0
-	for _, it := range items {
-		if !it.Pending && it.Up {
-			n++
-		}
-	}
-	return n
-}
-
-// countDown 只数真正下跌的（涨跌幅 < 0），平盘不计入，与前端涨跌榜口径一致
-func countDown(items []WatchItem) int {
-	n := 0
-	for _, it := range items {
-		if it.Pending || it.Up {
+// countDirections 统计涨跌家数：平盘两边都不计，与前端涨跌榜口径一致
+func countDirections(list []listEntry) (up, down int) {
+	for _, e := range list {
+		if e.item.Pending {
 			continue
 		}
-		if v, err := decimal.NewFromString(it.ChangePct); err == nil && v.IsNegative() {
-			n++
+		if e.item.Up {
+			up++
+		} else if e.pct.IsNegative() {
+			down++
 		}
 	}
-	return n
+	return up, down
 }
 
 // 业务上限。DB 列是 numeric(18,4) / int，超范围要等写库才暴露且返回 500；
 // 在入口按 400 挡掉，前端拿到的约束也更明确
 var (
-	maxCostPrice    = decimal.NewFromInt(100000000) // 1 亿
-	maxQuantity     = int64(100000000)              // 1 亿股
-	maxQuantityTemp = maxQuantity
+	maxCostPrice = decimal.NewFromInt(100000000) // 1 亿
+	maxQuantity  = int64(100000000)              // 1 亿股
 )
 
 // parseCost 解析成本价：未传返回零值；传了必须是数字、非负且不超上限
@@ -525,7 +517,7 @@ func parseQuantity(raw *int) (int, string) {
 	if *raw < 0 {
 		return 0, "持股数量不能为负"
 	}
-	if int64(*raw) > maxQuantityTemp {
+	if int64(*raw) > maxQuantity {
 		return 0, "持股数量超出允许范围"
 	}
 	return *raw, ""

@@ -2,6 +2,7 @@
 import logging
 import re
 import time
+from collections import OrderedDict
 from datetime import datetime
 
 from langchain_core.callbacks import (
@@ -169,6 +170,26 @@ def _vec_literal(embedding: list[float]) -> str:
 # 但底层的 OpenAIEmbeddings 客户端（含连接池）没有理由建两份
 _embedder: OpenAIEmbeddings | None = None
 
+# 查询向量缓存：同一问句的向量恒定，重复请求不必再打一次 embedding 接口。
+# 典型命中场景：实体过滤后片段不足时 hybrid_retrieve 会用同一 query 全库重检；
+# 一轮里 RAG 漏斗与知识库工具也可能搜同一句。按条数淘汰，不设 TTL（模型变更需重启）。
+_EMBED_CACHE_MAX = 256
+_EMBED_CACHE: OrderedDict[tuple[str, str], list[float]] = OrderedDict()
+
+
+async def embed_query_cached(query: str) -> list[float]:
+    """取查询向量；命中缓存时省掉一次上游 embedding 往返（百毫秒级）。"""
+    key = (ONLINE_EMBED_MODEL, query)
+    hit = _EMBED_CACHE.get(key)
+    if hit is not None:
+        _EMBED_CACHE.move_to_end(key)
+        return hit
+    vec = await get_embedder().aembed_query(query)
+    _EMBED_CACHE[key] = vec
+    if len(_EMBED_CACHE) > _EMBED_CACHE_MAX:
+        _EMBED_CACHE.popitem(last=False)
+    return vec
+
 
 def get_embedder() -> OpenAIEmbeddings:
     global _embedder
@@ -187,21 +208,15 @@ class HybridRetriever(BaseRetriever):
     """向量 + 全文 RRF 融合检索器。
 
     k: 进上下文的片段数上限。candidates: 送重排的候选池大小（小于 k 无意义）。
-    embedder 惰性构造，复用同一 OpenAI 兼容 embeddings 客户端。
+    查询向量走进程级单例客户端 + 缓存（见 embed_query_cached），实例本身无额外状态。
     """
 
     k: int = 6
     candidates: int = RERANK_CANDIDATES
     per_doc: int = RAG_PER_DOC
-    embedder: OpenAIEmbeddings = None  # type: ignore[assignment]
 
     class Config:
         arbitrary_types_allowed = True
-
-    def _get_embedder(self) -> OpenAIEmbeddings:
-        if self.embedder is None:
-            self.embedder = get_embedder()
-        return self.embedder
 
     async def _run_candidates(
         self,
@@ -221,7 +236,7 @@ class HybridRetriever(BaseRetriever):
         stock_code / stock_codes / source_type / since 是可选过滤，下推到 SQL 两路召回里。
         """
         t0 = time.monotonic()
-        emb = await self._get_embedder().aembed_query(query)
+        emb = await embed_query_cached(query)
         if timings is not None:
             timings["embed_ms"] = int((time.monotonic() - t0) * 1000)
         vl = _vec_literal(emb)

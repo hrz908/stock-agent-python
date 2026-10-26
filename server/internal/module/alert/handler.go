@@ -244,8 +244,11 @@ func UpdateAlert(c *gin.Context) {
 	}
 
 	updates := map[string]any{}
+	// updated 与 updates 同步维护：写库后不必再整行回查，直接用它组装响应
+	updated := rule
 	if req.ConditionType != nil {
 		updates["condition_type"] = condType
+		updated.ConditionType = condType
 	}
 	if req.Threshold != nil {
 		v, msg := parseThreshold(condType, *req.Threshold)
@@ -254,6 +257,7 @@ func UpdateAlert(c *gin.Context) {
 			return
 		}
 		updates["threshold"] = v
+		updated.Threshold = v
 	}
 	if req.VolumeBase != nil {
 		n, msg := normalizeVolumeBase(condType, *req.VolumeBase)
@@ -262,10 +266,12 @@ func UpdateAlert(c *gin.Context) {
 			return
 		}
 		updates["volume_base"] = n
+		updated.VolumeBase = n
 	} else if condType != CondVolume {
 		// 从成交量切成其它条件时基准周期必须归 0，
 		// 否则库里残留 20/10/5，与创建时的归一化不一致
 		updates["volume_base"] = 0
+		updated.VolumeBase = 0
 	}
 	if req.CheckFrequency != nil {
 		if !ValidFrequency(*req.CheckFrequency) {
@@ -273,13 +279,16 @@ func UpdateAlert(c *gin.Context) {
 			return
 		}
 		updates["check_frequency"] = *req.CheckFrequency
+		updated.CheckFrequency = *req.CheckFrequency
 	}
 	// 判定条件变了就清掉上次触发时间，让它能重新提醒
 	if len(updates) > 0 {
 		updates["last_triggered_at"] = nil
+		updated.LastTriggeredAt = nil
 	}
 	if req.Enabled != nil {
 		updates["enabled"] = *req.Enabled
+		updated.Enabled = *req.Enabled
 	}
 
 	if len(updates) == 0 {
@@ -300,19 +309,8 @@ func UpdateAlert(c *gin.Context) {
 		delAlertLock(ctx, userID, rule)
 	}
 
-	var fresh AlertRule
-	if err := deps.DB.WithContext(ctx).
-		Where("id = ? AND user_id = ?", id, userID).
-		First(&fresh).Error; err != nil {
-		// 重查失败不能静默用旧值响应：客户端会拿到修改前的数据还以为成功了
-		log.Printf("reload alert rule failed: id=%d err=%v", id, err)
-		resp.Fail(c, resp.CodeInternal, "修改提醒失败")
-		return
-	} else {
-		rule = fresh
-	}
-	snap, _ := quote.GetQuoteFromRedis(ctx, rule.StockCode)
-	resp.OK(c, toAlertItem(rule, snap))
+	snap, _ := quote.GetQuoteFromRedis(ctx, updated.StockCode)
+	resp.OK(c, toAlertItem(updated, snap))
 }
 
 /* ===================== 删除 ===================== */

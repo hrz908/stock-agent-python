@@ -15,8 +15,12 @@ const LEXER_OPTIONS = { gfm: true, pedantic: false, breaks: true };
 // 「涨幅 **1.23%**，收盘」整句被当成纯文本，界面上就直接露出 ** 星号。
 // 这里对「已经被 lex 成纯文本、但仍残留标记」的片段做一次兜底切分。
 // 只处理 ** / ` / ~~ 三种：单 * 与 _ 在正文里可能真的是乘号或下划线，误判代价更大。
+// 正则提到模块级复用（流式下每次解析要跑几百次），用前重置 lastIndex 保证可重入
+const LEFTOVER_RE = /\*\*[^*\n]+\*\*|`[^`\n]+`|~~[^~\n]+~~/g;
+
 function leftoverSegments(text, st) {
-  const re = /(\*\*[^*\n]+\*\*|`[^`\n]+`|~~[^~\n]+~~)/g;
+  const re = LEFTOVER_RE;
+  re.lastIndex = 0;
   const out = [];
   let last = 0;
   let m;
@@ -140,9 +144,12 @@ function tidy(inlines) {
   while (items.length && !items[0].text.replace(/^\n+/, '')) items.shift();
   while (items.length && !items[items.length - 1].text.replace(/\n+$/, '')) items.pop();
   if (items.length) {
-    const last = items.length - 1;
-    items[0] = Object.assign({}, items[0], { text: items[0].text.replace(/^\n+/, '') });
-    items[last] = Object.assign({}, items[last], { text: items[last].text.replace(/\n+$/, '') });
+    // 只在真的需要裁剪时才克隆：blocks 可能已 patch 到视图层，不能原地改写
+    const head = items[0].text.replace(/^\n+/, '');
+    if (head !== items[0].text) items[0] = Object.assign({}, items[0], { text: head });
+    const lastIdx = items.length - 1;
+    const tail = items[lastIdx].text.replace(/\n+$/, '');
+    if (tail !== items[lastIdx].text) items[lastIdx] = Object.assign({}, items[lastIdx], { text: tail });
   }
   // 视图层不渲染 undefined：空块兜底成一个空文本段
   return items.length ? items : [{ t: 'text', text: '' }];

@@ -155,13 +155,9 @@ redis.call('EXPIRE', key, ttl)
 return 1
 `)
 
-// RateLimit 基于 Redis 有序集合的滑动窗口限流。
-// name 区分限流域（"ip" / "login" / "user" 互不共享窗口），ident 为限流主体（IP 或用户 ID）。
-func RateLimit(name, ident string, limit int64, window time.Duration) gin.HandlerFunc {
-	return rateLimit(name, limit, window, func(*gin.Context) string { return ident })
-}
-
-// rateLimit 真正的滑动窗口实现：identOf 在请求到达时才求值（IP / 用户 ID 都要等 context）。
+// rateLimit 基于 Redis 有序集合的滑动窗口限流。
+// name 区分限流域（"ip" / "login" / "user" 互不共享窗口）；
+// identOf 在请求到达时才求值（IP / 用户 ID 都要等 context）。
 // 处理器在注册阶段构造一次，不能每个请求都新建闭包（会重复分配 seq 与脚本对象）。
 func rateLimit(name string, limit int64, window time.Duration, identOf func(*gin.Context) string) gin.HandlerFunc {
 	var seq int64

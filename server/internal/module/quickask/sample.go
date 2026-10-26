@@ -235,6 +235,20 @@ func pickForSession(pool []Candidate, count int, seen, last map[string]bool) []C
 	return sampleDiverse(candidates, count, maxPerSector)
 }
 
+// countUnseen 池内未被该会话见过的条数：只用于判阈值，不物化新切片
+func countUnseen(pool []Candidate, skip map[string]bool) int {
+	if len(skip) == 0 {
+		return len(pool)
+	}
+	n := 0
+	for _, c := range pool {
+		if !skip[c.Code] {
+			n++
+		}
+	}
+	return n
+}
+
 func excludeCodes(pool []Candidate, skip map[string]bool) []Candidate {
 	if len(skip) == 0 {
 		return pool

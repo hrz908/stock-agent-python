@@ -59,7 +59,7 @@ func List(c *gin.Context) {
 	}
 
 	seen := readSeen(ctx, uid, sid)
-	if len(excludeCodes(pool, seen)) < count {
+	if countUnseen(pool, seen) < count {
 		// 池子快被这个会话看完了：直接开新一轮，否则后面每次都走
 		// 「不够就退回全池」的分支，建议会在这几条里反复打转
 		clearSeen(ctx, uid, sid)
@@ -68,12 +68,14 @@ func List(c *gin.Context) {
 
 	picked := pickForSession(pool, count, seen, readLast(ctx, uid, sid))
 	// 池子比 count 还小（极端降级）时用常青股补足：宁可多给一条，也不要首屏只剩一两条
-	for _, c := range evergreenPool() {
-		if len(picked) >= count {
-			break
-		}
-		if !containsCode(picked, c.Code) {
-			picked = append(picked, c)
+	if len(picked) < count {
+		for _, c := range evergreenPool() {
+			if len(picked) >= count {
+				break
+			}
+			if !containsCode(picked, c.Code) {
+				picked = append(picked, c)
+			}
 		}
 	}
 
