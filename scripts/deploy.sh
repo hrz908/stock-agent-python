@@ -16,8 +16,8 @@
 #
 # 前置条件：已 git clone 本仓库到 /opt/stock-agent（见 deploy/README.prod.md 第 1 步）。
 #
-# 环境变量 REMOTE_REF=refs/heads/<分支>：update 时跳过 git fetch，直接快进到该 ref。
-# 服务器到 GitHub 不通时由 scripts/release.sh --via-ssh 传入（本地把提交直推进来）。
+# 环境变量 REMOTE_BUNDLE=/tmp/xxx.bundle：update 时跳过 git fetch origin，改从该 bundle
+# 取代码后快进合并。服务器到 GitHub 不通时由 scripts/release.sh --via-ssh 传入。
 
 set -euo pipefail
 
@@ -239,12 +239,13 @@ cmd_update() {
     [ -z "$(git status --porcelain)" ] || die "服务器有未提交改动，先导出 diff 并回滚，禁止直接更新"
 
     # 两条取代码的通道：默认走 origin（GitHub）；服务器连不上 GitHub 时，
-    # release.sh --via-ssh 已把提交直推到 REMOTE_REF，这里跳过 fetch 直接合并
+    # release.sh --via-ssh 把 bundle 传到 /tmp，这里从文件取代码后快进合并
     local src_ref
-    if [ -n "${REMOTE_REF:-}" ]; then
-        log "使用本地直推的 $REMOTE_REF（跳过 git fetch origin）"
-        git rev-parse --verify -q "$REMOTE_REF" >/dev/null || die "服务器上没有 $REMOTE_REF：确认本地推成功了"
-        src_ref="$REMOTE_REF"
+    if [ -n "${REMOTE_BUNDLE:-}" ]; then
+        log "使用本地传来的 bundle $REMOTE_BUNDLE（跳过 git fetch origin）"
+        [ -f "$REMOTE_BUNDLE" ] || die "找不到 $REMOTE_BUNDLE：确认本地上传成功了"
+        git fetch "$REMOTE_BUNDLE" "$BRANCH"
+        src_ref="FETCH_HEAD"
     else
         log "拉取最新代码（$BRANCH）..."
         git fetch origin "$BRANCH"

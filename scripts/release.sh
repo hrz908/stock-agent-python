@@ -28,8 +28,7 @@ DRY_RUN=0
 FORCE=0
 SKIP_HEALTH=0
 VIA_SSH=0
-REMOTE_REF=""                 # 非空时让 deploy.sh 跳过 git fetch，直接快进到这个 ref
-TEMP_REF="release-incoming"   # 直推服务器时用的临时分支名（不碰已检出的 main）
+REMOTE_BUNDLE=""              # 非空时让 deploy.sh 从服务器上的 bundle 取代码，跳过 git fetch
 
 log()  { echo -e "\033[32m[release]\033[0m $*"; }
 warn() { echo -e "\033[33m[release]\033[0m $*" >&2; }
@@ -119,27 +118,30 @@ preflight_remote() {
     fi
 }
 
-# 服务器到 GitHub 不通时的兜底通道：本地 ssh 能通，就把提交直接推进服务器仓库，
-# 落在临时分支上——push 到非检出分支不会被 receive.denyCurrentBranch 拦住，
-# 随后由 deploy.sh 读 REMOTE_REF 做 ff-only 合并。
-push_to_server() {
-    log "直推服务器 $SSH_TARGET:$DEPLOY_DIR（跳过服务器侧 git fetch）"
-    git push --quiet "+HEAD:refs/heads/$TEMP_REF" "$SSH_TARGET:$DEPLOY_DIR" \
-        || die "直推服务器失败：确认 ubuntu@$SSH_TARGET 对 $DEPLOY_DIR 有写权限"
-    REMOTE_REF="refs/heads/$TEMP_REF"
+# 服务器到 GitHub 不通时的兜底通道：本地把当前分支打成一个 bundle，流式写进服务器 /tmp，
+# 由 deploy.sh（root）从文件 fetch 后快进合并。
+# 用 bundle 而不是 git push，是因为服务器仓库里历次 sudo 部署留下的对象属主是 root，
+# ubuntu 直推会撞 Permission denied；而写 /tmp 与 root 读 /tmp 都不受限。
+upload_bundle() {
+    local name
+    name="stock-agent-$(git rev-parse --short HEAD).bundle"
+    log "打包 $BRANCH 并上传服务器 /tmp/$name（绕过 GitHub）"
+    git bundle create - "$BRANCH" 2>/dev/null | ssh "$SSH_TARGET" "cat > /tmp/$name" \
+        || die "上传 bundle 失败：确认到 $SSH_TARGET 的 ssh 可用"
+    REMOTE_BUNDLE="/tmp/$name"
 }
 
-# 临时分支只服务本次发布，合并完即删；删不掉不影响发布结果
-cleanup_remote_ref() {
-    [ -n "$REMOTE_REF" ] || return 0
-    remote_git update-ref -d "$REMOTE_REF" 2>/dev/null || warn "临时分支 $REMOTE_REF 没删掉，不影响本次发布"
+# bundle 只服务本次发布，清理失败不影响结果
+cleanup_bundle() {
+    [ -n "$REMOTE_BUNDLE" ] || return 0
+    ssh "$SSH_TARGET" "rm -f '$REMOTE_BUNDLE'" 2>/dev/null || warn "服务器上的 $REMOTE_BUNDLE 没删掉，不影响本次发布"
 }
 
 # sudo 需要密码，必须分配 TTY；没有 TTY 时让它直接失败，而不是静默跳过部署。
 run_remote_update() {
     local env_prefix=""
-    if [ -n "$REMOTE_REF" ]; then
-        env_prefix="REMOTE_REF='$REMOTE_REF' "
+    if [ -n "$REMOTE_BUNDLE" ]; then
+        env_prefix="REMOTE_BUNDLE='$REMOTE_BUNDLE' "
     fi
     ssh -t "$SSH_TARGET" "cd '$DEPLOY_DIR' && sudo ${env_prefix}bash scripts/deploy.sh update" || {
         echo "  看服务器日志：ssh $SSH_TARGET 'cd $DEPLOY_DIR && sudo bash scripts/deploy.sh logs server'" >&2
@@ -180,11 +182,11 @@ main() {
         log "服务器已是 $local_short，跳过 update（改了 .env 或想强制重建用 --force）"
     else
         if [ "$VIA_SSH" = "1" ]; then
-            push_to_server
+            upload_bundle
         fi
         log "服务器更新：$remote_short → $local_short"
         run_remote_update
-        cleanup_remote_ref
+        cleanup_bundle
     fi
 
     local deployed

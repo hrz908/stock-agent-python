@@ -96,10 +96,11 @@ sudo bash scripts/deploy.sh logs              # 全部服务日志
 
 **服务器连不上 GitHub 时**（国内机器常见，症状是 update 只报「服务器更新失败」，
 `ssh` 上去 `git fetch` 卡 `Failed to connect to github.com port 443`）：本地跑
-`git release --via-ssh`。它把提交直接推进服务器仓库的临时分支 `release-incoming`
-（不碰已检出的 main，绕过 `receive.denyCurrentBranch`），再让 `update` 用 `REMOTE_REF`
-跳过 `git fetch` 直接快进合并；合并完临时分支自动删除。GitHub 那边的 push 失败只告警、
-不阻塞上线，下次正常 `git release` 会补推。
+`git release --via-ssh`。它把当前分支打成 bundle 流式写到服务器 `/tmp`，再让 `update`
+用 `REMOTE_BUNDLE` 跳过 `git fetch origin`、从文件取代码后快进合并，发布完自动删掉 bundle。
+（不用 `git push` 直推服务器：服务器仓库里历次 sudo 部署留下的对象属主是 root，
+ubuntu 直推会 `Permission denied`。）GitHub 那边的 push 失败只告警、不阻塞上线，
+下次正常 `git release` 会补推。
 服务器地址取自本地 `remote.prod`（`ssh://ubuntu@tearsinrain.top/opt/stock-agent`），`--force` 用于「只改了 `.env` 想重建」。
 alias 与 `remote.prod` 都在 `.git/config`（不入库），换机器跑一次 `bash scripts/install-hooks.sh`（见 `docs/LOCAL_SETUP.md`）；
 PowerShell 里的 `bash` 指向 WSL，别用 `bash scripts/release.sh`，要么 `git release`，要么进 Git Bash。
