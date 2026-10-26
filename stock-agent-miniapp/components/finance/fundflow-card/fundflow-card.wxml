@@ -1,5 +1,5 @@
 <!-- 资金流向卡：主数字放大 + 占成交额比；四档拆分逐行展开，正负自动着色；
-     北向持股比例与变动（pct）；龙虎榜与融资融券余额按需展示 -->
+     北向持股比例与变动（pct）；龙虎榜按需展示 -->
 <view class="fcard card-class">
   <view class="fcard-hd">
     <view class="fcard-title-col">

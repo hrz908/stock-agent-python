@@ -1,6 +1,6 @@
 @import "../_card.wxss";
 
-/* 卡片标题居中：与 _card.wxss 的共享规则同源；写在组件自身 wxss 里，
+/* 卡片标题对齐：与 _card.wxss 的共享规则同源；写在组件自身 wxss 里，
    避免修改 @import 进来的文件时开发者工具不热更新导致不生效 */
 .fcard-title-col,
 .fcard-name,
@@ -13,7 +13,6 @@
   text-align: left;
 }
 
-/* 结论位：评级 + 目标价，右对齐；买入红 / 中性灰 / 减持绿（视觉稿 .rating） */
 .rating {
   flex: none;
   display: inline-flex;
@@ -41,7 +40,7 @@
    min-height 从 88rpx 收到 56rpx：它写在说明行里，撑到 88rpx 会把整行顶开 */
 .src-link {
   margin-left: var(--space-md);
-  color: var(--accent);
+  color: var(--ink);
   text-decoration: underline;
   display: inline-flex; align-items: center; min-height: 56rpx;
 }

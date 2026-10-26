@@ -3,7 +3,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-3xl) var(--space-xl);
+  padding: var(--space-lg) var(--space-lg);
   gap: var(--space-xs);}
 
 /* 空态图标：图标组件渲染成 <text>，显式 block 化，避免行内基线留白 */

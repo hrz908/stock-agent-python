@@ -22,7 +22,6 @@ const (
 	FreqClose    = "close"    // 日线收盘确认：只在收盘后判
 )
 
-// ValidCondition 判断条件类型是否合法
 func ValidCondition(t string) bool {
 	switch t {
 	case CondPriceUp, CondPriceDown, CondPctUp, CondPctDown, CondVolume:
@@ -31,7 +30,6 @@ func ValidCondition(t string) bool {
 	return false
 }
 
-// ValidFrequency 判断检查频率是否合法
 func ValidFrequency(f string) bool {
 	return f == FreqRealtime || f == FreqClose
 }

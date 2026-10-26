@@ -17,7 +17,6 @@ func Init(dir string) error {
 	return os.MkdirAll(filepath.Join(Dir, "avatars"), 0o755)
 }
 
-// AvatarPath 头像落盘的绝对路径
 func AvatarPath(name string) string {
 	return filepath.Join(Dir, "avatars", name)
 }

@@ -45,6 +45,27 @@ require_docker() {
     docker info >/dev/null 2>&1 || die "docker 未运行：systemctl start docker"
 }
 
+# ---------------------------------------------------------------- 数据库位置
+# DATABASE_DSN 为空（或指向 compose 内的 postgres）时启用自己的 postgres 容器；
+# 指向外部 PG（腾讯云内网地址）时跳过 postgres 服务，行为与迁移前一致。
+uses_external_pg() {
+    local env_file="$DEPLOY_DIR/deploy/.env" dsn
+    [ -r "$env_file" ] || return 1
+    dsn=$(grep -E '^DATABASE_DSN=' "$env_file" | tail -1 | cut -d= -f2- | tr -d '\r' || true)
+    [ -n "$dsn" ] || return 1
+    case "$dsn" in
+        *@postgres:*|*@localhost:*|*@127.0.0.1:*) return 1 ;;
+    esac
+    return 0
+}
+
+# 所有 compose 调用统一走这里：自带 PG 需要 --profile localpg 才会起 postgres 服务
+compose() {
+    local args=()
+    uses_external_pg || args+=(--profile localpg)
+    docker compose -f "$COMPOSE_FILE" "${args[@]}" "$@"
+}
+
 # ---------------------------------------------------------------- swap
 # 4 vCPU / 3GB 内存同时跑 postgres + redis + Go + Python：没有任何余量，
 # 一次 embedding 或大查询抖动就 OOM 杀进程，表现为「容器莫名重启」而没有日志。
@@ -212,7 +233,7 @@ cmd_deploy() {
 
     log "构建并启动全部服务（首次约 5-15 分钟，主要在拉镜像和 pip 装依赖）..."
     cd "$DEPLOY_DIR/deploy"
-    docker compose -f "$COMPOSE_FILE" up -d --build
+    compose up -d --build
 
     log "等待服务就绪..."
     local ok=0
@@ -262,7 +283,7 @@ cmd_update() {
 
     log "重建并重启..."
     cd "$DEPLOY_DIR/deploy"
-    docker compose -f "$COMPOSE_FILE" up -d --build
+    compose up -d --build
     docker image prune -f
 
     log "更新完成。状态：sudo bash scripts/deploy.sh ps"
@@ -348,20 +369,20 @@ cmd_restart() {
     require_root restart
     require_docker
     cd "$DEPLOY_DIR/deploy"
-    docker compose -f "$COMPOSE_FILE" restart
+    compose restart
     log "已重启"
 }
 
 cmd_logs() {
     require_docker
     cd "$DEPLOY_DIR/deploy"
-    docker compose -f "$COMPOSE_FILE" logs -f --tail=100 "${@:-}"
+    compose logs -f --tail=100 "${@:-}"
 }
 
 cmd_ps() {
     require_docker
     cd "$DEPLOY_DIR/deploy"
-    docker compose -f "$COMPOSE_FILE" ps
+    compose ps
 }
 
 case "${1:-}" in

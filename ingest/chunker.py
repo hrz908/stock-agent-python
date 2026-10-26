@@ -55,9 +55,8 @@ def chunk_markdown(content: str, chunk_size: int = 512, overlap: int = 64) -> li
     """
     lines = content.split("\n")
 
-    # 按标题层级切分为 sections
     sections: list[dict] = []  # {"heading_path": str, "lines": list[str]}
-    heading_stack: list[str] = []  # 当前标题路径栈 [(level, text), ...]
+    heading_stack: list[str] = []
     heading_levels: list[int] = []
     current_lines: list[str] = []
 
@@ -83,14 +82,12 @@ def chunk_markdown(content: str, chunk_size: int = 512, overlap: int = 64) -> li
         else:
             current_lines.append(line)
 
-    # 最后一个 section
     if current_lines:
         path = " > ".join(
             f"{'#' * lv} {t}" for lv, t in zip(heading_levels, heading_stack, strict=True)
         )
         sections.append({"heading_path": path, "lines": current_lines})
 
-    # 对每个 section 做 token 级别的切分
     result: list[dict] = []
     seq = 0
 
@@ -103,7 +100,6 @@ def chunk_markdown(content: str, chunk_size: int = 512, overlap: int = 64) -> li
         token_count = count_tokens(section_text)
 
         if token_count <= chunk_size:
-            # 整块作为一个 chunk
             result.append({
                 "seq": seq,
                 "content": section_text,
@@ -127,7 +123,6 @@ def chunk_markdown(content: str, chunk_size: int = 512, overlap: int = 64) -> li
                     buffer = (buffer + "\n\n" + para) if buffer else para
                     buffer_tokens += para_tokens
                 else:
-                    # 先保存 buffer
                     if buffer:
                         result.append({
                             "seq": seq,
@@ -155,7 +150,6 @@ def chunk_markdown(content: str, chunk_size: int = 512, overlap: int = 64) -> li
                         buffer = para
                         buffer_tokens = para_tokens
 
-            # 保存剩余 buffer
             if buffer:
                 result.append({
                     "seq": seq,
@@ -165,7 +159,6 @@ def chunk_markdown(content: str, chunk_size: int = 512, overlap: int = 64) -> li
                 })
                 seq += 1
 
-    # 注入标题路径到 content 头部
     for chunk in result:
         hp = chunk["metadata"]["heading_path"]
         if hp and hp != "(root)":

@@ -31,7 +31,6 @@ var (
 	mgetChunkSize = 100
 )
 
-// StockSnapshot 行情快照
 type StockSnapshot struct {
 	Code          string          `json:"code"`
 	Name          string          `json:"name"`
@@ -79,7 +78,6 @@ func BatchSaveQuotes(ctx context.Context, list []*StockSnapshot) error {
 	return err
 }
 
-// GetQuoteFromRedis 读单条行情缓存
 func GetQuoteFromRedis(ctx context.Context, code string) (*StockSnapshot, error) {
 	if deps.RDB == nil {
 		return nil, redis.Nil

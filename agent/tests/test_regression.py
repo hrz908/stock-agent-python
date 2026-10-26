@@ -655,6 +655,26 @@ def test_card_selection():
         stock_mod.emit_card, stock_mod.emit_table = orig_card, orig_table
 
 
+def test_kline_card_title_carries_symbol():
+    """只调 K 线工具（问「走势 / 量能」的常见路径）时，卡片标题也要能带上标的名。
+
+    标题缺名会一直停在兜底的「K 线走势」，看不出是哪只票。
+    """
+    print("\n[P11b] K 线卡标题带标的名")
+    from subgraphs import stock as stock_mod
+
+    rows = [{"trade_date": "2026-10-23", "open": 1, "high": 2,
+             "low": 0.5, "close": 1.5, "vol": 100}]
+    tr = [{"tool": "get_history_daily", "result": {"ok": True, "data": rows}}]
+
+    with_symbol = stock_mod._card_candidates(tr, {"entities": {"symbol": "金安国纪"}})
+    check("没查行情也能带标的名",
+          bool(with_symbol) and with_symbol[0][1].get("name") == "金安国纪")
+
+    without = stock_mod._card_candidates(tr, {})
+    check("取不到标的时不硬编名字", bool(without) and "name" not in without[0][1])
+
+
 # ===== P12：正文不再追加免责声明（2026-10-26）=====
 def test_no_disclaimer():
     print("\n[P12] 收尾节点不改写正文、不追加免责声明")
@@ -1060,6 +1080,22 @@ def test_retrieval_knobs():
           filt_sql.count("a.stock_codes") == 3 and filt_sql.count("a.source_type") == 2
           and filt_sql.count("a.pub_time") == 2, filt_sql)
     check("过滤参数只传一份", set(filt_params) == {"code", "stype", "since"}, str(filt_params))
+
+    # 软偏好（prefer_codes）：只改变两路召回的排序，不排除其它文档，替代 RAG 漏斗的
+    # 「先硬过滤、不足再全库重跑」两趟检索
+    pref_sql, pref_params = _build_search_sql(prefer_codes=["600519"])
+    check("软偏好不产生 WHERE 过滤（全库仍可兜底）",
+          "a.stock_codes && ARRAY" not in pref_sql
+          and "CASE WHEN a.stock_codes && %(prefer_codes)s::text[]" in pref_sql,
+          pref_sql[:160])
+    check("软偏好参数只传一份", set(pref_params) == {"prefer_codes"}, str(pref_params))
+    check("软偏好排序前缀覆盖 rk 与两路 ORDER BY（4 处）",
+          pref_sql.count("CASE WHEN a.stock_codes && %(prefer_codes)s::text[]") == 4,
+          str(pref_sql.count("CASE WHEN")))
+    mixed_sql, mixed_params = _build_search_sql("600519", prefer_codes=["000858"])
+    check("硬过滤与软偏好同时传入时以硬过滤为准",
+          "prefer_codes" not in mixed_params
+          and "a.stock_codes && ARRAY[%(code)s]" in mixed_sql, str(mixed_params))
 
     # 去重键必须用归一化全文。ingest 给每个 chunk 注入「[标题路径]」前缀，
     # 同标题兄弟片段前 40 字完全一致，按前缀比对会把不同段落整条误删

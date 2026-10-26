@@ -54,28 +54,14 @@ async def hybrid_retrieve(state: dict) -> dict:
     t0 = time.monotonic()
     query = state.get("rewritten") or state.get("query", "") or ""
     timings: dict = {}
-    # 问题点名了某只股票时先按代码过滤：语料扩到几百篇后，同名研报/点评很多，
-    # 不过滤会让别家公司的片段挤掉目标公司。识别不出实体时按全库检索。
+    # 问题点名了某只股票时给它软偏好，而不是硬过滤：语料扩到几百篇后同名研报/点评
+    # 很多，不压一下目标公司的片段会被别家挤掉；但「借公司名问行业/政策」的查询不能
+    # 被筛空。CASE 前缀让命中代码的块在两路召回里排到前面、全库块兜底填满候选池，
+    # 一趟 SQL + 一次重排即可，不再走「先按代码过滤、不足再全库重跑」的第二趟。
     codes = await entity_codes(query)
     try:
         docs = await _get_retriever().asearch(
-            query, stock_codes=codes, timings=timings)
-        # 过滤后片段太少或最高分不过阈值：这次查询可能只是借公司名问行业/政策，
-        # 回退全库检索，避免实体过滤把可用资料筛空
-        if codes:
-            has_rerank = any(d.metadata.get("rerank_score") is not None for d in docs)
-            top = max(
-                ((d.metadata.get("rerank_score") or 0.0) if has_rerank
-                 else (d.metadata.get("similarity") or 0.0)
-                 for d in docs),
-                default=0.0,
-            )
-            th = RERANK_THRESHOLD if has_rerank else RAG_THRESHOLD
-            if len(docs) < _MIN_CHUNKS or top < th:
-                fb: dict = {}
-                docs = await _get_retriever().asearch(query, timings=fb)
-                for key, value in fb.items():
-                    timings[key] = timings.get(key, 0) + value
+            query, prefer_codes=codes, timings=timings)
     except Exception as e:  # noqa: BLE001 - 检索失败按“不足”处理，交给 escalate
         timings["retrieve_ms"] = int((time.monotonic() - t0) * 1000)
         return {"retrieved": [], "error": f"retrieve_failed: {e}", "timings": timings}

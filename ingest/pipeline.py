@@ -147,7 +147,6 @@ async def process_file(
         logger.debug("非文件路径，跳过: %s", path)
         return False
 
-    # 1. 去重锁
     lock_key = f"lock:ingest:{path}"
     try:
         acquired = redis_client.set(lock_key, "1", nx=True, ex=LOCK_TTL)
@@ -158,7 +157,6 @@ async def process_file(
         logger.warning("Redis 锁获取异常 (%s)，继续处理: %s", e, path)
 
     try:
-        # 2. 加载文档内容
         logger.info("开始处理文件: %s", path)
         try:
             content, mime_type = load_document(str(p))
@@ -170,13 +168,12 @@ async def process_file(
             logger.warning("文档内容为空，跳过: %s", path)
             return False
 
-        # 3. 分块 + 嵌入 + 入库
         status, doc_hash = await _ingest(content, str(p), mime_type, store, embedder)
         if status == "failed":
             logger.warning("入库失败，保留原件以便重试: %s", path)
             return False
 
-        # 4. 淘汰原件：unchanged 也要淘汰，否则重复扫描的原件会一直占盘
+        # 淘汰原件：unchanged 也要淘汰，否则重复扫描的原件会一直占盘
         if DELETE_RAW_AFTER_INGEST:
             _retire_raw_file(str(p), content, doc_hash, redis_client)
 
@@ -187,7 +184,6 @@ async def process_file(
         return False
 
     finally:
-        # 5. 释放锁
         try:
             redis_client.delete(lock_key)
         except Exception as e:

@@ -328,6 +328,5 @@ class AgentSSE {
   }
 }
 
-// 单例导出
 const agentSocket = new AgentSSE();
 export default agentSocket;

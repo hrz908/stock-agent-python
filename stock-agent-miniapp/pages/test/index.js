@@ -216,7 +216,6 @@ Page({
   // 旧入口会带 code / name 参数，本页是样式测试页，不按代码取数，参数忽略即可
 
   onBack() {
-    // 返回上一页（chat 行情卡入口 或 watchlist 行点击入口）。
     // 兜底：navigateBack 失败时（无上一页）用 reLaunch 回到主页，
     // 避免从分包子页卡死。chat 不是 tabBar 页，switchTab 会失败，故用 reLaunch。
     wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/chat/chat' }) });

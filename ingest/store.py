@@ -153,13 +153,12 @@ class Store:
                 )
                 doc_id = str((await cur.fetchone())["id"])
 
-                # 2. 删除旧 chunks
                 await conn.execute(
                     "DELETE FROM chunks WHERE document_id = %s",
                     (doc_id,),
                 )
 
-                # 3. 批量插入新 chunks（id 自增、tsv 生成列均不写入）
+                # 批量插入新 chunks（id 自增、tsv 生成列均不写入）
                 # psycopg3 的 executemany 是游标方法，须经 cursor 调用
                 if chunks:
                     rows = [

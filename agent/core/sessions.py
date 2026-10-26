@@ -7,7 +7,6 @@
 - list / delete：历史列表读取与删除（删除联动清 checkpoints 与 Redis 摘要）。
 
 「checkpoint 无限增长」的三道闸在此闭环：guardrail 每轮把 messages 裁到窗口内（blob 有界）；
-prune_thread_checkpoints 每轮 run 前删旧版本、补回最新一份（行数有界）；
 本模块在 upsert 后淘汰单用户超过 SESSION_KEEP_MAX 的旧会话（删注册行 + adelete_thread + 摘要）。
 """
 import logging

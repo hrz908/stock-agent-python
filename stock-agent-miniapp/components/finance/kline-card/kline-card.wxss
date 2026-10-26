@@ -1,6 +1,6 @@
 @import "../_card.wxss";
 
-/* 卡片标题居中：与 _card.wxss 的共享规则同源；写在组件自身 wxss 里，
+/* 卡片标题对齐：与 _card.wxss 的共享规则同源；写在组件自身 wxss 里，
    避免修改 @import 进来的文件时开发者工具不热更新导致不生效 */
 .fcard-title-col,
 .fcard-name,
@@ -13,7 +13,6 @@
    8 张卡统一；本卡只覆写一条：支撑 / 压力行降一档走小号（图区脚注，
    不该和区间涨幅抢视线）。 */
 
-/* 底部说明（数据日期等）左对齐 */
 .fnote {
   text-align: left;
 }
@@ -36,8 +35,7 @@
   box-sizing: border-box;
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-xs);
 }
 
 /* 周期 chip 的文字：标签统一走全局小号 */
@@ -73,7 +71,7 @@
   justify-content: center;
   box-sizing: border-box;
   border: var(--hairline-dashed);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   font-size: var(--font-base);   /* 图区占位（搜索并选择股票后展示 / 暂无数据）：标准 */
   color: var(--ink-3);
 }
@@ -90,5 +88,5 @@
 }
 
 .fnote {
-  text-align: left;              /* 底部说明左对齐 */
+  text-align: left;
 }

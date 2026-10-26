@@ -20,7 +20,7 @@ from pathlib import Path
 from .cases import Case
 
 AGENT_DIR = Path(__file__).resolve().parents[2]  # .../agent
-REPO_DIR = AGENT_DIR.parent                        # .../new-projects
+REPO_DIR = AGENT_DIR.parent                        # .../stock-agent-rag
 # 容器内跑（benchmark / 检索评测）时 DATABASE_URL 的 postgres 主机名就是对的，
 # 不能按宿主直连口径改成 localhost
 IN_CONTAINER = Path("/.dockerenv").exists()
@@ -180,8 +180,6 @@ async def run_case_inproc(case: Case, graph, run_id: str) -> dict:
             stage_timings = {**stage_timings, **values["timings"]}
         tr = values.get("tool_results") or []
 
-        # 正文以最终状态里的最后一条 AIMessage 为准：post 节点会把免责声明
-        # 追加到该消息上，而 token 流里没有（流式结束才追加）。
         # token 拼接文本仅作兜底（确定性回答不走流式时）。
         text = ""
         for m in reversed(values.get("messages") or []):

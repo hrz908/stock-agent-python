@@ -8,11 +8,11 @@
   transform: translate(-50%, -50%); /* 第2条例外：fixed 浮层的视口居中只能用 left/top 50% + translate，无法用 flex（没有可依赖的父容器）。已核对为全项目唯一例外。 */
   z-index: var(--z-toast);
   max-width: 70%;
-  padding: var(--space-md) var(--space-xl);
-  background: rgba(23, 27, 33, 0.94);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-text-primary);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
   animation: toast-in 180ms ease both;
+  box-shadow: var(--shadow-md);
 }
 
 .toast-text {

@@ -33,7 +33,7 @@
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
-  border-radius: var(--radius-lg);
+  border-radius: 0;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -54,7 +54,7 @@
    第一条上方是本容器的上边距，最后一条下方彻底为 0。
    AI 回复没有气泡外壳，轮次之间必须留足一整档才分得开 */
 .msg {
-  margin-top: var(--space-2xl);
+  margin-top: var(--space-lg);
 }
 
 /* ===== 用户提问：右对齐浅底小块 =====
@@ -68,7 +68,7 @@
   max-width: 80%;
   padding: var(--space-md) var(--space-lg);
   background: var(--surface-2);
-  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg);
+  border-radius: var(--radius-md);
 }
 
 .bubble-text {
@@ -93,7 +93,7 @@
   background: transparent;
   border: none;
   border-left: 1rpx solid var(--line); /* 例外：页边线是版式标记，不走 --hairline */
-  border-radius: 0;
+  border-radius: var(--radius-md);
 }
 
 /* ===== markdown 版式 =====
@@ -233,7 +233,7 @@
 
 .md-th {
   color: var(--ink-3);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .md-td {
@@ -274,7 +274,7 @@
 
 /* 链接：图表蓝 + 下划线；点击复制（见 onMdLinkTap） */
 .md-link {
-  color: var(--accent);
+  color: var(--ink);
   text-decoration: underline;
 }
 
@@ -333,7 +333,7 @@
 .ai-load-dot {
   width: 12rpx;
   height: 12rpx;
-  border-radius: var(--radius-round);
+  border-radius: 999rpx;
   background-color: var(--ink);
   animation: ai-load-blink 1.4s infinite ease-in-out;
 }
@@ -355,7 +355,7 @@
 
 .ai-load-text {
   font-size: var(--font-base);
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.5;
   color: var(--ink);
 }
@@ -402,7 +402,7 @@
   width: 4rpx;
   height: 36rpx;
   flex: none;
-  border-radius: var(--radius-xs);
+  border-radius: 0;
   background: var(--ink);
   animation: md-caret-blink 1s infinite;
 }
@@ -428,9 +428,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 72rpx;
+  min-height: var(--icon-touch);
   margin-bottom: var(--space-lg);
-  border: var(--hairline);
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   color: var(--ink-2);
@@ -443,7 +442,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  margin-top: var(--space-xl);
+  margin-top: var(--space-lg);
 }
 
 /* 首屏引导区标题：全局小号（与分节标题同档） */
@@ -452,20 +451,16 @@
   color: var(--ink-3);
 }
 
-/* 上下内边距 --space-md：问句折成两行时 30×1.4×2≈84rpx 已顶到 88rpx 框边，
-   文字几乎贴着描边；补上下 16rpx 后单行高度仍被 min-height 吃掉、观感不变，
-   只有多行时框体才按内容长高 */
+/* 引导问题：次级胶囊（浅灰底、无描边），与主行动点区分 */
 .quick-ask {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
-  min-height: 88rpx;
+  min-height: 80rpx;
   padding: var(--space-md) var(--space-lg);
-  background: transparent;
-  border: var(--hairline);
-  border-radius: 0; /* 直角：与设置页段控 / 隐私入口同一套方框（DESIGN.md 直角框体） */
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
 }
 
 /* 维度标签（盘面 / 资金 / 基本面…）：纯文字 + 一条发丝分隔线，
@@ -474,7 +469,6 @@
 .quick-ask-tag {
   flex: none;
   padding-right: var(--space-md);
-  border-right: var(--hairline);
   font-size: var(--font-sm);
   line-height: 1.2;
   color: var(--ink-3);
@@ -498,7 +492,7 @@
 /* ===== 免责声明（合规兜底条，所有回答底部固定挂载） =====
    纯文字不占盒子：每屏都在的固定元素，越安静越好 */
 .disclaimer {
-  margin-top: var(--space-2xl);
+  margin-top: var(--space-lg);
   font-size: var(--font-sm);   /* 全局小号：与标签同档 */
   line-height: 1.7;
   color: var(--ink-3);
@@ -530,26 +524,23 @@
      注意只能加在输入栏「下方」：容器是底部锚定的，加大上方留白（padding-top）
      只会把对话区挤短，输入栏本身不会动 */
   margin-bottom: var(--space-md);
-  padding: var(--space-xs) var(--space-sm);
+  padding: var(--space-xs) var(--space-xs);
   box-sizing: border-box;
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
 }
 
 /* 模式键（语音 / 键盘）：无底灰图标 / 灰字，两态一致，只换内容。
-   发送键才是唯一的主按键；热区 88rpx，点按不出现原生高亮 */
+   发送键才是唯一的主按键；热区 88rpx，点按不出现原生高亮。
+   不画外圈：输入栏本身已有描边，键内再套一个圆圈会和它抢线 */
 .bar-btn {
   position: relative;
   flex: none;
-  width: 88rpx;
-  height: 88rpx;
+  width: var(--icon-touch);
+  height: var(--icon-touch);
   box-sizing: border-box;
-  border-radius: var(--radius-round);
-  /* 与发送键同款圆圈：两个圆钮分列输入栏两端，视觉上对称 */
-  border: var(--hairline);
-  box-shadow: var(--shadow-sm);
+  border-radius: 999rpx;
   color: var(--ink-2);
   -webkit-tap-highlight-color: transparent;
 }
@@ -596,9 +587,9 @@
   padding: 0 var(--space-lg) var(--space-lg);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-md);
   animation: voice-live-in 160ms ease both;
+  box-shadow: var(--shadow-md);
 }
 
 /* 头部：波形 + 说明 + 取消。88rpx 是「取消」的最小热区，
@@ -631,15 +622,15 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-xxs);
+  gap: var(--space-xs);
   height: 28rpx;
 }
 
 .voice-wave-bar {
   width: var(--space-xs);
-  height: var(--space-sm);
-  border-radius: var(--radius-xs);
-  background: var(--accent);
+  height: var(--space-xs);
+  border-radius: 999rpx;
+  background: var(--ink);
   animation: voice-wave 900ms ease-in-out infinite;
 }
 
@@ -652,7 +643,7 @@
 }
 
 @keyframes voice-wave {
-  0%, 100% { height: var(--space-sm); opacity: 0.45; }
+  0%, 100% { height: var(--space-xs); opacity: 0.45; }
   50% { height: 28rpx; opacity: 1; }
 }
 
@@ -720,12 +711,12 @@
 .bar-hold {
   flex: 1;
   min-width: 0;
-  height: 88rpx;
+  min-height: var(--icon-touch);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: var(--font-lg);
-  font-weight: 600;
+  font-weight: var(--fw-medium);
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -733,32 +724,27 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* 发送键：不填充，圆圈描边与输入框同款（--hairline），靠墨色图标表达主次 */
+/* 发送键：纯图标按钮，无底色无描边，靠图标本身表达主次。
+   幽灵态（语音模式，无内容可发）退成更淡的图标色 */
 .bar-send {
   flex: none;
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: var(--radius-round);
+  width: var(--icon-touch);
+  height: var(--icon-touch);
+  border-radius: 999rpx;
   background: transparent;
-  border: var(--hairline);
-  box-shadow: var(--shadow-sm);
-  color: var(--ink);
+  color: var(--color-text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
-  /* 常驻节点，切换时只变描边与字色：给过渡就顺滑，不给就是硬切 */
-  transition: color 180ms ease, border-color 180ms ease;
+  /* 常驻节点，切换时只变字色：给过渡就顺滑，不给就是硬切 */
+  transition: color 180ms ease;
 }
 
-/* 语音态：连圆圈也去掉，只留图标。输入栏里没有文字可发，
-   这个键的语义变成「收尾并发出」——未在聆听时与左端模式键同灰，
-   聆听中才提到正文字色，表示此刻可点 */
+/* 语音态：输入栏里没有文字可发，这个键的语义变成「收尾并发出」——
+   未在聆听时与左端模式键同灰，聆听中才提到正文字色，表示此刻可点 */
 .bar-send--plain {
   background: transparent;
-  border-color: transparent;
-  /* 描边都撤了，投影一起撤，否则图标像浮在半空 */
-  box-shadow: none;
   color: var(--ink-2);
 }
 
@@ -771,7 +757,7 @@
 .bar-send-stop {
   width: var(--space-lg);
   height: var(--space-lg);
-  border-radius: var(--radius-sm);
+  border-radius: 999rpx;
   background: var(--ink);
 }
 
@@ -808,14 +794,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: var(--space-lg) var(--space-lg) var(--space-xl);
+  padding: var(--space-lg) var(--space-lg) var(--space-lg);
 }
 
 .drawer-logo {
   flex: none;
   width: 112rpx;   /* 2026-10-26：头像放大一号（原 96） */
   height: 112rpx;
-  border-radius: var(--radius-round);
+  border-radius: 999rpx;
   overflow: hidden;
   background: var(--surface-2);
 }
@@ -831,7 +817,7 @@
 /* 品牌名：大号（与导航行同档，靠 700 字重压住层级） */
 .drawer-title {
   font-size: var(--font-lg);
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -850,17 +836,15 @@
   flex: none;
   /* 下边距与 .sender-bar 相同（--space-md），配合抽屉底部安全区内边距对齐 */
   margin: var(--space-lg) var(--space-lg) var(--space-md);
-  padding: var(--space-xs) var(--space-sm);
+  padding: var(--space-xs);
   box-sizing: border-box;
-  background: transparent;
-  border: var(--hairline);
+  background: var(--color-bg-card);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
 }
 
 /* 88rpx = .sender-bar 里 .bar-btn 的高度，撑起与输入栏一致的高度 */
 .drawer-new-inner {
-  height: 88rpx;
+  min-height: var(--icon-touch);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -870,7 +854,7 @@
 /* 底部主行动点：大号（与四个跳转按键同档） */
 .drawer-new-text {
   font-size: var(--font-lg);
-  font-weight: 600;
+  font-weight: var(--fw-medium);
   color: var(--ink);
 }
 
@@ -887,7 +871,7 @@
   box-sizing: border-box;
   border: 4rpx solid var(--ink);
   border-top-color: transparent;
-  border-radius: var(--radius-round);
+  border-radius: 999rpx;
   animation: drawer-new-spin 0.8s linear infinite;
 }
 
@@ -914,7 +898,8 @@
   gap: var(--space-md);
   min-height: 96rpx;
   padding: 0 var(--space-md);
-  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  border-radius: 0;
 }
 
 /* 文字吃满剩余宽度，右侧箭头自然贴边。
@@ -922,7 +907,7 @@
 .drawer-item-text {
   flex: 1;
   font-size: var(--font-lg);
-  font-weight: 500;
+  font-weight: 400;
   color: var(--ink);
   text-align: left;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -971,14 +956,13 @@
   height: 88rpx;
   margin-bottom: var(--space-md);
   padding: 0 var(--space-xs) 0 var(--space-md);
-  border: 1rpx solid transparent;
-  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  border-radius: 0;
 }
 
-/* 当前会话：方框 + 投影，与全站「浮起面」同一套 */
+/* 当前会话：浅灰底标出选中态，不加描边也不加阴影 */
 .history-item--active {
-  border-color: var(--line);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
 }
 
 .history-item-main {
@@ -1010,7 +994,7 @@
 }
 
 .history-empty {
-  padding: var(--space-xl) 0;
+  padding: var(--space-lg) 0;
   text-align: center;
   font-size: var(--font-sm);
   color: var(--ink-3);

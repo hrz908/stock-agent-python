@@ -61,7 +61,8 @@ page {
    两行必须都留：不支持 min() 的旧 WebView 落到第一行，字号档位才不会失效 */
 .page {
   font-size: var(--font-base);
-  font-size: min(var(--font-base), 20px);
+  /* 大屏封顶：rpx 随屏宽放大，正文不让它失控 */
+  font-size: min(var(--font-base), 18px);
 }
 
 /* 数字等宽：所有金额、比例、涨跌幅所在节点必须挂 class="num"，
@@ -75,7 +76,7 @@ page {
    对话页有自己的 .disclaimer（列表末尾常驻），子页面统一用这个类。
    字号统一全局小号（--font-sm），与标签同一档，不再走 caption */
 .page-disclaimer {
-  margin-top: var(--space-xl);
+  margin-top: var(--space-lg);
   padding: 0 var(--space-xs);
   font-size: var(--font-sm);
   line-height: var(--lh-loose);

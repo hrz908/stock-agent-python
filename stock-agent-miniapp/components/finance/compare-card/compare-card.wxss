@@ -1,6 +1,6 @@
 @import "../_card.wxss";
 
-/* 卡片标题居中：与 _card.wxss 的共享规则同源；写在组件自身 wxss 里，
+/* 卡片标题对齐：与 _card.wxss 的共享规则同源；写在组件自身 wxss 里，
    避免修改 @import 进来的文件时开发者工具不热更新导致不生效 */
 .fcard-title-col,
 .fcard-name,
@@ -8,7 +8,6 @@
   text-align: left;
 }
 
-/* 底部说明（数据日期）左对齐 */
 .fnote {
   text-align: left;
 }
@@ -66,7 +65,7 @@
 .cmp-row--head .cmp-cell {
   color: var(--ink-3);
   font-size: var(--font-base);     /* 表头标的：标准 */
-  font-weight: 500;
+  font-weight: 400;
   white-space: nowrap;
 }
 

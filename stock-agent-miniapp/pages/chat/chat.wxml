@@ -15,13 +15,13 @@
         <!-- 历史消息分片：只渲染最近一批，更早的按页向前补（见 chat.js 的 onLoadEarlier） -->
         <view wx:if="{{hasEarlier}}" class="load-earlier" bindtap="onLoadEarlier">查看更早的 {{earlierCount}} 条</view>
         <block wx:for="{{messages}}" wx:for-item="msg" wx:key="index">
-          <!-- ===== 用户消息（含语音识别结果）：右对齐主色气泡 ===== -->
+          <!-- ===== 用户消息（含语音识别结果）：右对齐浅底气泡 ===== -->
           <view wx:if="{{msg.role === 'user'}}" class="msg msg--user">
             <view class="bubble bubble--user">
               <text class="bubble-text" selectable="{{true}}">{{msg.content[0].data}}</text>
             </view>
           </view>
-          <!-- ===== AI 消息：左对齐卡片气泡 ===== -->
+          <!-- ===== AI 消息：左对齐，正文不套气泡底 ===== -->
           <view wx:else class="msg msg--assistant">
             <!-- 卡片消息（quote/kline）时气泡退让成透明容器，视觉交给金融卡组件，
                  避免出现「卡中卡」的双层底 -->
@@ -94,7 +94,7 @@
           <view class="quick-ask" wx:for="{{quickAsks}}" wx:for-item="q" wx:key="id" data-q="{{q.query}}" data-id="{{q.id}}" data-code="{{q.stock_code}}" bindtap="onQuickAsk">
             <text wx:if="{{q.tag}}" class="quick-ask-tag">{{q.tag}}</text>
             <text class="quick-ask-text">{{q.display}}</text>
-            <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink-3);" />
+            <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
           </view>
         </view>
         <!-- ===== AI 加载态 =====
@@ -166,8 +166,8 @@
            识别由微信同声传译插件完成，边说边出字；
            不再用「按住说话」——按住时会话区被手指压住，松手即发也不好改口 -->
       <view wx:else class="bar-hold" bindtap="onVoiceTap">{{voiceTip}}</view>
-      <!-- 发送键：键盘态是唯一的黑圆主按钮（无输入内容、等待回复时都不切色）。
-           语音态只保留图标、去掉黑圆——胶囊里没有文字可发，这个键的语义变成
+      <!-- 发送键：键盘态不填充、不画外圈，靠墨色图标表达主次（无输入内容、等待回复时都不切色）。
+           语音态只保留图标——胶囊里没有文字可发，这个键的语义变成
            「收尾并发出」，未在聆听时用弱色表示暂不可用（见 chat.js 的 onSend） -->
       <view class="bar-send {{voiceMode ? 'bar-send--plain' : ''}} {{recording ? 'bar-send--live' : ''}}" aria-label="发送" bindtap="onSend">
         <view wx:if="{{sending}}" class="bar-send-stop"></view>
@@ -196,7 +196,7 @@
         <view class="drawer-section-title drawer-nav-title">导航</view>
         <view class="drawer-item" wx:for="{{menus}}" wx:for-item="m" wx:key="key" data-menu="{{m.key}}" bindtap="onMenuSelect">
           <text class="drawer-item-text">{{m.label}}</text>
-          <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink-3);" />
+          <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
         </view>
       </view>
       <!-- 历史对话：只有这一块滚（占掉导航与底部按钮之间的全部高度）。
@@ -209,7 +209,7 @@
               <text class="history-item-title">{{item.title}}</text>
             </view>
             <view class="history-item-del" data-sid="{{item.session_id}}" catchtap="onSessionDelete">
-              <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--ink-3);" />
+              <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
             </view>
           </view>
           <view wx:if="{{!sessions.length}}" class="history-empty">暂无历史对话</view>

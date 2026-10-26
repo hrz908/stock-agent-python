@@ -25,6 +25,10 @@ COMPOSE_FILE="docker-compose.prod.yml"
 PG_CONTAINER="stock-agent-postgres"
 PG_USER="postgres"
 PG_DB="stock_agent"
+ENV_FILE="/opt/stock-agent/deploy/.env"
+# 外部 PG（腾讯云）时没有常驻 pg 容器，用一次性客户端容器执行 pg_dump/pg_restore；
+# 镜像主版本必须 >= 服务端主版本（云实例选 PG16 时保持默认即可）
+PG_CLIENT_IMAGE="${PG_CLIENT_IMAGE:-postgres:16}"
 BACKUP_DIR="/var/backups/stock-agent"
 KEEP_DAYS=7
 # 低于这个剩余空间就不备份：写满把 postgres 搞挂，比没有备份更糟
@@ -41,6 +45,77 @@ require_root() {
 require_container() {
     docker inspect -f '{{.State.Running}}' "$PG_CONTAINER" 2>/dev/null | grep -q true \
         || die "$PG_CONTAINER 没在运行。先 sudo bash scripts/deploy.sh ps"
+}
+
+# deploy/.env 是 root:600，备份脚本本来就全程 sudo，直接读出来判库位置
+load_env() {
+    [ -r "$ENV_FILE" ] || return 0
+    set -a
+    # shellcheck disable=SC1090
+    . <(tr -d '\r' < "$ENV_FILE")
+    set +a
+}
+
+# 迁移后 .env 的 DATABASE_DSN 指向云 PG；主机名仍是 compose 内的 postgres 则算自带库
+pg_is_remote() {
+    [ -n "${DATABASE_DSN:-}" ] || return 1
+    case "$DATABASE_DSN" in
+        *@postgres:*|*@localhost:*|*@127.0.0.1:*) return 1 ;;
+    esac
+    return 0
+}
+
+# 统一的客户端执行入口：本地走常驻容器，云上走一次性 postgres 客户端容器
+pg_run() {
+    if pg_is_remote; then
+        docker run --rm -i "$PG_CLIENT_IMAGE" "$@"
+    else
+        docker exec -i "$PG_CONTAINER" "$@"
+    fi
+}
+
+require_pg() {
+    if pg_is_remote; then
+        # 只打印主机部分，别把密码写进 cron 日志
+        log "外部数据库：${DATABASE_DSN#*@}"
+    else
+        require_container
+    fi
+}
+
+# 下面四个入口对本地容器与云实例各走一套命令，调用方不关心库在哪
+list_dbs() {
+    if pg_is_remote; then
+        pg_run psql "$DATABASE_DSN" -lqt
+    else
+        pg_run psql -U "$PG_USER" -lqt
+    fi
+}
+
+drop_db() {
+    if pg_is_remote; then
+        pg_run psql "$DATABASE_DSN" -c "DROP DATABASE \"$1\""
+    else
+        pg_run dropdb -U "$PG_USER" "$1"
+    fi
+}
+
+create_db() {
+    if pg_is_remote; then
+        pg_run psql "$DATABASE_DSN" -c "CREATE DATABASE \"$1\""
+    else
+        pg_run createdb -U "$PG_USER" "$1"
+    fi
+}
+
+# 恢复到指定库：云上把 DSN 的库名换成 target（DSN 固定指向 stock_agent）
+restore_into() {
+    if pg_is_remote; then
+        local dsn="${DATABASE_DSN/\/$PG_DB/\/$1}"
+        pg_run pg_restore --dbname="$dsn" --no-owner < "$2" 2> "$3" || true
+    else
+        pg_run pg_restore -U "$PG_USER" -d "$1" --no-owner < "$2" 2> "$3" || true
+    fi
 }
 
 prepare_dir() {
@@ -62,7 +137,11 @@ do_dump() {
     ts=$(date +%Y%m%d-%H%M%S)
     file="$BACKUP_DIR/db/${PG_DB}-${ts}.dump"
     log "导出 $PG_DB ..."
-    docker exec "$PG_CONTAINER" pg_dump -U "$PG_USER" -Fc -d "$PG_DB" > "$file"
+    if pg_is_remote; then
+        pg_run pg_dump --dbname="$DATABASE_DSN" -Fc > "$file"
+    else
+        pg_run pg_dump -U "$PG_USER" -Fc -d "$PG_DB" > "$file"
+    fi
     chmod 600 "$file"
     verify_dump "$file" >/dev/null || { rm -f "$file"; die "备份文件校验失败：$file"; }
     log "完成：$file（$(du -h "$file" | cut -f1)）"
@@ -96,7 +175,7 @@ prune() {
 
 cmd_run() {
     require_root run
-    require_container
+    require_pg
     prepare_dir
     check_space
     do_dump >/dev/null
@@ -108,7 +187,7 @@ cmd_run() {
 cmd_install_cron() {
     require_root install-cron
     cat > /etc/cron.d/stock-agent-backup <<EOF
-# 每日备份：凌晨 3:30（错开 certbot 续期的 3:00）
+# 每日备份：凌晨 3:30（与证书续期错开，避免同时占 IO）
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 30 3 * * * root bash $DEPLOY_DIR/scripts/backup.sh run >> /var/log/stock-agent-backup.log 2>&1
@@ -133,8 +212,8 @@ cmd_verify() {
     local f="${1:-}"
     [ -f "$f" ] || die "用法：backup.sh verify /var/backups/stock-agent/db/xxx.dump"
     verify_dump "$f" || die "不是有效的 pg_dump 自定义格式文件：$f"
-    require_container
-    docker exec -i "$PG_CONTAINER" pg_restore -l < "$f" > /dev/null \
+    require_pg
+    pg_run pg_restore -l < "$f" > /dev/null \
         || die "pg_restore 无法解析该备份：$f"
     log "校验通过：$f"
 }
@@ -152,28 +231,28 @@ cmd_restore() {
     fi
     [ -f "$f" ] || die "找不到备份文件：$f"
     verify_dump "$f" || die "不是有效的 pg_dump 文件：$f"
-    require_container
+    require_pg
 
     # 中间库演练是默认路径：先证明备份能用，再考虑动生产
-    if docker exec "$PG_CONTAINER" psql -U "$PG_USER" -lqt | cut -d'|' -f1 | grep -qw "$target"; then
-        [ "$target" = "$PG_DB" ] || docker exec "$PG_CONTAINER" dropdb -U "$PG_USER" "$target"
+    if list_dbs | cut -d'|' -f1 | grep -qw "$target"; then
+        [ "$target" = "$PG_DB" ] || drop_db "$target"
     fi
-    [ "$target" = "$PG_DB" ] \
-        || docker exec "$PG_CONTAINER" createdb -U "$PG_USER" "$target"
+    [ "$target" = "$PG_DB" ] || create_db "$target"
     log "恢复 $f -> $target ..."
     # --no-owner：备份里的属主可能与目标库不一致；扩展(pgvector)由 initdb 脚本负责。
     # pg_restore 对「扩展已存在/权限」这类非致命项会返回非 0，不能直接 die，
     # 但也不能静默吞掉：把 stderr 落到日志，只对 ERROR 计数告警
     local errlog="$BACKUP_DIR/restore-$(date +%Y%m%d-%H%M%S).log" errs=0
-    docker exec -i "$PG_CONTAINER" pg_restore -U "$PG_USER" -d "$target" --no-owner \
-        < "$f" 2> "$errlog" || true
+    restore_into "$target" "$f" "$errlog"
     chmod 600 "$errlog"
     errs=$(grep -c '^pg_restore: error' "$errlog" 2>/dev/null || true)
     log "恢复结束，日志：$errlog"
     [ "${errs:-0}" -gt 0 ] && warn "pg_restore 报了 $errs 条 error，先看日志再判断是否可用"
-    log "抽查：docker exec $PG_CONTAINER psql -U $PG_USER -d $target -c '\\dt'"
-    [ "$target" = "$PG_DB" ] || warn "演练库用完删掉：docker exec $PG_CONTAINER dropdb -U $PG_USER $target"
+    log "抽查：sudo -u postgres psql ... -d $target -c '\\dt'（本地可用 docker exec $PG_CONTAINER）"
+    [ "$target" = "$PG_DB" ] || warn "演练库用完删掉：$target"
 }
+
+load_env
 
 case "${1:-}" in
     run)          shift; cmd_run "$@" ;;

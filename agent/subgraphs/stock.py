@@ -39,6 +39,7 @@ from config import (
     MAX_INPUT_TOKENS,
     TOOL_CALL_LLM_TIMEOUT,
     TOOL_CONCURRENCY,
+    TOOL_ROUND_BUDGET,
 )
 from core.keywords import is_concept_question
 from core.llm import estimate_tokens, get_llm, is_context_overflow, message_chars
@@ -558,13 +559,62 @@ def route_after_execute(state: dict) -> Literal["tool_call", "synthesize"]:
 
     - 取到任一取数类工具数据 -> synthesize（不再让模型空跑一轮决策）；
     - 本轮取数工具全部是「未上榜/暂无」这类客观无数据 -> synthesize（兜底文案）；
+    - 本轮有工具被轮级预算截断 -> synthesize（再跑一轮只会再等一次超时，把长尾叠成两倍）；
     - 只调了 symbol_search / 尚无数据 -> 回 tool_call，保留「先搜代码再取数」的多跳。
     """
     if _got_data(state):
         return "synthesize"
+    if _timed_out(state.get("tool_results") or []):
+        return "synthesize"
     if _all_failures_graceful_empty(state.get("tool_results") or []):
         return "synthesize"
     return "tool_call"
+
+
+async def _run_with_budget(tool_calls: list, runner) -> list:
+    """按轮级总预算并发执行工具，超预算的调用降级为超时结果。
+
+    等全部返回会让最慢的那个决定首屏：单工具本身是「8s 超时 + 重试 1 次」，
+    一次失败重试就能把 tool_execute 拖到 16s+。这里只截断等待，不等待被取消的协程
+    真正结束（akshare 跑在线程池里，取消也只能停止等待，无法杀掉底层线程）。
+    预算为 0 时退回旧行为（等全部完成）。
+    """
+    tasks = [(tc, asyncio.create_task(runner(tc))) for tc in tool_calls]
+    task_objs = [t for _, t in tasks]
+    budget = TOOL_ROUND_BUDGET
+    if budget and budget > 0:
+        done_set, pending = await asyncio.wait(task_objs, timeout=budget)
+    else:
+        done_set, pending = set(task_objs), set()
+    if pending:
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    outcomes = []
+    for tc, task in tasks:
+        if task in done_set and not task.cancelled():
+            try:
+                outcomes.append(task.result())
+                continue
+            except Exception as e:  # noqa: BLE001 - 单卡失败不影响其余结果
+                logger.warning("tool task failed: %s", e)
+        # 被预算截断：补一条 tool_end 收掉前端占位卡，结果按超时降级
+        emit("tool_end", {"tool": tc["name"], "ok": False, "ms": int(budget * 1000)})
+        outcomes.append((tc["id"], tc["name"], {"ok": False, "error": "timeout"}))
+    return outcomes
+
+
+def _timed_out(tool_results: list) -> bool:
+    """本轮是否有取数工具因轮级预算被截断。
+
+    超时后不再回 tool_call 决策（那会再等一轮 LLM + 一次完整取数），
+    直接进 synthesize 用兜底文案，避免长尾叠加。
+    """
+    return any(
+        item.get("tool") in _DATA_TOOLS
+        and str((item.get("result") or {}).get("error") or "") == "timeout"
+        for item in tool_results
+    )
 
 
 async def tool_execute(state: dict) -> dict:
@@ -609,7 +659,7 @@ async def tool_execute(state: dict) -> dict:
         tool_cache_put(name, args, result)
         return tc["id"], name, result
 
-    outcomes = await asyncio.gather(*[_run(tc) for tc in ai.tool_calls])
+    outcomes = await _run_with_budget(ai.tool_calls, _run)
 
     tool_messages = []
     tool_results = []
@@ -732,7 +782,7 @@ def _rank_cards(state: dict, candidates: list) -> list:
     )
 
 
-def _card_candidates(tool_results: list) -> list:
+def _card_candidates(tool_results: list, state: dict | None = None) -> list:
     """把本轮工具结果折成候选卡列表 [(card_type, payload)]，保持工具调用顺序。
 
     这里只收集、不发射：最终发哪张由 _emit_structured 按问题意图挑。
@@ -788,10 +838,16 @@ def _card_candidates(tool_results: list) -> list:
             rows = _kline_rows(data)
             if rows:
                 payload = {"rows": rows}
-                # 表事件只带行，卡片标题缺标的名：本轮查过行情时补上代码与名称
+                # 表事件只带行，卡片标题缺标的名：本轮查过行情时补上代码与名称；
+                # 只调了 K 线工具（问「走势」「量能」的常见路径）时退回问题里解析出的标的，
+                # 否则标题会一直停在兜底的「K 线走势」，看不出是哪只票
                 if quote:
                     payload["code"] = quote.get("code")
                     payload["name"] = quote.get("name")
+                else:
+                    symbol = ((state or {}).get("entities") or {}).get("symbol") or ""
+                    if symbol:
+                        payload["name"] = symbol
                 out.append(("kline_table", payload))
         elif name == "get_financial_report":
             out.append(("report_card", data))
@@ -840,7 +896,7 @@ def _emit_structured(state: dict, tool_results: list) -> None:
 
     一次只发一张是产品规则：多张卡会与正文并列抢占视线，且卡片之间没有主次。
     """
-    candidates = _card_candidates(tool_results)
+    candidates = _card_candidates(tool_results, state)
     if not candidates:
         return
     ranked = _rank_cards(state, candidates)

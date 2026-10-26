@@ -6,6 +6,10 @@
 
 名称表进程内缓存 10 分钟；查询失败返回空集合，校验自动跳过，不影响检索主链路。
 文件 ingest 的文档没有 stock_codes，不参与该校验（见 sufficiency_check）。
+
+同一轮里 retrieve / sufficiency_check / fast_plan 会拿同一个（改写后的）问句
+反复调用 entity_codes：名称表扫描是 O(名称数) 的 Python 子串匹配，按问句缓存
+一个短 TTL 的结果，避免一轮多扫两三遍。
 """
 import re
 import time
@@ -17,6 +21,12 @@ _NAME_TTL = 600.0
 
 _names_cache: list[tuple[str, str]] = []
 _names_at = 0.0
+
+# 问句 -> (写入时刻, 按出现顺序的代码列表)
+_mentions_cache: dict[str, tuple[float, list[str]]] = {}
+_MENTION_TTL = 60.0
+_MENTION_MAX = 256
+
 
 
 async def _stock_names() -> list[tuple[str, str]]:
@@ -42,13 +52,35 @@ async def _stock_names() -> list[tuple[str, str]]:
     return _names_cache
 
 
-async def entity_codes(query: str) -> set[str]:
-    """问题里明确出现的股票代码/全称 -> 代码集合；识别不出返回空集。"""
+async def entity_mentions(query: str) -> list[str]:
+    """按出现顺序返回问题里点名的股票代码（去重）。
+
+    顺序对对比类问句有意义：先提到的那只是「本股」，后面的是同行。
+    """
     q = (query or "").strip()
     if not q:
-        return set()
-    codes = set(_CODE_RE.findall(q))
+        return []
+    now = time.monotonic()
+    hit = _mentions_cache.get(q)
+    if hit and now - hit[0] < _MENTION_TTL:
+        return list(hit[1])
+    hits = [(m.start(), m.group(1)) for m in _CODE_RE.finditer(q)]
     for name, code in await _stock_names():
-        if name in q:
-            codes.add(code)
-    return codes
+        idx = q.find(name)
+        if idx >= 0:
+            hits.append((idx, code))
+    hits.sort(key=lambda x: x[0])
+    out: list[str] = []
+    for _, code in hits:
+        if code not in out:
+            out.append(code)
+    if len(_mentions_cache) >= _MENTION_MAX:
+        for k in list(_mentions_cache)[: _MENTION_MAX // 4]:
+            _mentions_cache.pop(k, None)
+    _mentions_cache[q] = (now, out)
+    return list(out)
+
+
+async def entity_codes(query: str) -> set[str]:
+    """问题里明确出现的股票代码/全称 -> 代码集合；识别不出返回空集。"""
+    return set(await entity_mentions(query))

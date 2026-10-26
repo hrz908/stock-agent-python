@@ -1,4 +1,4 @@
-<!-- 页面结构：自研 navbar + 自绘概览卡 + chips 筛选 + 自绘列表（含左滑删除）。
+<!-- 页面结构：自研 navbar + 自绘概览卡 + 段式筛选 + 自绘列表（含左滑删除）。
      左滑删除用触摸事件自绘（替代 t-swipe-cell）：transform 位移由 data 驱动，
      拖动中关过渡、松手时开过渡归位；纵向滚动让位（先判方向再锁定）。 -->
 <view class="page {{fontScaleClass}}">
@@ -65,7 +65,7 @@
       </view>
     </scroll-view>
   </view>
-  <!-- 底部主操作：主行动蓝（唯一强调色的合法用途） -->
+  <!-- 底部主操作：纯文字按钮（无底色、无描边），主次靠字重 -->
   <view class="bottom-btn" style="bottom: {{bottomGap}}px;">
     <view class="add-btn" bindtap="onAdd">
       <text class="add-btn-text">添加股票</text>

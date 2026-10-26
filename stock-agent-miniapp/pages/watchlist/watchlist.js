@@ -398,7 +398,6 @@ Page({
       });
   },
 
-  // 刷新按钮
   onRefresh() {
     this.refreshQuotes(false);
   },

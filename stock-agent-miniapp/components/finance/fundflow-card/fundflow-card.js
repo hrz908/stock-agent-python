@@ -1,5 +1,5 @@
 // 资金流向卡：回答「主力资金流入还是流出」「北向加仓了吗」
-// 字段口径见设计文档第 2 节⑥。主数字放大（22px 级），四档拆分逐行展开，
+// 字段口径见设计文档第 2 节⑥。主数字取令牌最大档，四档拆分逐行展开，
 // 正负值自动着色（涨跌方向由数值正负推导，不手写 class）。
 import { fmtAmount, fmtSign, fmtPct, fmtPctPlain, direction } from '../../../utils/format';
 

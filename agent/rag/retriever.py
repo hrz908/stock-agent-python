@@ -37,24 +37,28 @@ logger = logging.getLogger("stocka.agent")
 # 混合检索 SQL 模板（RRF k=60），用 psycopg 命名参数：
 # 查询向量/全文 query 在模板里各出现多次，命名参数只传一份。
 # {join}/{where_vec}/{where_lex} 由 _build_search_sql 按过滤条件拼装，无过滤时为空。
+# {vec_order}/{lex_order} 是排序前缀（默认空；软偏好实体时插入一个 CASE 表达式），
+# 必须同时出现在 ROW_NUMBER 的 OVER 与外层 ORDER BY 里，否则 rk 与实际顺序不一致。
+# 注意：软偏好会让排序首键不再是距离，HNSW 索引用不上，退化为全表扫描 + 排序。
+# 当前语料 5k 块量级代价可忽略；语料涨到百万块时需重新评估（届时改回先过滤再兜底）。
 # similarity 必须按 chunk 自身向量算：只在 lex 命中的行不在 vec CTE 里，
 # 若从 vec 取 dist 会得到 NULL→0，被 _clean_docs 的 sim_floor 整批丢掉。
 SEARCH_SQL = """
 WITH vec AS (
   SELECT c.id, (c.embedding <=> %(vec)s::vector) AS dist,
-         ROW_NUMBER() OVER (ORDER BY c.embedding <=> %(vec)s::vector) AS rk
+         ROW_NUMBER() OVER (ORDER BY {vec_order} c.embedding <=> %(vec)s::vector) AS rk
   FROM chunks c
   {join}
   {where_vec}
-  ORDER BY c.embedding <=> %(vec)s::vector LIMIT %(inner_limit)s
+  ORDER BY {vec_order} c.embedding <=> %(vec)s::vector LIMIT %(inner_limit)s
 ),
 lex AS (
-  SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(c.tsv_zh, q) DESC) AS rk
+  SELECT c.id, ROW_NUMBER() OVER (ORDER BY {lex_order} ts_rank_cd(c.tsv_zh, q) DESC) AS rk
   FROM chunks c
   CROSS JOIN to_tsquery('simple', %(q_ts)s) q
   {join}
   {where_lex}
-  ORDER BY ts_rank_cd(c.tsv_zh, q) DESC LIMIT %(inner_limit)s
+  ORDER BY {lex_order} ts_rank_cd(c.tsv_zh, q) DESC LIMIT %(inner_limit)s
 ),
 fused AS (
   SELECT id, SUM(1.0/(60+rk)) AS score
@@ -127,16 +131,22 @@ def _normalize_since(value) -> str:
 
 
 def _build_search_sql(
-    stock_codes=None, source_type: str = "", since: str = ""
+    stock_codes=None, source_type: str = "", since: str = "", prefer_codes=None
 ) -> tuple[str, dict]:
     """按过滤条件拼 SQL；过滤列都在 ashare_documents 上，文件 ingest 的文档不会被选中。
 
     过滤必须下推到 vec/lex 两个 CTE 内：先过滤再取 TopN，否则特定股票/类型的
     片段可能根本进不了候选池，外层再过滤只会得到空结果。
     stock_codes 支持单个代码或代码列表（问题里可能同时点名多家公司）。
+    prefer_codes 是软偏好（不排除其它文档）：命中该代码的块在 RRF 两路里排到前面，
+    其余块作为兜底填满候选池。用于 RAG 漏斗「问题点名某股、但可能只是借其名问行业」
+    的场景——替代过去的两趟检索（先硬过滤，不足再全库重跑）。与 stock_codes 互斥，
+    同时传入时以硬过滤为准（工具层的 stock_code 语义不变）。
     vec/lex 的候选上限由调用方在 params 里传 inner_limit（doc_first 需要更大的池）。
     """
     codes = _normalize_stock_codes(stock_codes)
+    # 有硬过滤时软偏好没有意义：结果集本来就只剩这些文档
+    prefer = [] if codes else _normalize_stock_codes(prefer_codes)
     conditions: list[str] = []
     params: dict = {}
     if codes:
@@ -154,10 +164,21 @@ def _build_search_sql(
         conditions.append("a.pub_time >= %(since)s::timestamptz")
         params["since"] = since
 
-    join = "JOIN ashare_documents a ON a.doc_id = c.document_id" if conditions else ""
+    vec_order = lex_order = ""
+    if prefer:
+        params["prefer_codes"] = prefer
+        # 0 表示命中：两路召回都把它排到前缀，RRF 的 rk 随之提前
+        vec_order = lex_order = (
+            "CASE WHEN a.stock_codes && %(prefer_codes)s::text[] THEN 0 ELSE 1 END,"
+        )
+    join = ("JOIN ashare_documents a ON a.doc_id = c.document_id"
+            if conditions or prefer else "")
     where_vec = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     where_lex = "WHERE " + " AND ".join(conditions + ["c.tsv_zh @@ q"])
-    sql = SEARCH_SQL.format(join=join, where_vec=where_vec, where_lex=where_lex)
+    sql = SEARCH_SQL.format(
+        join=join, where_vec=where_vec, where_lex=where_lex,
+        vec_order=vec_order, lex_order=lex_order,
+    )
     return sql, params
 
 
@@ -171,8 +192,8 @@ def _vec_literal(embedding: list[float]) -> str:
 _embedder: OpenAIEmbeddings | None = None
 
 # 查询向量缓存：同一问句的向量恒定，重复请求不必再打一次 embedding 接口。
-# 典型命中场景：实体过滤后片段不足时 hybrid_retrieve 会用同一 query 全库重检；
-# 一轮里 RAG 漏斗与知识库工具也可能搜同一句。按条数淘汰，不设 TTL（模型变更需重启）。
+# 典型命中场景：一轮里 RAG 漏斗与知识库工具会搜同一句，或同一 query 被重试。
+# 按条数淘汰，不设 TTL（模型变更需重启）。
 _EMBED_CACHE_MAX = 256
 _EMBED_CACHE: OrderedDict[tuple[str, str], list[float]] = OrderedDict()
 
@@ -225,6 +246,7 @@ class HybridRetriever(BaseRetriever):
         *,
         stock_code: str = "",
         stock_codes=None,
+        prefer_codes=None,
         source_type: str = "",
         since: str = "",
     ) -> list[Document]:
@@ -234,6 +256,7 @@ class HybridRetriever(BaseRetriever):
         候选池扫描靠这个顺序切片重放，顺序混了重放结果就和真实执行对不上。
         timings 传入时回填 embed_ms / sql_ms / rerank_ms。
         stock_code / stock_codes / source_type / since 是可选过滤，下推到 SQL 两路召回里。
+        prefer_codes 是软偏好：只影响两路召回的排序，不排除其它文档（见 _build_search_sql）。
         """
         t0 = time.monotonic()
         emb = await embed_query_cached(query)
@@ -248,6 +271,7 @@ class HybridRetriever(BaseRetriever):
             stock_codes=codes,
             source_type=_normalize_source_type(source_type),
             since=_normalize_since(since),
+            prefer_codes=prefer_codes,
         )
         params = {
             **filter_params,
@@ -291,6 +315,11 @@ class HybridRetriever(BaseRetriever):
                 for d, s in zip(docs, scores, strict=True):
                     d.metadata["rerank_score"] = s
             except Exception as e:  # noqa: BLE001 - 重排是增强项，挂了不能拖垮检索
+                # 记录失败次数：失败会静默回退 RRF，质量掉档但日志里只有一行 warning，
+                # 线上并发时看不到（实测 N=100、并发 4 时 37% 的请求被 429 打回）。
+                # 写进 timings 后随 agent_runs 落库，可用 SQL 直接统计发生率。
+                if timings is not None:
+                    timings["rerank_failed"] = timings.get("rerank_failed", 0) + 1
                 logger.warning("重排失败，回退 RRF 排序: %s", e)
             if timings is not None:
                 timings["rerank_ms"] = int((time.monotonic() - t2) * 1000)
@@ -312,6 +341,7 @@ class HybridRetriever(BaseRetriever):
         *,
         stock_code: str = "",
         stock_codes=None,
+        prefer_codes=None,
         source_type: str = "",
         since: str = "",
         timings: dict | None = None,
@@ -319,11 +349,12 @@ class HybridRetriever(BaseRetriever):
         """带过滤的检索入口（工具层用）；非法过滤值会被忽略而不是报错。
 
         stock_codes 支持代码列表（问题同时点名多家公司时按 OR 过滤）；
+        prefer_codes 是软偏好（不排除其它文档），供 RAG 漏斗单趟检索用。
         timings 传入时回填 embed_ms / sql_ms / rerank_ms，供图节点做阶段计时。
         """
         return await self._run_search(
             query, timings=timings,
-            stock_code=stock_code, stock_codes=stock_codes,
+            stock_code=stock_code, stock_codes=stock_codes, prefer_codes=prefer_codes,
             source_type=source_type, since=since,
         )
 

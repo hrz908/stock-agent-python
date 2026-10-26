@@ -16,7 +16,6 @@
 - DELETE /sessions/{sid}?user_id=           删除会话（注册行 + checkpoints + 摘要）
 所有接口都校验 thread_id 归属（default:user:session），防越权访问他人会话。
 
-运行: uvicorn main:app --host 0.0.0.0 --port 8000
 """
 import asyncio
 import json
@@ -168,6 +167,10 @@ def _line(event: str, data: dict) -> str:
 _ANSWER_EVENTS = frozenset({"token", "card", "table"})
 
 
+# 后台审计任务引用：不持有引用的话任务可能在跑完前被 GC 回收
+_bg_tasks: set = set()
+
+
 def _is_answer_event(event: str) -> bool:
     return event in _ANSWER_EVENTS
 
@@ -264,10 +267,9 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
     finally:
         total_ms = int((time.monotonic() - t0) * 1000)
         # 审计落库：字段优先用流里收集到的（省掉一次全量 state 回读），
-        # 只有流中途失败、没收集到 intent 时才回读兜底
+        # 只有流中途失败、没收集到 intent 时才回读兜底。
+        # 这里只做兜底取数，落库本身挪到 done 之后。
         try:
-            # 正常路径的 intent/timings 都由 updates 收集到了；只有流中途失败
-            # 或阶段计时缺失时才回读一次 state 兜底。
             if graph is not None and (intent is None or not timings):
                 snapshot = await graph.aget_state(config)
                 values = (snapshot.values if snapshot else None) or {}
@@ -279,12 +281,18 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
                     usage = values["usage"]
                 if isinstance(values.get("timings"), dict):
                     timings = {**timings, **values["timings"]}
-            # agent_runs.user_id 是 BIGINT，非数字时置空避免插入报错
-            try:
-                uid = int(user_id)
-            except (TypeError, ValueError):
-                uid = None
-            await log_agent_run(
+        except Exception:  # noqa: BLE001
+            logger.warning("agent run state snapshot failed", exc_info=True)
+
+        # 先发 done：客户端不该等一条 INSERT。非数字 user_id 置空，避免 BIGINT 插入报错
+        try:
+            uid = int(user_id)
+        except (TypeError, ValueError):
+            uid = None
+        yield _line("done", {"thread_id": thread_id, "usage": usage})
+
+        task = asyncio.create_task(
+            log_agent_run(
                 user_id=uid,
                 thread_id=thread_id,
                 intent=intent,
@@ -298,9 +306,9 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
                 error_code=error_code,
                 timings=timings,
             )
-        except Exception:  # noqa: BLE001
-            logger.warning("agent run audit failed", exc_info=True)
-        yield _line("done", {"thread_id": thread_id, "usage": usage})
+        )
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
 
 
 @app.post("/run/stream")

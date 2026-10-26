@@ -14,7 +14,7 @@
   display: flex;
   flex-direction: column;
   /* 顶部留白统一到各页一致（--space-lg） */
-  padding: var(--space-lg) var(--space-xl) 0;
+  padding: var(--space-lg) var(--space-lg) 0;
 }
 
 /* ===== 个人信息卡 =====
@@ -23,18 +23,17 @@
   display: flex;
   align-items: center;
   gap: var(--space-lg);
-  padding: var(--space-lg) var(--space-lg) var(--space-lg) var(--space-xl);
+  padding: var(--space-lg) var(--space-lg) var(--space-lg) var(--space-lg);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
 }
 
 .profile-avatar {
   flex: none;
   width: 128rpx;   /* 2026-10-26：头像再放大一号（原 112） */
   height: 128rpx;
-  border-radius: var(--radius-round);
+  border-radius: 999rpx;
   overflow: hidden;
   background: var(--surface-2);
 }
@@ -54,7 +53,7 @@
 
 .profile-nickname {
   font-size: var(--font-lg);   /* 昵称：大号 */
-  font-weight: 600;
+  font-weight: var(--fw-medium);
   color: var(--ink);
   text-align: left;
   overflow: hidden;
@@ -72,8 +71,8 @@
 /* ===== 底部操作区 ===== */
 .bottom-btn {
   position: absolute;
-  left: var(--space-xl);
-  right: var(--space-xl);
+  left: var(--space-2xl);
+  right: var(--space-2xl);
 }
 
 /* 底部按钮：无填充、8rpx 圆角，描边与输入框同款（--hairline） */
@@ -81,14 +80,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 96rpx;
+  min-height: var(--icon-touch);
+  padding: 16rpx 32rpx;
   border-radius: var(--radius-sm);
-  font-size: var(--font-lg);   /* 底部主行动点：全局大号 */
-  font-weight: 600;
-  background: transparent;
-  color: var(--ink);
-  border: var(--hairline);
-  box-shadow: var(--shadow-sm);
+  font-size: var(--font-lg);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-base);
+  background: var(--surface-2);
+  color: var(--color-error);
 }
 
 /* 危险操作：只靠红字表达，描边与输入框一致 */
@@ -106,7 +105,7 @@
 /* 注销入口：次级文字链，不用危险色实底——不跟「退出登录」抢主次，
    但必须在页面上可发现（合规要求账号可删除） */
 .footer-link {
-  margin-top: var(--space-xl);
+  margin-top: var(--space-lg);
   padding: var(--space-md) 0;
   text-align: center;
   font-size: var(--font-sm);   /* 注销账号：小号 */
@@ -115,15 +114,14 @@
 }
 
 /* ===== 直角框体（本页复用） =====
-   字体大小段控与隐私说明入口共用同一套外形：白面 + --hairline + --shadow-sm，
+   字体大小段控与隐私说明入口共用同一套外形：白面 + --hairline + 12rpx 圆角，
    96rpx 等高、四角直角（border-radius: 0，不跟随 --radius-lg / --radius-sm）。
    两块上下叠放，除内部分布外不允许各自改描边 / 投影 / 高度。 */
 .panel-flat {
   height: 96rpx;
   background: var(--surface);
   border: var(--hairline);
-  border-radius: 0;
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
 }
 
 /* ===== 字体大小（全局档位） =====
@@ -190,9 +188,9 @@
   padding: 0;
   width: 160rpx;
   height: 160rpx;
-  border-radius: var(--radius-round);
+  border-radius: 999rpx;
   background: transparent;
-  line-height: 1;
+  line-height: var(--lh-base);
 }
 
 /* 原生 button 自带的 ::after 边框：WXSS 禁写双冒号，用单冒号 */
@@ -203,7 +201,7 @@
 .edit-avatar {
   width: 160rpx;
   height: 160rpx;
-  border-radius: var(--radius-round);
+  border-radius: 999rpx;
   background: var(--surface-2);
   border: var(--hairline);
 }
@@ -217,13 +215,13 @@
 
 .edit-field {
   width: 100%;
-  margin-top: var(--space-xl);
+  margin-top: var(--space-lg);
 }
 
 .edit-input {
   width: 100%;
   height: 88rpx;
-  padding: 0 var(--space-lg);
+  padding: 0 var(--space-md);
   box-sizing: border-box;
   text-align: center;
   font-size: var(--font-base);
@@ -231,7 +229,6 @@
   background: transparent;
   border: var(--hairline);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
 }
 
 .edit-input-placeholder {
@@ -256,8 +253,8 @@
 .nickname-link {
   padding: var(--space-xs) var(--space-lg);
   font-size: var(--font-sm);
-  color: var(--accent);
-  border-radius: var(--radius-sm);
+  color: var(--ink);
+  border-radius: var(--radius-md);
   display: flex; align-items: center; justify-content: center; min-height: 88rpx;
 }
 

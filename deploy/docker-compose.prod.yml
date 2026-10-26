@@ -12,6 +12,10 @@
 #   - server 的 8080 只绑 127.0.0.1，对外的 HTTPS/WSS 统一走宿主机 nginx（deploy/nginx.prod.conf）；
 #   - 全部服务 restart: unless-stopped，开机自愈。
 #
+# 数据库位置由 .env 的 DATABASE_DSN 决定：留空=用本文件的 postgres 服务（带 localpg profile，
+# deploy.sh 会自动加 --profile localpg）；填云 PG 内网串=整套服务连云上、postgres 不再启动。
+# 手工直接敲 docker compose 时要自己补 --profile localpg，否则不会起数据库。
+#
 # .env 变量说明见 .env.production.example。
 
 # 日志限额：docker 默认 json-file 无上限，agent/ashare 常驻，40GB 盘会被慢慢吃满。
@@ -39,6 +43,10 @@ services:
     container_name: stock-agent-postgres
     <<: *hardening
     restart: unless-stopped
+    # 用外部 PG（腾讯云）时不再需要自带容器：DATABASE_DSN 指向外部地址即自动跳过本服务
+    # （deploy.sh / backup.sh 按 .env 的 DATABASE_DSN 判断，见脚本里的 compose() 包装）
+    profiles:
+      - localpg
     logging: *default-logging
     environment:
       POSTGRES_USER: postgres
@@ -99,7 +107,7 @@ services:
       # 环境变量名 = 配置键大写 + 点转下划线（见 server/internal/config/config.go）
       ENV: prod
       ADDR: ":8080"
-      DSN: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable"
+      DSN: "${DATABASE_DSN:-postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable}"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD}"
       # agent 容器名（compose 网络内 DNS）
@@ -122,6 +130,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        # 云 PG 模式下 postgres 服务不启用，缺依赖不算失败
+        required: false
       redis:
         condition: service_healthy
     deploy:
@@ -141,7 +151,8 @@ services:
     logging: *default-logging
     env_file: .env
     environment:
-      DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable"
+      # 留空 DATABASE_DSN 走自带 postgres 容器；填云 PG 内网串则整套服务连云上（见 .env.production.example）
+      DATABASE_URL: "${DATABASE_DSN:-postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable}"
       REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
       # 回调 Go 网关：compose 网络内用容器名；token 从 .env 的 GO_SERVER_TOKEN 来
       GO_SERVER_URL: "http://server:8080"
@@ -150,6 +161,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
     deploy:
@@ -172,7 +184,8 @@ services:
     logging: *default-logging
     env_file: .env
     environment:
-      DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable"
+      # 留空 DATABASE_DSN 走自带 postgres 容器；填云 PG 内网串则整套服务连云上（见 .env.production.example）
+      DATABASE_URL: "${DATABASE_DSN:-postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable}"
       REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
       WATCH_DIR: /data/docs
     volumes:
@@ -182,6 +195,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
     profiles:
@@ -206,7 +220,8 @@ services:
     logging: *default-logging
     env_file: .env
     environment:
-      DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable"
+      # 留空 DATABASE_DSN 走自带 postgres 容器；填云 PG 内网串则整套服务连云上（见 .env.production.example）
+      DATABASE_URL: "${DATABASE_DSN:-postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable}"
       ASHARE_DATA_DIR: /data/ashare
       # 与 agent/ingest 的 embedding 保持同一模型同一维度，否则写入和检索落在两个向量空间
       ASHARE_EMBED_MODEL: ${OFFLINE_EMBED_MODEL:-Qwen/Qwen3-Embedding-4B}
@@ -225,6 +240,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
     profiles:
       - ashare
 

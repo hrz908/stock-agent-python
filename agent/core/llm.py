@@ -10,6 +10,7 @@ from config import (
     LLM_TIMEOUT,
     OPENAI_API_BASE,
     OPENAI_API_KEY,
+    SMALL_LLM_ENABLE_THINKING,
     SMALL_LLM_TIMEOUT,
     SMALL_MODEL,
 )
@@ -83,10 +84,13 @@ def get_small_llm(
     temperature: float = 0.0,
     timeout: float | None = None,
     max_retries: int | None = None,
+    thinking: bool | None = None,
 ) -> ChatOpenAI:
     """小模型：用于指代消解、意图分类、滚动摘要，温度 0 追求确定性。
 
     默认 30s 超时：小模型只处理短输入，等满 60s 只会放大长尾。
+    思考开关默认取 SMALL_LLM_ENABLE_THINKING（默认关）：这些调用只输出短结构
+    （意图 / 布尔 / 一句反问），开着推理只是把隐藏 token 排在结论前面，白等几百毫秒到数秒。
     """
     return _cached(
         SMALL_MODEL,
@@ -94,6 +98,7 @@ def get_small_llm(
         temperature,
         SMALL_LLM_TIMEOUT if timeout is None else timeout,
         LLM_MAX_RETRIES if max_retries is None else max_retries,
+        SMALL_LLM_ENABLE_THINKING if thinking is None else thinking,
     )
 
 

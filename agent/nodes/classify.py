@@ -4,7 +4,7 @@
 失败回退 XML + parse_route；confidence < 0.6 强制降级 clarify（宁可反问，不可乱答），
 解析失败一律 clarify。
 
-意图三分：
+意图五分：
 - stock: 文档型股票问题，统一先进 RAG 漏斗——命中带引用作答，
   未命中由主图改写成 stock_agent 重路由；
 - stock_agent: 实时数据问句（行情/估值/资金/龙虎榜/新闻等）直接进取数子图，
@@ -111,7 +111,6 @@ async def _route_decision(prompt: str) -> dict:
 
 
 def _hit_data_keyword(query: str) -> bool:
-    """数据类问句 -> True；短英文指标用词边界，中文/混合词用子串。"""
     return hit_data_keyword(query)
 
 

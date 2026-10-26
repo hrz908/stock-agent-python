@@ -16,7 +16,6 @@ EMBED_DIM = int(os.getenv("EMBED_DIM", "1536"))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "512"))  # tokens
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "64"))
 
-# 支持的文件扩展名
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".md", ".txt", ".csv", ".xlsx"}
 
 # ---- Embedding 降级方案（FlagEmbedding 不可用时走 OpenAI 兼容 API）----
@@ -29,7 +28,6 @@ EMBED_CACHE_TTL = int(os.getenv("EMBED_CACHE_TTL", str(7 * 24 * 3600)))
 # 去重锁 TTL（秒）
 LOCK_TTL = int(os.getenv("LOCK_TTL", "300"))
 
-# 嵌入批大小
 EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "32"))
 
 # ---- 原件淘汰（磁盘保护）----

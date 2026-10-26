@@ -250,3 +250,80 @@ docker compose -f docker-compose.prod.yml exec ashare python -m ashare.cli stats
 
 注意：`ashare` 与文件 ingest 共用 `chunks` 表，维度由 `.env` 的 `EMBED_DIM` 决定
 （当前 1536），与 agent 的 `ONLINE_EMBED_MODEL/EMBED_DIM` 必须一致；换模型要同时重嵌两边。
+
+## 11. 迁移到腾讯云 PostgreSQL（可选）
+
+目标：数据、checkpoints、业务表都放到云 PG；业务服务器只保留解析/embedding/重排/LLM 调用。
+线上向量检索（HNSW）与中文全文检索（`ts_rank_cd`）由云 PG 执行，所以实例规格看的是 CPU 与内存，
+不是磁盘大小；当前语料量（数百文档、数千 chunk）小规格即可。
+
+### 11.1 云上准备
+
+1. 购买 **PostgreSQL 16** 实例，地域/AZ 与业务服务器**同地域同 VPC**（走内网，避免公网 RTT）。
+2. 内核版本要带 **pgvector 0.8.x**（老内核没有 `hnsw.iterative_scan`，带股票代码过滤的检索召回会变少）。
+3. 控制台开 SSL，安全组放行业务服务器内网 IP 的 5432。
+4. 核对扩展与版本（账号用主账号）：
+
+```bash
+psql "postgres://postgres:<密码>@<内网IP>:5432/postgres?sslmode=require" -c \
+  "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+psql "postgres://postgres:<密码>@<内网IP>:5432/postgres?sslmode=require" -c \
+  "SELECT extname, extversion FROM pg_extension WHERE extname IN ('vector','pg_trgm');"
+```
+
+`vector` 低于 0.8 就先升级内核小版本，再继续。
+
+### 11.2 迁数据（建议低峰期，几分钟内完成）
+
+```bash
+# 1) 先留一份本地库备份（回滚与迁移都用它）
+sudo bash scripts/backup.sh run
+
+# 2) 在云上建目标库（连接串的库名先指向 postgres）
+psql "postgres://postgres:<密码>@<内网IP>:5432/postgres?sslmode=require" -c "CREATE DATABASE stock_agent"
+
+# 3) .env 填 DATABASE_DSN（模板里那一行），然后恢复到演练库验证
+#    DATABASE_DSN=postgres://postgres:<密码>@<内网IP>:5432/stock_agent?sslmode=require
+sudo bash scripts/backup.sh verify /var/backups/stock-agent/db/stock_agent-<时间戳>.dump
+sudo bash scripts/backup.sh restore /var/backups/stock-agent/db/stock_agent-<时间戳>.dump
+```
+
+演练库 `stock_agent_restore` 里确认行数对得上再正式恢复：
+
+```bash
+sudo bash scripts/backup.sh restore /var/backups/stock-agent/db/stock_agent-<时间戳>.dump --into stock_agent
+```
+
+`backup.sh` 会自动识别外部库（DSN 主机不是 compose 内的 `postgres`），改用一次性 `postgres:16`
+客户端容器执行 dump/restore；云实例主版本更高时用 `PG_CLIENT_IMAGE=postgres:17 sudo -E bash scripts/backup.sh ...`。
+
+### 11.3 切换与验证
+
+```bash
+cd /opt/stock-agent
+sudo bash scripts/deploy.sh env-append    # 把模板新增的 DATABASE_DSN / 池上限键补进 .env
+sudo nano deploy/.env                     # 填 DATABASE_DSN，确认池上限不超过云实例 max_connections
+sudo bash scripts/deploy.sh restart       # deploy.sh 检测到外部 DSN 后自动跳过 localpg profile
+sudo bash scripts/deploy.sh ps            # 只应看到 server / agent / redis
+curl -k https://127.0.0.1/healthz
+sudo bash scripts/deploy.sh logs agent    # 确认没有 "主数据只读连接池就绪" 之外的连接报错
+```
+
+验收（都要过）：小程序登录、普通问答、带股票代码的行情/研报问答、知识库检索、历史会话回看
+（checkpoint 在云库）。都正常后回收本地 PG 占用的内存：
+
+```bash
+sudo docker stop stock-agent-postgres
+```
+
+### 11.4 回滚
+
+```bash
+# 清空 deploy/.env 的 DATABASE_DSN → 自动回到自带 postgres 容器（旧数据仍在 pgdata 卷里）
+sudo nano deploy/.env
+sudo bash scripts/deploy.sh deploy
+```
+
+切云之后的新数据（checkpoint/会话/审计）只存在云上，回滚晚了会丢；要保留就先把云库再 dump 回来。
+`backup.sh` 的 cron 不用改：它按 `.env` 判库位置，切云后自动备份云库。
+

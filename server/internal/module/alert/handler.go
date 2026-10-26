@@ -423,7 +423,6 @@ func checkAlerts(userID int64, ctx context.Context) {
 	}
 }
 
-// isHit 判断单条规则是否命中行情快照
 func isHit(r AlertRule, snap *quote.StockSnapshot) bool {
 	// 停牌 / 自建接口返 0 时价格为 0，0 <= 正阈值会让「跌破」类规则恒真，用户会收到假提醒；没行情就不判
 	if snap == nil || snap.Price.IsZero() {

@@ -14,7 +14,6 @@
     </view>
 
     <block wx:for="{{cards}}" wx:for-item="msg" wx:key="card">
-      <!-- 行情卡片 -->
       <finance-quote-card
         wx:if="{{msg.card === 'quote'}}"
         card-class="msg-card"
@@ -35,7 +34,6 @@
         note="{{msg.quote.note}}"
       />
 
-      <!-- K 线卡片 -->
       <finance-kline-card
         wx:elif="{{msg.card === 'kline'}}"
         card-class="msg-card"
@@ -51,7 +49,6 @@
         note="{{msg.klineNote}}"
       />
 
-      <!-- 估值卡片 -->
       <finance-valuation-card
         wx:elif="{{msg.card === 'valuation'}}"
         card-class="msg-card"
@@ -65,7 +62,6 @@
         note="{{msg.valuation.note}}"
       />
 
-      <!-- 资金流向卡片 -->
       <finance-fundflow-card
         wx:elif="{{msg.card === 'fundflow'}}"
         card-class="msg-card"
@@ -80,7 +76,6 @@
         note="{{msg.fundflow.note}}"
       />
 
-      <!-- 财报速览卡片 -->
       <finance-report-card
         wx:elif="{{msg.card === 'report'}}"
         card-class="msg-card"
@@ -96,7 +91,6 @@
         note="{{msg.report.note}}"
       />
 
-      <!-- 研报观点卡片 -->
       <finance-research-card
         wx:elif="{{msg.card === 'research'}}"
         card-class="msg-card"
@@ -112,7 +106,6 @@
         source-url="{{msg.research.sourceUrl}}"
       />
 
-      <!-- 公司事件卡片 -->
       <finance-event-card
         wx:elif="{{msg.card === 'event'}}"
         card-class="msg-card"
@@ -121,7 +114,6 @@
         note="{{msg.event.note}}"
       />
 
-      <!-- 同业对比卡片 -->
       <finance-compare-card
         wx:elif="{{msg.card === 'compare'}}"
         card-class="msg-card"

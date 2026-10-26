@@ -6,15 +6,15 @@ K线 / 估值 / 新闻 / 研报」这类问句的工具选择其实是确定的�
 + 一个代码参数。这里按关键词直接生成 tool_calls，把这段 LLM 往返省掉。
 
 只在「能确定」时接管，其余一律返回 None 回退原来的 LLM 决策：
-- 问题命中已知工具族，且不是对比/同业这类要两个标的的（那需要模型挑同行）；
-- 标的是唯一的（6 位代码，或名称表命中恰好一家）；
+- 问题命中已知工具族，且标的是唯一的（6 位代码，或名称表命中恰好一家）；
+- 对比/同业类问句：两只标的都解析得出来才产同业对比卡，否则交回模型挑同行；
 - 概念题（解释/区别/是什么）不接管——那是知识库的活；
 - 最多两个工具：并行取数的耗时由最慢的那个决定，再多只会把首屏拖后。
 """
 import re
 
 from core.keywords import hit_data_keyword, is_concept_question
-from rag.entity import entity_codes
+from rag.entity import entity_mentions
 
 # 工具族 -> 触发词。顺序即同分时的优先级：行情最常问，排在最前。
 _RULES = (
@@ -41,8 +41,6 @@ _DEFER_WORDS = ("对比", "比较", "同业", "同行", "竞品", "哪个好", "
 
 # 英文指标整词匹配：直接子串会把 "pe" 撞进 "peers"
 _ABBR_RE = re.compile(r"(?<![a-zA-Z])(pe|pb|ps|peg)(?![a-zA-Z])", re.IGNORECASE)
-
-_CODE_RE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
 
 # K 线天数：「最近5个交易日」「近 10 日」「3天」；工具上限 15
 _DAYS_RE = re.compile(r"(?:最近|近|过去)?\s*(\d{1,2})\s*(?:个)?(?:交易日|日|天)")
@@ -86,17 +84,6 @@ def _args_for(tool: str, code: str, query: str) -> dict:
     return {"code": code}
 
 
-async def _resolve_code(query: str) -> str:
-    """问题里的标的代码；唯一确定不了就返回空串。"""
-    codes = _CODE_RE.findall(query or "")
-    if codes:
-        return codes[0]
-    ents = await entity_codes(query)
-    if len(ents) == 1:
-        return next(iter(ents))
-    return ""
-
-
 def _symbol_from_results(tool_results: list) -> str:
     """上一轮 symbol_search 已经拿到代码时直接用它（名称问句的第二跳）。"""
     for item in tool_results:
@@ -120,16 +107,31 @@ async def fast_tool_calls(query: str, tool_results: list | None = None) -> list[
     text = (query or "").strip()
     if not text:
         return None
-    if any(w in text for w in _DEFER_WORDS):
-        return None
     if is_concept_question(text) or not hit_data_keyword(text):
         return None
+
+    # 对比类问句：两个标的都能解析出来时，直接产同业对比卡。
+    # 这类问句本来就没法映射到 _RULES 的单一工具族（「对比」不对应任何取数工具），
+    # 以前一律回退给 LLM 挑工具，白付 1.4~2.8s；只有解析不出第二只标的
+    # （如「茅台和同行比估值」）才需要模型先搜候选。
+    mentions = await entity_mentions(text)
+    if any(w in text for w in _DEFER_WORDS):
+        if len(mentions) < 2:
+            return None
+        return [{
+            "name": "get_peer_compare",
+            "args": {"code": mentions[0], "peers": mentions[1]},
+            "id": "plan_compare_0",
+            "type": "tool_call",
+        }]
 
     families = _matched_families(text)[:_MAX_PLAN_TOOLS]
     if not families:
         return None
 
-    code = _symbol_from_results(tool_results or []) or await _resolve_code(text)
+    code = _symbol_from_results(tool_results or []) or (
+        mentions[0] if len(mentions) == 1 else ""
+    )
     if not code:
         return None
 

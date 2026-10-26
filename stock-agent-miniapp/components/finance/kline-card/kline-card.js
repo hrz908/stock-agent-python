@@ -22,7 +22,7 @@ const VOL_BOTTOM = 192;
 const COLOR_UP = '#dc2626';
 const COLOR_DOWN = '#16a34a';
 const MA_COLORS = { ma5: '#2559EB', ma10: '#F5A623', ma20: '#8B5CF6' };
-const GRID_COLOR = '#e4e4e7';
+const GRID_COLOR = '#E5E5E5';
 
 function num(v) {
   const n = parseFloat(v);
@@ -141,7 +141,6 @@ function buildChart(klinesRaw, maRaw) {
       "'/>";
   });
 
-  // 均线：MA5 金 / MA10 蓝 / MA20 灰
   Object.keys(MA_COLORS).forEach((key) => {
     const segs = maSegments(ma && ma[key], n, xOf, yPrice);
     segs.forEach((pts) => {

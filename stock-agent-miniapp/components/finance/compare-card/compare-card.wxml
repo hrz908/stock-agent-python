@@ -1,5 +1,5 @@
 <!-- 同业对比卡：只对比两家同行（本股 + 2 家，共 3 列），标题 A vs B vs C；
-     涨跌幅按正负着色（加号红 / 减号绿），PE/PB 标更低者优。数值左右对齐 -->
+     涨跌幅按正负着色（加号红 / 减号绿），PE/PB 标更低者优。数值居中对齐 -->
 <view class="fcard card-class">
   <view class="fcard-hd">
     <view class="fcard-title-col">

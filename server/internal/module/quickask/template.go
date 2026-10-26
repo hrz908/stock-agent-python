@@ -272,7 +272,6 @@ func randTpl(list []tpl) tpl {
 	return list[rand.Intn(len(list))]
 }
 
-// Ask 对外的单条建议问题。
 type Ask struct {
 	ID        string `json:"id"`
 	Display   string `json:"display"`

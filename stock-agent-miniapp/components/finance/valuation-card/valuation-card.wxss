@@ -8,16 +8,13 @@
   text-align: left;
 }
 
-/* 底部说明（数据日期）左对齐 */
 .fnote {
   text-align: left;
 }
 
 /* ===== 卡内信息：等距 + 居中 =====
-   等距：两块指标栅格统一 24rpx 顶距，每行各格由共享样式的 flex:1 + gap 均分；
-   居中：每格标签与数值居中（规则在 _card.wxss，本卡不另写对齐）。
-   注：PE 分位进度条（.pct-row / .pct-track / .pct-fill / .pct-label / .pct-value）
-   已随分位信息一并移除，样式同步删掉，不留死代码。 */
+   等距：两块指标栅格取同一顶距（--space-md），每行各格由共享样式的 flex:1 + gap 均分；
+   居中：每格标签与数值居中（规则在 _card.wxss，本卡不另写对齐）。 */
 .fgrid {
   margin-top: var(--space-md);
 }

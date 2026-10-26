@@ -3,9 +3,10 @@
 在主图末尾（子图之后、END 之前）执行：
 1. messages token 超阈值 → 小模型滚动摘要，写入 Redis（按 thread_id）；
 2. 统计 usage 写回 state。
-log_agent_run 供 main.py 在 done 事件前调用，把一轮运行写入 agent_runs 审计表。
+log_agent_run 供 main.py 在 done 事件之后调用（后台落库），把一轮运行写入 agent_runs 审计表。
 所有步骤容错，任何一步失败都不阻断响应。
 """
+import asyncio
 import logging
 import time
 
@@ -18,6 +19,22 @@ from core.pg import get_pool
 from core.redis import get_redis
 
 logger = logging.getLogger("stocka.agent")
+
+# 后台摘要任务引用：不持有引用的话任务可能在跑完前被 GC 回收
+_bg_tasks: set = set()
+
+# 距上次摘要至少再攒这么多条消息才重算。会话一旦越过 token 阈值，messages 会被
+# guardrail 裁在 12k 内长期停留，若每轮都重算，摘要就变成「每轮一次小模型调用」，
+# 而两三轮内新增的内容对摘要价值很低。
+_SUMMARY_MIN_NEW_MSGS = 4
+
+
+def _spawn_summary(state: dict) -> None:
+    """把滚动摘要移出关键路径：post 在流末尾，等一次小模型调用会把 done 事件推后。"""
+    task = asyncio.create_task(_roll_summary(state))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
 
 def _collect_usage(messages: list) -> dict:
     """聚合「本轮」消息的 token 用量。
@@ -49,6 +66,15 @@ async def _roll_summary(state: dict) -> None:
         return
     if count_message_tokens(messages) <= SUMMARY_TOKEN_LIMIT:
         return
+    # 频次闸：距上次摘要新增消息太少就跳过（阈值越过之后 messages 会长期停在
+    # 12k 窗口内，没有这道闸等于每轮都调一次小模型）
+    tid = state.get("thread_id", "")
+    try:
+        prev = await get_redis().get(f"agent:summary_msgs:{tid}")
+        if prev and len(messages) - int(prev) < _SUMMARY_MIN_NEW_MSGS:
+            return
+    except Exception:  # noqa: BLE001 - 频次闸不可用不影响摘要本身
+        pass
     lines = []
     for m in messages:
         if isinstance(m, HumanMessage):
@@ -68,9 +94,9 @@ async def _roll_summary(state: dict) -> None:
         resp = await llm.ainvoke([HumanMessage(content=prompt)])
         summary = (resp.content or "").strip()
         if summary:
-            await get_redis().set(
-                f"agent:summary:{state.get('thread_id','')}", summary, ex=7 * 24 * 3600
-            )
+            redis = get_redis()
+            await redis.set(f"agent:summary:{tid}", summary, ex=7 * 24 * 3600)
+            await redis.set(f"agent:summary_msgs:{tid}", len(messages), ex=7 * 24 * 3600)
     except Exception:  # noqa: BLE001
         pass
 
@@ -116,8 +142,8 @@ async def log_agent_run(
 
 async def post(state: dict) -> dict:
     t0 = time.monotonic()
-    # 1. 滚动摘要（后台容错）
-    await _roll_summary(state)
+    # 1. 滚动摘要放后台：它只影响下一轮的上下文，不该占本轮 done 事件之前的时间
+    _spawn_summary(state)
 
     messages = list(state.get("messages", []))
     # 2. 统计用量。免责声明已按产品要求整条移除：正文不再追加任何声明块

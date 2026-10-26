@@ -22,7 +22,7 @@
   bottom: 0;
   left: 0;
   /* 浅色主题：遮罩压暗即可，深色主题那套接近纯黑的重遮罩会把浅底压成脏灰 */
-  background: rgba(16, 24, 40, 0.45);
+  background: var(--mask);
 }
 
 /* ===== 居中对话框 ===== */
@@ -39,6 +39,7 @@
   border: var(--hairline);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  box-shadow: var(--shadow-lg);
 }
 
 /* ===== 左侧抽屉 ===== */
@@ -53,6 +54,7 @@
   flex-direction: column;
   background: var(--surface);
   animation: popup-left-in 240ms cubic-bezier(0.25, 0.8, 0.35, 1) both;
+  box-shadow: var(--shadow-lg);
 }
 
 .popup--leaving .popup-panel--left {
@@ -69,9 +71,10 @@
   flex-direction: column;
   background: var(--surface);
   border-top: var(--hairline);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-radius: var(--radius-xl);
   padding-bottom: env(safe-area-inset-bottom);
   animation: popup-bottom-in 240ms cubic-bezier(0.25, 0.8, 0.35, 1) both;
+  box-shadow: var(--shadow-lg);
 }
 
 .popup--leaving .popup-panel--bottom {
@@ -86,8 +89,8 @@
 
 /* 弹窗标题：全局大号（添加自选 / 新增提醒 / 编辑资料 / 二次确认都用这一处） */
 .popup-title {
-  font-size: var(--font-lg);
-  font-weight: 600;
+  font-size: var(--font-xl);
+  font-weight: var(--fw-semibold);
   color: var(--ink);
   text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -123,36 +126,37 @@
   border-top: var(--hairline);
 }
 
-/* 弹窗按钮：全站按键规格 —— 无填充、8rpx 圆角、描边与输入框统一用 --hairline。
-   既然描边全站一个色，主次就只能靠字色与字重表达 */
+/* 弹窗按钮：与底部主按钮同一套 —— 白底、无描边、黑字，主次只靠字重 */
 .popup-btn {
   flex: 1;
-  height: 96rpx;
+  min-height: var(--icon-touch);
+  padding: 16rpx 32rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: var(--hairline);
-  box-shadow: var(--shadow-sm);
-  font-size: var(--font-lg);   /* 全站弹窗的取消 / 确认：全局大号 */
-  font-weight: 600;
+  line-height: var(--lh-base);
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  font-size: var(--font-lg);
+  font-weight: var(--fw-medium);
   border-radius: var(--radius-sm);
   /* 数字与中文混排时按钮文案不抖 */
   font-variant-numeric: tabular-nums;
 }
 
 .popup-btn--cancel {
-  color: var(--ink-2);
+  color: var(--color-text-primary);
   font-weight: 400;
 }
 
 .popup-btn--confirm {
-  color: var(--ink);
+  color: var(--color-text-primary);
+  font-weight: var(--fw-medium);
 }
 
-/* 危险确认：红字（移出自选 / 退出登录等破坏性操作），描边仍与输入框一致 */
+/* 危险确认：不铺色块，只用语义色文字（移出自选 / 退出登录等破坏性操作） */
 .popup-btn--danger {
-  color: var(--danger);
+  color: var(--color-error);
 }
 
 /* ===== 动画（WXSS 禁写 rem/vh，位移用 translate 百分比） ===== */

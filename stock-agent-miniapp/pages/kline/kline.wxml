@@ -6,10 +6,10 @@
   <view class="content">
     <view class="search-field">
       <view class="search-box">
-        <base-icon type="SearchOutline" style="font-size:var(--icon-sm);color:var(--ink-3);" />
+        <base-icon type="SearchOutline" style="font-size:var(--icon-sm);color:var(--ink);" />
         <input class="search-input" value="{{keyword}}" placeholder="股票代码 / 名称 / 拼音" placeholder-class="search-ph" bindinput="onSearchInput" />
         <view wx:if="{{keyword}}" class="search-clear" bindtap="onSearchClear">
-          <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--ink-3);" />
+          <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
         </view>
       </view>
       <!-- 联想结果：选中即关闭下拉并触发五张卡拉数 -->

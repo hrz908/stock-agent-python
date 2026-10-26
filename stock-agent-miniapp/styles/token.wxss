@@ -1,169 +1,161 @@
 /* =============================================================
-   设计 Token · shadcn 风视觉语言（zinc 色阶）
-   本项目唯一风格真相源，被 app.wxss @import，全站只允许引用这里的变量。
-
-   尺寸标准与档位表的细则见 .codebuddy/rules/ui-design-tokens.md：
-   字号七档 / 行高 1.25·1.5·1.6 / 间距九档 / 内外边距组合 / 图标五档 + 88 触控 /
-   圆角六档 / 阴影三档 / 描边 1rpx。改这里前先改那份规则。
+   设计令牌 · 最终版（唯一风格真相源，被 app.wxss @import）
+   750rpx 设计稿 · 正文 32rpx 锚点 · 8 点网格
 
    规则：
-   - 变量只允许在 page{} 定义；组件通过 CSS 自定义属性继承拿到
-     （styleIsolation 默认隔离不影响 custom property 透传，
-     但【工具类 class 不透传】，组件内部需要自己写或 apply-shared，见 DESIGN.md）。
-   - canvas（uCharts / K 线）不吃 CSS 变量，配色在各自 js 里另配一份；
-     改本文件色值时必须同步那批硬编码，否则图表与页面脱色。
+   - 字号六档 24/28/32/36/40/48；行高只用倍率；字重 400/500/600/700
+   - 间距八档 4/8/12/16/24/32/48/64；页面左右 32
+   - 圆角六档 4/8/12/16/24/999；按钮与输入框 8
+   - 阴影三档只给浮起元素，卡片靠描边分层
+   - 颜色一律引用变量，业务样式里禁止裸 hex / 裸 rpx 字号
+   - 按钮用 flex 居中 + padding 撑高，禁止写死 height
 
-   变更沿革：
-   - 2026-10-22 建立「浅色专业金融」主题，当日重构为 shadcn 风：色板换 zinc 色阶、
-     主按钮改近黑底白字。
-   - 2026-10-26 上午按设计令牌规范硬收敛：字号只留 24/28/32/36/40；间距只留
-     4/8/12/16/24/32/48/64；圆角 4/8/12/16/50%；描边 2rpx → 1rpx。
-   - 2026-10-26 晚换《微信小程序设计令牌规范·最终版》（锚点仍是 32rpx 正文）：
-     字号补回 48/64 两档（大标题 / 结果页数字，普通页仍 40 封顶）；行高改 1.25/1.5/1.6；
-     间距补回 96（空状态巨型留白）；新增内边距 / 外边距组合 token 与字重 token；
-     圆角档名整体下移一位并补 24（xs4 / sm8 / md12 / lg16 / xl24），旧档位像素值不变；
-     阴影由 card/pop 两档改为 sm/md/lg 三档。
+   兼容层：--ink / --surface / --bg 等旧名保留为「指向令牌的别名」，
+   供存量样式引用；新增样式请直接用 --color-* 名。
    ============================================================= */
 page {
-  /* ---- 字号七档：相邻差 4rpx，唯一档位表，不许再扩档 ----
-     普通页面在 --font-xl 封顶；--font-2xl / --font-3xl 只给空状态、结果页数字 ----
-     本项目的 --font-base 32rpx 是锚点，不随数据密度下调 ---- */
-  --font-xs: 24rpx;   /* 辅助：角标、提示、版权 */
-  --font-sm: 28rpx;   /* 次要：说明、标签、免责声明（全站最小实际字级） */
-  --font-base: 32rpx; /* 正文：正文、按钮、输入 */
-  --font-lg: 36rpx;   /* 强调：卡片标题、按键文案、引导语 */
-  --font-xl: 40rpx;   /* 标题：区块 / 弹窗标题、焦点数字（普通页字号上限） */
-  --font-2xl: 48rpx;  /* 大标题：空状态主文案、页面大标题 */
-  --font-3xl: 64rpx;  /* 特大：结果页 / 营销数字，一屏只允许一个 */
+  /* ---- 字号六档：相邻差 4rpx ---- */
+  --font-xs: 24rpx;
+  --font-sm: 28rpx;
+  --font-base: 32rpx;
+  --font-lg: 36rpx;
+  --font-xl: 40rpx;
+  --font-2xl: 48rpx;
 
-  /* ---- 行高（倍率，不写死 rpx） ---- */
-  --lh-tight: 1.25;   /* 单行标题 1.2~1.25 */
-  --lh-base: 1.5;     /* 正文 / 列表 / 卡片（32 × 1.5 = 48rpx 基线） */
-  --lh-loose: 1.6;    /* 长文段落 1.6~1.75 */
+  /* ---- 行高：一律倍率，禁止写死 rpx ---- */
+  --lh-xs: 1.4;
+  --lh-sm: 1.45;
+  --lh-base: 1.5;
+  --lh-lg: 1.35;
+  --lh-xl: 1.25;
+  --lh-2xl: 1.2;
+  --lh-loose: 1.6;
 
-  /* ---- 字间距：小程序用 em，不用 rpx ---- */
+  /* ---- 字间距：用 em ---- */
   --ls-xs: 0.04em;
   --ls-sm: 0.02em;
   --ls-base: 0;
   --ls-lg: 0.01em;
   --ls-xl: 0.02em;
 
-  /* ---- 字重：随字号反向，字越大越轻 ---- */
-  --fw-regular: 400;  /* 正文 */
-  --fw-medium: 500;   /* 按键、标签 */
-  --fw-semibold: 600; /* 卡片标题、区块标题 */
-  --fw-bold: 700;     /* 焦点数字、页面大标题 */
+  /* ---- 字重：随字号反向 ---- */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
 
-  /* ---- 间距九档（8 点网格：只允许 4 或 8 的倍数） ---- */
-  --space-xxs: 4rpx;  /* 图标与文字下限、细部贴合 */
-  --space-xs: 8rpx;   /* 同组紧邻元素、图标与文字 */
-  --space-sm: 12rpx;  /* 紧凑内边距（标签 / 徽章） */
-  --space-md: 16rpx;  /* 同组元素间距、列表项、栅格 gap */
-  --space-lg: 24rpx;  /* 卡片内边距、组件间距 */
-  --space-xl: 32rpx;  /* 页面左右留白、区块标准间距 */
-  --space-2xl: 48rpx; /* 区块之间、页面底部留白 */
-  --space-3xl: 64rpx; /* 首屏大留白 */
-  --space-4xl: 96rpx; /* 空状态巨型留白 */
+  /* ---- 间距八档（8 点网格） ---- */
+  --space-xxs: 4rpx;
+  --space-xs: 8rpx;
+  --space-sm: 12rpx;
+  --space-md: 16rpx;
+  --space-lg: 24rpx;
+  --space-xl: 32rpx;
+  --space-2xl: 48rpx;
+  --space-3xl: 64rpx;
 
-  /* ---- 内边距组合（垂直 × 水平；垂直比水平小 4~8，行高已占垂直空间） ---- */
-  --pad-compact: var(--space-xs) var(--space-sm);      /* 8 × 12：标签、徽章 */
-  --pad-normal: var(--space-sm) var(--space-md);       /* 12 × 16：列表项 */
-  --pad-comfortable: var(--space-md) var(--space-lg);  /* 16 × 24：弹窗、空状态 */
-  --pad-page: 0 var(--space-xl);                       /* 页面左右安全区 */
+  /* ---- 内边距组合（垂直 × 水平） ---- */
+  --pad-compact: var(--space-xs) var(--space-sm);
+  --pad-normal: var(--space-sm) var(--space-md);
+  --pad-comfy: 20rpx var(--space-lg);
+  --pad-page: 0 var(--space-xl);
 
-  /* ---- 外边距（以 32rpx 正文为锚：字号 × 0.5 / 0.75 / 1.5） ---- */
-  --gap-inner: var(--space-md);    /* 同组元素、标题与内容 */
-  --gap-between: var(--space-lg);  /* 组件 / 卡片间、段落间 */
-  --gap-section: var(--space-2xl); /* 区块间、页底留白 */
+  /* ---- 外边距（以 32rpx 正文为锚） ---- */
+  --gap-inner: var(--space-md);
+  --gap-between: var(--space-lg);
+  --gap-section: var(--space-2xl);
 
   /* ---- 图标五档 + 触控底限 ---- */
-  --icon-xs: 28rpx;    /* 角标关闭、列表箭头 */
-  --icon-sm: 36rpx;    /* 次级箭头、搜索、功能小图标 */
-  --icon-base: 40rpx;  /* 按钮内图标、导航图标 */
-  --icon-lg: 48rpx;    /* 卡片头部、功能入口 */
-  --icon-xl: 56rpx;    /* 空状态、个人页大图标（表内上限） */
-  --icon-touch: 88rpx; /* 纯图标按钮 / 可点行的最小可点区域 ≈44px */
+  --icon-xs: 28rpx;
+  --icon-sm: 36rpx;
+  --icon-base: 40rpx;
+  --icon-lg: 48rpx;
+  --icon-xl: 56rpx;
+  --icon-touch: 88rpx;
 
   /* ---- 圆角六档 ---- */
-  --radius-xs: 4rpx;    /* 徽章 */
-  --radius-sm: 8rpx;    /* 标签 / 按键 / 输入框 */
-  --radius-md: 12rpx;   /* 弹窗内块、次级块 */
-  --radius-lg: 16rpx;   /* 卡片、弹窗面板 */
-  --radius-xl: 24rpx;   /* 底部弹层、大浮层 */
-  --radius-round: 50%;  /* 头像 / 圆点 / 圆形按钮 */
+  --radius-xs: 4rpx;
+  --radius-sm: 8rpx;
+  --radius-md: 12rpx;
+  --radius-lg: 16rpx;
+  --radius-xl: 24rpx;
+  --radius-round: 999rpx;
 
-  /* ---- 阴影三档：只给「浮起」的元素，页面分区靠留白与 --hairline ---- */
-  --shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);   /* 卡片 / 按键 / 输入框 / 悬浮按钮 */
-  --shadow-md: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);  /* Toast / FAB / 吸底输入栏 */
-  --shadow-lg: 0 8rpx 32rpx rgba(0, 0, 0, 0.12);  /* 弹窗面板 / Modal / 抽屉 */
+  /* ---- 阴影三档：只给浮起元素 ---- */
+  --shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8rpx 32rpx rgba(0, 0, 0, 0.12);
 
-  /* ---- 背景与层次（纯白底 + 白卡片 + 发丝描边 + 极轻投影） ---- */
-  --bg: #ffffff;        /* 页面背景：纯白 */
-  --surface: #ffffff;   /* 卡片面 */
-  --surface-2: #f4f4f5; /* 次级面：芯片底、进度槽、标签底（zinc-100） */
-  --line: #e4e4e7;      /* 描边 / 分割线（zinc-200） */
+  /* ---- 色彩 ---- */
+  --color-text-primary: #333333;
+  --color-text-secondary: #666666;
+  --color-text-hint: #999999;
+  --color-text-disabled: rgba(51, 51, 51, 0.38);
+  --color-text-inverse: #FFFFFF;
+  --color-bg-page: #F5F5F5;
+  --color-bg-card: #FFFFFF;
+  --color-bg-disabled: #F2F2F2;
+  --color-border: #E5E5E5;
+  --color-divider: #EEEEEE;
+  --color-mask: rgba(0, 0, 0, 0.4);
+  --color-brand: #07C160;
+  --color-brand-press: #06A352;
+  --color-success: #07C160;
+  --color-warning: #FF9F18;
+  --color-error: #FA5151;
+  --color-info: #3A86FF;
 
-  /* ---- 文字（zinc 主阶） ---- */
-  --ink: #09090b;       /* 主文字 = 主按钮底（zinc-950）*/
-  --ink-2: #71717a;     /* 次文字（zinc-500） */
-  --ink-3: #a1a1aa;     /* 弱文字：字段说明 / 免责声明（zinc-400） */
+  /* ---- 兼容别名（值即令牌，禁止新增引用） ---- */
+  --bg: var(--color-bg-page);
+  --surface: var(--color-bg-card);
+  --surface-2: var(--color-bg-disabled);
+  --line: var(--color-border);
+  /* 2026-10-26 用户要求：文字一律纯黑，层级靠字号与字重拉开，不再用灰阶区分。
+     --color-text-secondary / --color-text-hint 仍保留在令牌表里供将来恢复灰阶 */
+  --ink: var(--color-text-primary);
+  --ink-2: var(--color-text-primary);
+  --ink-3: var(--color-text-primary);
+  --primary-fg: var(--color-text-inverse);
+  --danger: var(--color-error);
+  --mask: var(--color-mask);
 
-  /* ---- 涨跌平：国内习惯红涨绿跌，与欧美相反，不要搞反 ---- */
-  --up: #dc2626;        /* 涨（red-600） */
-  --down: #16a34a;      /* 跌（green-600） */
-  --flat: #71717a;      /* 平：shadcn 无独立平色，取辅助文字色 */
-
-  /* ---- 强调色：shadcn 只允许「一个」强调色，用途收紧到
-        链接 / 选中态 / 焦点 ring；主按钮保持近黑底，不再用蓝做主按钮 ---- */
-  --accent: #2559EB;
-  --primary-fg: #fafafa; /* 主按钮文字（zinc-50） */
-  --ring: var(--ink);    /* 焦点描边 */
-
-  /* ---- 状态语义色（数据/状态专用，不得挪作 UI 强调色）---- */
-  --warn: #d97706;                     /* 警示：琥珀 amber-600，白底上对比度足够 */
-  --warn-tint: rgba(217, 119, 6, 0.10);
-  --warn-border: rgba(217, 119, 6, 0.30);
-  --warn-soft: rgba(217, 119, 6, 0.22);
-  --accent-deep: #1e40af;              /* 蓝深一档：图表主系列、条形填充 */
-  --accent-soft: rgba(37, 89, 235, 0.12);
-  --danger: #dc2626;                   /* 危险操作（退出登录等），与涨色同值但语义独立 */
-  --danger-strong: #b91c1c;
-  --danger-tint: rgba(220, 38, 38, 0.08);
-  --danger-border: rgba(220, 38, 38, 0.28);
-  --press: rgba(9, 9, 11, 0.05);       /* 通用按压态底色（hover-class 用） */
-
-  /* ---- 状态淡色底与淡色描边（标签 / 药丸 / 图标底） ---- */
+  /* ---- 数据语义色：涨跌与状态，不参与 UI 强调 ---- */
+  --up: #dc2626;
+  --down: #16a34a;
+  --flat: #999999;
   --up-tint: rgba(220, 38, 38, 0.08);
   --up-border: rgba(220, 38, 38, 0.28);
   --down-tint: rgba(22, 163, 74, 0.08);
   --down-border: rgba(22, 163, 74, 0.28);
-  --accent-tint: rgba(37, 89, 235, 0.08);
-  --accent-border: rgba(37, 89, 235, 0.30);
+  --warn: var(--color-warning);
+  --warn-tint: rgba(255, 159, 24, 0.10);
+  --warn-border: rgba(255, 159, 24, 0.30);
 
-  /* ---- 发丝线：全站分割线 / 边框统一用它，禁止再自定 border 粗细与颜色 ----
-       规范要求细线用 1rpx（微信会映射到物理像素），2rpx 在低 DPR 机器上会显粗 */
-  --hairline: 1rpx solid var(--line);
-  --hairline-dashed: 1rpx dashed var(--line);  /* 仅口径分隔这类「虚线」场景，需显式豁免 */
+  /* ---- 描边：1rpx，卡片与分割线共用一档 ---- */
+  --hairline: 1rpx solid var(--color-border);
+  --hairline-dashed: 1rpx dashed var(--color-border);
 
-  /* ---- 层级：只用这五层，组件内部的 1/10 之类小值属局部层叠 ---- */
+  /* ---- z 层级：四档收敛 ---- */
+  --z-mask: 1000;
+  --z-sheet: 2000;
+  --z-dialog: 3000;
+  --z-toast: 4000;
+
+  /* ---- 兼容别名：旧 z 名 ---- */
   --z-base: 0;
-  --z-popup: 100;
-  --z-mask: 200;
-  --z-toast: 300;
-  --z-modal: 400;
+  --z-popup: var(--z-sheet);
+  --z-modal: var(--z-dialog);
+
+  /* ---- 基线 ---- */
+  font-size: var(--font-base);
+  line-height: var(--lh-base);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-page);
 }
 
 /* =============================================================
-   全局字号档位（设置页「字体大小」可切换）
-   规范 §九「字体缩放」的落地：只有这里允许出现表外字号。
-   标准档以 page{} 的七档为 0，向上整体平移 4rpx / 8rpx：
-
-     档位      类名                   平移   xs  sm  base lg  xl  2xl 3xl
-     标准      （无类）                0      24  28  32   36  40  48  64
-     大        .font-scale--large      +4     28  32  36   40  44  52  68
-     超大      .font-scale--xlarge     +8     32  36  40   44  48  56  72
-
-   档位类挂在各页根节点 .page 上，变量随 custom property 继承到所有子组件。
+   字号辅助档位（设置页「字体大小」，系统级可读性开关）
+   标准档严格走上面六档；「大 / 超大」整体上移 4 / 8rpx。
    ============================================================= */
 .page.font-scale--large {
   --font-xs: 28rpx;
@@ -172,7 +164,6 @@ page {
   --font-lg: 40rpx;
   --font-xl: 44rpx;
   --font-2xl: 52rpx;
-  --font-3xl: 68rpx;
 }
 
 .page.font-scale--xlarge {
@@ -182,52 +173,43 @@ page {
   --font-lg: 44rpx;
   --font-xl: 48rpx;
   --font-2xl: 56rpx;
-  --font-3xl: 72rpx;
 }
 
 /* =============================================================
-   主题：仅浅色（终局，2026-10-22 晚用户最终决策「太暗了」，回到浅色）。
-   原先这里有一套 page.dark 深色变量，已删除；如将来重做深色，
-   从 git 历史取回变量，并先给每个页面根节点注入 theme class，
-   同时同步 app.json 窗口底色与 canvas 侧 JS 配色（共 5 个文件）。
-   ============================================================= */
-
-/* =============================================================
    全局工具类
-   注意：这里的 class 由 app.wxss @import 引入，属「全局样式」；
-   组件样式隔离（无 apply-shared）下不会穿透进 components/* 内部节点，
-   组件内部需要同样写法时，在其自身 wxss 里再写一遍或用 :host 继承。
+   注意：@import 进来的是「全局样式」，组件样式隔离下不会穿透进
+   components/* 内部节点，组件内需要时在自身 wxss 里再写一遍。
    ============================================================= */
 
-/* ---- 导航栏：88rpx + 安全区 + flex 垂直居中 ---- */
+/* 导航栏：88rpx + 安全区 + flex 垂直居中 */
 .navbar {
   position: relative;
   display: flex;
   align-items: center;
   height: var(--icon-touch);
   padding-top: env(safe-area-inset-top);
-  background: var(--bg);
+  background: var(--color-bg-card);
 }
 
-/* ---- 底部安全区兜底：吸底元素外层统一挂它，别各写 env() ---- */
+/* 底部安全区兜底：吸底元素外层统一挂它，别各写 env() */
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* ---- 容器与按钮（shadcn 组件对应物）：浮起面 = --hairline + --shadow-sm ---- */
+/* 卡片：白面 + 1rpx 描边 + 12rpx 圆角，默认不加阴影 */
 .card {
-  background: var(--surface);
+  background: var(--color-bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-lg);
-  padding: var(--space-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
+  padding: var(--pad-normal);
 }
 
-/* ---- 标签页：gap 管间距 ---- */
-.tabs { display: flex; gap: var(--space-lg); }
+.tabs {
+  display: flex;
+  gap: var(--space-lg);
+}
 
-/* ---- 卡片消息外层：chat 主页面与卡片画廊测试页共用。
-       调卡片间距只改这里，两边自动同步（约定见 DESIGN.md「卡片画廊」节） ---- */
+/* 卡片消息外层：chat 主页面与卡片画廊测试页共用 */
 .msg-card {
   width: 100%;
 }

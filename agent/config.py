@@ -40,6 +40,13 @@ LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "1"))
 ANSWER_ENABLE_THINKING = os.getenv("ANSWER_ENABLE_THINKING", "false").strip().lower() in (
     "1", "true", "yes", "on",
 )
+# 决策类小模型（改写/分类/判读/澄清/摘要）是否开启思考。生产 SMALL_MODEL 与主力模型
+# 同款（DeepSeek），默认开启推理：一次判读要先吐几百个隐藏 token 才给结论（judge_ms ~2.3s）。
+# 这些节点只输出短结构（意图/布尔/一句反问），关掉思考不改判定口径；
+# 需要回滚时把该变量置 true，行为即恢复为上游默认。
+SMALL_LLM_ENABLE_THINKING = os.getenv("SMALL_LLM_ENABLE_THINKING", "false").strip().lower() in (
+    "1", "true", "yes", "on",
+)
 # RAG 相关度阈值：针对余弦相似度（不是 RRF 融合分）。
 # 仅当重排关闭时生效。Qwen3 向量空间的地板值很高（无关 query 与语料的平均相似度
 # 也有 0.56，实测相关/无关的 top 相似度完全重叠），单靠它只能做粗筛，
@@ -58,8 +65,13 @@ RERANK_TIMEOUT = float(os.getenv("RERANK_TIMEOUT", "8"))
 # 重排接口 429/5xx 退避重试次数：N=100 时单请求 token 翻倍，实测会触发上游限流；
 # 不重试会静默回退 RRF，等于这一段没开重排
 RERANK_MAX_RETRIES = int(os.getenv("RERANK_MAX_RETRIES", "2"))
-# 进上下文的片段数（上线数量）；重排候选池见上面的 RERANK_CANDIDATES
-RAG_TOP_K = int(os.getenv("RAG_TOP_K", "6"))
+# 进程内同时进行中的重排请求上限。实测 N=100、4 路并发时 37% 的请求被上游 429 打回，
+# 失败后静默回退 RRF（质量掉档但不报错）。限流到 2 路可把突发摊平；0 表示不限。
+RERANK_CONCURRENCY = int(os.getenv("RERANK_CONCURRENCY", "2"))
+# 进上下文的片段数（上线数量）；重排候选池见上面的 RERANK_CANDIDATES。
+# 实测（2026-10-26 sweep，120 正/20 负）：N=100 时 k=8 比 k=6 的 Hit 高 2.5pt，
+# 上下文只多约 30%，故默认取 8。
+RAG_TOP_K = int(os.getenv("RAG_TOP_K", "8"))
 # ===== 检索候选选择模式 =====
 # chunk：RRF 前 N 块直接送重排（旧行为）；
 # doc_first：先按文档聚合 RRF 排名，选 Top D 篇文档，再展开每篇的若干块，
@@ -101,6 +113,12 @@ TOOL_CACHE_MAX = int(os.getenv("TOOL_CACHE_MAX", "256"))
 TOOL_CACHE_TTL_FAILURE = int(os.getenv("TOOL_CACHE_TTL_FAILURE", "30"))
 # 同一轮内并发执行几个工具：akshare 走线程池，全放开会让多个 DataFrame 同时驻留
 TOOL_CONCURRENCY = int(os.getenv("TOOL_CONCURRENCY", "4"))
+# 单轮工具总预算（秒）：tool_execute 里多个工具并发执行，等全部返回会让最慢的那个
+# 决定首屏——单工具本身是「8s 超时 + 重试 1 次」，最坏 16s+。超过该预算的调用按
+# 超时降级，已完成的结果照常进 synthesize。默认与单工具超时对齐（8s），只砍掉
+# 「失败后重试」造成的翻倍长尾；想进一步压尾可下调到 5~6s（代价是慢速历史行情可能被截）。
+# 0 表示不设预算（恢复旧行为）。
+TOOL_ROUND_BUDGET = float(os.getenv("TOOL_ROUND_BUDGET", "8"))
 
 # 数据源：卡片数据来自 akshare（东财/新浪）+ baostock（历史日 K），均免 token。
 # TUSHARE_TOKEN / TUSHARE_API 已废弃删除——原 token 对 moneyflow/top_list 等接口无权限（40203）。

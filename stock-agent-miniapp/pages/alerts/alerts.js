@@ -332,7 +332,6 @@ Page({
       });
   },
 
-  // 清空搜索
   onSearchClear() {
     this.setData({ searchKeyword: '', searchResults: [] });
   },
@@ -347,7 +346,6 @@ Page({
     });
   },
 
-  // 清除已选股票
   onClearStock() {
     this.setData({ selectedStock: null });
   },

@@ -13,7 +13,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 var(--space-xl);
+  padding: 0 var(--space-2xl);
 }
 
 /* ===== 概览宫格 =====
@@ -23,8 +23,7 @@
   display: flex;
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -38,14 +37,11 @@
   padding: var(--space-lg) var(--space-lg);
 }
 
-/* 格间竖分割线：class 由 wxml 按行号算（WXSS 禁兄弟选择器） */
-.overview-cell--sep {
-  border-left: var(--hairline);
-}
+/* 格间不画线：留白即分隔，class 保留给 wxml 但不出现描边 */
 
 .g-num {
   font-size: var(--font-lg);   /* 宫格数字：大号 */
-  font-weight: 600;
+  font-weight: var(--fw-medium);
   line-height: 1.1;
   color: var(--ink);
 }
@@ -59,7 +55,7 @@
 /* ===== 分组标题 ===== */
 .group-title {
   flex: none;
-  margin: var(--space-xl) 0 var(--space-md);
+  margin: var(--space-lg) 0 var(--space-md);
   font-size: var(--font-base);   /* 价格与涨幅提醒：普通 */
   font-weight: 600;
   color: var(--ink-2);
@@ -73,7 +69,7 @@
   flex: 1;
   height: 0;
   min-height: 0;
-  margin-bottom: var(--space-2xl);
+  margin-bottom: var(--space-lg);
   margin-bottom: calc(84px + env(safe-area-inset-bottom)); /* 间距条例外：底部按钮让位值，与 JS 的 bottomGap 配套；calc+env 是安全区唯一合法非 rpx 写法 */
 }
 
@@ -90,8 +86,7 @@
   padding: 0 var(--space-lg) var(--space-lg);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -125,7 +120,7 @@
   gap: var(--space-lg);
 }
 
-/* 文字按键的统一热区：24rpx 字撑不出 88rpx，靠 min-height 补。
+/* 文字按键的统一热区：小号字撑不出 88rpx，靠 min-height 补。
    热区保持 88rpx（44px），上下各 -12rpx 的负边距把行高收到 64rpx，
    点击范围不变、第一行变紧凑 */
 .alert-card-editbtn {
@@ -133,7 +128,7 @@
   align-items: center;
   flex: none;
   min-height: 88rpx;
-  margin: calc(-1 * var(--space-sm)) 0;
+  margin: calc(-1 * var(--space-xs)) 0;
   font-size: var(--font-sm);
   color: var(--ink-2);
 }
@@ -152,7 +147,7 @@
   align-items: center;
   flex: none;
   min-height: 88rpx;
-  margin: calc(-1 * var(--space-sm)) 0;
+  margin: calc(-1 * var(--space-xs)) 0;
   font-size: var(--font-sm);
   color: var(--danger);
 }
@@ -190,32 +185,32 @@
 /* ===== 底部「新增提醒」 ===== */
 .bottom-btn {
   position: absolute;
-  left: var(--space-xl);
-  right: var(--space-xl);
+  left: var(--space-2xl);
+  right: var(--space-2xl);
 }
 
-/* 底部主按钮：无填充，描边与输入框同款（--hairline），主次靠字色与字重 */
+/* 底部主按钮：白底、无描边、黑字，靠白块从灰底上浮起来 */
 .add-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-xs);
-  height: 96rpx;
+  min-height: var(--icon-touch);
+  padding: 16rpx 32rpx;
   border-radius: var(--radius-sm);
-  background: transparent;
-  border: var(--hairline);
-  box-shadow: var(--shadow-sm);
+  background: var(--color-bg-card);
+  line-height: var(--lh-base);
 }
 
 .add-btn-text {
-  font-size: var(--font-lg);   /* 底部主行动点：全局大号 */
-  font-weight: 600;
-  color: var(--ink);
+  font-size: var(--font-lg);
+  font-weight: var(--fw-medium);
+  color: var(--color-text-primary);
 }
 
 /* ===== 新增提醒表单 ===== */
 .form-section {
-  margin-top: var(--space-xl);
+  margin-top: var(--space-lg);
 }
 
 .form-label {
@@ -232,14 +227,13 @@
 .form-input {
   width: 100%;
   height: 88rpx;
-  padding: 0 var(--space-lg);
+  padding: 0 var(--space-md);
   box-sizing: border-box;
   font-size: var(--font-base);
   color: var(--ink);
   background: transparent;
   border: var(--hairline);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
 }
 
 /* 带尾部单位时给右侧留位 */
@@ -263,7 +257,7 @@
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
-  border-radius: var(--radius-round);
+  border-radius: 999rpx;
 }
 
 .form-input-placeholder {
@@ -282,8 +276,7 @@
   padding: var(--space-md) var(--space-lg);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
+  border-radius: 0;
 }
 
 .selected-stock-text {
@@ -302,8 +295,7 @@
   padding: var(--space-md) var(--space-lg);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
+  border-radius: 0;
 }
 
 /* 原生 picker 触发区（按压态按需求取消，不再有 --hover 变暗） */
@@ -346,10 +338,10 @@
   margin-top: var(--space-xs);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-md);
   overflow: hidden;
   z-index: 10;
+  box-shadow: var(--shadow-md);
 }
 
 .search-item {

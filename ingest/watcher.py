@@ -48,11 +48,9 @@ class IngestHandler(FileSystemEventHandler):
             now = time.time()
             self._pending[path] = now
 
-            # 取消已有 timer
             if path in self._timers and self._timers[path] is not None:
                 self._timers[path].cancel()
 
-            # 新建 timer
             timer = threading.Timer(DEBOUNCE_SECONDS, self._fire, args=(path,))
             timer.daemon = True
             self._timers[path] = timer
@@ -122,10 +120,8 @@ class IngestHandler(FileSystemEventHandler):
         """文件移动：旧路径当删除，新路径当创建"""
         if event.is_directory:
             return
-        # 旧路径删除
         if self._is_supported(event.src_path):
             self._fire_delete(event.src_path)
-        # 新路径创建
         if hasattr(event, "dest_path") and self._is_supported(event.dest_path):
             self._schedule(event.dest_path)
 

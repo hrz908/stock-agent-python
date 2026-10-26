@@ -78,7 +78,6 @@ const (
 // 响应出现多余引号时会截错范围。
 var tencentVarRe = regexp.MustCompile(`v_[a-z0-9]+="([^"]*)"`)
 
-// fetchStockQuote 取一只股票的行情快照。
 func fetchStockQuote(ctx context.Context, code string) (*StockSnapshot, error) {
 	snaps := fetchStockQuotes(ctx, []string{code})
 	if len(snaps) == 0 {

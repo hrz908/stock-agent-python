@@ -1,5 +1,5 @@
 <!-- 走势与 K 线卡：K 线区高度 ≥180rpx，下方四列指标栅格；
-     支撑 / 压力位左右对齐（支撑靠左、压力靠右），底部注释只留外部传入的 note。
+     支撑 / 压力位整行靠左（支撑在前、压力在后），底部注释只留外部传入的 note。
      周期切换 chips 已按需求整块移除（多周期由 pages/kline 的独立卡片承担），
      组件不再接收 periods / activePeriod。 -->
 <view class="fcard card-class">

@@ -50,9 +50,9 @@ type AddWatchResp struct {
 // pending 表示刚加入还没有行情（前端展示 --）
 type WatchItem struct {
 	ID           int64  `json:"id"`
-	StockCode    string `json:"stock_code"`     // SH600519
-	Code         string `json:"code"`           // "SH 600519"，与前端展示格式一致
-	Name         string `json:"name"`           // 股票名称
+	StockCode    string `json:"stock_code"` // SH600519
+	Code         string `json:"code"`       // "SH 600519"，与前端展示格式一致
+	Name         string `json:"name"`
 	Price        string `json:"price"`          // 原始价格，保留 2 位
 	PriceText    string `json:"price_text"`     // 带千分位：1,705.30
 	ChangePct    string `json:"change_percent"` // 涨跌幅：1.23

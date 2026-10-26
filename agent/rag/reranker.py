@@ -12,6 +12,7 @@ import httpx
 from config import (
     OPENAI_API_BASE,
     OPENAI_API_KEY,
+    RERANK_CONCURRENCY,
     RERANK_MAX_RETRIES,
     RERANK_MODEL,
     RERANK_TIMEOUT,
@@ -21,6 +22,19 @@ logger = logging.getLogger("stocka.agent")
 
 # 共享客户端：重排是每次检索都走的高频旁路，每次新建 client 都要重新握 TLS
 _client: httpx.AsyncClient | None = None
+
+# 并发闸：实测 N=100 时 4 路并发会让上游 429，失败后静默回退 RRF。
+# 只包住单次 POST（退避 sleep 期间不占名额），避免突发把限流预算打满。
+_sem: asyncio.Semaphore | None = None
+
+
+def _get_sem() -> asyncio.Semaphore | None:
+    global _sem
+    if RERANK_CONCURRENCY <= 0:
+        return None
+    if _sem is None:
+        _sem = asyncio.Semaphore(RERANK_CONCURRENCY)
+    return _sem
 
 
 def _get_client() -> httpx.AsyncClient:
@@ -63,8 +77,13 @@ async def rerank_scores(query: str, texts: list[str]) -> list[float]:
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
 
     resp = None
+    sem = _get_sem()
     for attempt in range(max(0, RERANK_MAX_RETRIES) + 1):
-        resp = await _get_client().post(url, json=payload, headers=headers)
+        if sem is None:
+            resp = await _get_client().post(url, json=payload, headers=headers)
+        else:
+            async with sem:
+                resp = await _get_client().post(url, json=payload, headers=headers)
         if resp.status_code == 429 or resp.status_code >= 500:
             if attempt < RERANK_MAX_RETRIES:
                 # 优先服从上游 Retry-After；没有就按次数递增退避

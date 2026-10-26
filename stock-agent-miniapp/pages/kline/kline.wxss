@@ -13,7 +13,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: var(--space-lg) var(--space-xl) 0;
+  padding: var(--space-lg) var(--space-lg) 0;
 }
 
 /* ===== 搜索框 =====
@@ -37,7 +37,6 @@
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
 }
 
 .search-input {
@@ -61,7 +60,7 @@
   justify-content: center;
   width: 56rpx;
   height: 56rpx;
-  border-radius: var(--radius-round);
+  border-radius: 999rpx;
 }
 
 /* 联想结果：浮层，左对齐搜索框、宽度贴合（左右 0），从搜索框底边向下展开 */
@@ -74,9 +73,9 @@
   z-index: 10;
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-md);
   overflow: hidden;
+  box-shadow: var(--shadow-md);
 }
 
 .search-item {
@@ -186,5 +185,5 @@
   flex-direction: column;
   gap: var(--space-md);
   /* 底部留白：最后一张卡不要贴着屏幕底边 */
-  padding-bottom: var(--space-2xl);
+  padding-bottom: var(--space-lg);
 }

@@ -2,11 +2,10 @@
 // token.wxss 中的字号变量在该 class 下整体平移（custom property 会继承进子组件）。
 //
 // 只有三档（2026-10-26 用户决策：超小 / 小两档连同 caption 档一起删除）：
-//   标准 / 大 / 超大，相邻档位差 4rpx，正文 30 / 34 / 38，最小字是小号 26。
+//   标准 / 大 / 超大，相邻档位差 4rpx。
 // token.wxss 里已没有 xsmall / small 两个档位类；
 // 旧缓存落在已删除的档位时按「非法值」回退标准。
-// 相对字级跟着档位走：小号 --fs-sm = 正文 -4rpx、大号 --fs-lg = 正文 +4rpx、
-// 超大号 --fs-xl = 正文 +8rpx。
+// 相对字级跟着档位走：小号 --font-sm、大号 --font-lg、超大号 --font-xl，均由 token.wxss 定义。
 const STORAGE_KEY = 'font_scale';
 
 export const FONT_SCALE_OPTIONS = [

@@ -1,4 +1,4 @@
-"""向量嵌入器：支持 FlagEmbedding (bge-m3) 和 OpenAI 兼容 API 降级。"""
+"""向量嵌入器：支持 FlagEmbedding 与 OpenAI 兼容 API 降级。"""
 import hashlib
 import logging
 import struct
@@ -140,7 +140,6 @@ class Embedder:
         self._load_model()
         model_name = OFFLINE_EMBED_MODEL
 
-        # 1. 检查缓存
         cached: list[list[float] | None] = [None] * len(texts)
         miss_indices: list[int] = []
         miss_texts: list[str] = []
@@ -162,14 +161,12 @@ class Embedder:
         logger.debug("嵌入缓存命中 %d/%d，miss %d",
                      len(texts) - len(miss_texts), len(texts), len(miss_texts))
 
-        # 2. 未命中的调用模型
         if miss_texts:
             if self._backend == "flag":
                 new_vecs = self._embed_flag(miss_texts, is_query)
             else:
                 new_vecs = self._embed_openai(miss_texts, is_query)
 
-            # 3. 写入缓存（TTL 7天）
             for idx, vec in zip(miss_indices, new_vecs, strict=True):
                 cached[idx] = vec
                 key = _cache_key(model_name, texts[idx])
@@ -178,7 +175,6 @@ class Embedder:
                 except Exception as e:
                     logger.debug("写入 embedding 缓存失败: %s", e)
 
-        # 4. 返回所有向量
         result = [v for v in cached if v is not None]
         if len(result) != len(texts):
             logger.warning("嵌入结果数量不匹配: expected %d, got %d", len(texts), len(result))

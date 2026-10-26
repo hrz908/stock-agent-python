@@ -1,4 +1,4 @@
-/* 导航栏：底色与页面一致（--bg，浅色主题下为浅灰），底部不加分隔线，靠内容区留白区分 */
+/* 导航栏：底色与页面一致（--bg 纯白），底部不加分隔线，靠内容区留白区分 */
 .navbar {
   width: 100%;
   box-sizing: border-box;
@@ -25,7 +25,7 @@
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
-  border-radius: var(--radius-lg);
+  border-radius: 0;
 }
 
 /* 标题容器：以视口水平中心为锚点绝对定位（左 50% + 反向平移自身宽度一半）。
@@ -52,7 +52,7 @@
   max-width: 100%;
   min-width: 0;
   font-size: var(--font-lg);
-  font-weight: 600;
+  font-weight: var(--fw-medium);
   color: var(--ink);
   letter-spacing: 0.5rpx;
   white-space: nowrap;

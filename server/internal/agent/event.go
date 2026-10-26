@@ -19,7 +19,6 @@ type ErrorData struct {
 	Msg  string `json:"msg"`
 }
 
-// RunRequest 一次运行的入参。
 type RunRequest struct {
 	Query     string `json:"query"`
 	SessionID string `json:"session_id"`
