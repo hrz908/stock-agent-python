@@ -110,6 +110,28 @@ _EVENT_IMPORTANT_TYPES = ("解禁", "停复牌", "诉讼")
 
 # 事件卡摘要的最大字数：资讯正文可能很长，卡内只放一句
 _EVENT_DESC_CHARS = 60
+# 摘要里数字字符的占比上限：超过说明这一段是数据表而不是叙述文字
+_EVENT_DESC_DIGIT_RATIO = 0.25
+
+
+def _event_desc(content) -> str:
+    """资讯正文 -> 事件卡的一句摘要；正文是数据表时返回空串。
+
+    财联社/证券时报的资讯正文常以「代码 名称 涨幅 成交额 …」的表格开头
+    （实测：17 股获融资客净买入那条，截 60 字后卡片里是一串 603626 9.95 11245.13），
+    这种内容进卡片只会是噪声。规则：取第一个句子；数字占比过高或太短就整段丢弃，
+    卡片只留标题——标题本身就是一句完整的事件描述。
+    """
+    text = " ".join(str(content or "").split())
+    if not text:
+        return ""
+    cut = re.split(r"[。！？；]", text, maxsplit=1)[0].strip()
+    if len(cut) < 8:
+        return ""
+    digits = sum(1 for ch in cut if ch.isdigit())
+    if digits / len(cut) > _EVENT_DESC_DIGIT_RATIO:
+        return ""
+    return cut[:_EVENT_DESC_CHARS]
 
 # 工具集进程级缓存：首轮 tool_call 前经 _ensure_tools 懒加载
 _TOOLS = None
@@ -857,7 +879,7 @@ def _event_card_payload(news_rows: list):
         if not title:
             continue
         when = str(row.get("datetime") or "")
-        desc = " ".join(str(row.get("content") or "").split())
+        desc = _event_desc(row.get("content"))
         etype = _event_type(title)
         events.append({
             "type": etype,

@@ -38,6 +38,7 @@ from subgraphs.stock import (
     _TOOL_LABELS,
     _asked_for_data,
     _call_rounds,
+    _event_desc,
     _failure_reason,
     _fit_context,
     _got_data,
@@ -1293,6 +1294,19 @@ def test_stream_cleaner_strips_prompt_leak():
     check("普通尖括号保留", got3 == "若 PE < 10 则低估", repr(got3))
 
 
+def test_event_card_desc_clean():
+    print("\n[P18] 公司动态卡不把资讯里的数据表当摘要")
+    # 线上实测：正文以「代码 名称 涨幅 金额」表格开头，截 60 字后卡片是一串数字
+    table = ("1.67 银行 603626 科森科技 9.95 11245.13 100326.80 6.82 电子 688322 奥比中光"
+             " 2.31 8873.41 90211.02 5.12 有色 600362 江西铜业")
+    check("表格正文不出摘要", _event_desc(table) == "", repr(_event_desc(table)))
+    check("一句话正文取首句",
+          _event_desc("公司发布公告，拟回购股份用于股权激励。具体金额以公告为准。")
+          == "公司发布公告，拟回购股份用于股权激励", repr(_event_desc("公司发布公告，拟回购股份用于股权激励。具体金额以公告为准。")))
+    check("过短正文丢弃", _event_desc("详见公告") == "")
+    check("空正文安全", _event_desc(None) == "")
+
+
 def main():
     print("=" * 62)
     print("AI 对话故障回归测试")
@@ -1334,6 +1348,7 @@ def main():
     test_entity_codes()
     test_concept_not_swallowing_live_quote()
     test_stream_cleaner_strips_prompt_leak()
+    test_event_card_desc_clean()
     print("\n" + "=" * 62)
     if _FAILED:
         print(f"FAILED: {len(_FAILED)} 项 -> {_FAILED}")
