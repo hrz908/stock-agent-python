@@ -230,6 +230,31 @@ func TestBatchHasNoRepeatedSentence(t *testing.T) {
 	}
 }
 
+// TestExRightsNameFiltered 除权除息临时简称（XD/XR/DR，且常被截断）不进候选池。
+func TestExRightsNameFiltered(t *testing.T) {
+	for _, name := range []string{"XD澜起科", "XR某某股", "dr测试"} {
+		if !exRightsMarked(name) {
+			t.Fatalf("临时简称未识别: %s", name)
+		}
+	}
+	for _, name := range []string{"澜起科技", "贵州茅台", ""} {
+		if exRightsMarked(name) {
+			t.Fatalf("正常简称被误判: %s", name)
+		}
+	}
+
+	meta := map[string]metaRow{
+		"SH688008": {Code: "688008", Name: "XD澜起科", Status: "listed"},
+		"SH600519": {Code: "600519", Name: "贵州茅台", Status: "listed"},
+	}
+	pool := watchlistUniverse(meta, map[string]float64{"SH688008": 5, "SH600519": 2})
+	for _, c := range pool {
+		if c.Code == "SH688008" {
+			t.Fatal("除权临时简称不该进候选池")
+		}
+	}
+}
+
 func TestParseRankItems(t *testing.T) {
 	body := []byte(`[
       {"symbol":"sz300308","code":"300308","name":"中际旭创","changepercent":3.816,"amount":27918480076,"turnoverratio":4.31},

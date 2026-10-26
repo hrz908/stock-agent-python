@@ -246,6 +246,10 @@ func loadUniverse(ctx context.Context) ([]Candidate, map[string]float64) {
 			}
 			c.Name = pickName(m.Name, c.Name)
 			c.Sector = strings.TrimSpace(m.Sector)
+			// 除权除息临时简称（XD/XR/DR）不进池：文案会变成「XD澜起科现在什么价？」
+			if exRightsMarked(c.Name) {
+				continue
+			}
 		} else if strings.HasPrefix(c.Code, "BJ") {
 			// 榜单本身不含北交所；没有主数据佐证时不要把 BJ 小票放进来
 			continue
@@ -276,7 +280,7 @@ func watchlistUniverse(meta map[string]metaRow, heat map[string]float64) []Candi
 			name = pickName(m.Name, name)
 			sector = pickName(sector, strings.TrimSpace(m.Sector))
 		}
-		if name == "" {
+		if name == "" || exRightsMarked(name) {
 			return
 		}
 		seen[code] = true
@@ -562,4 +566,18 @@ func pickName(current, fallback string) string {
 		return current
 	}
 	return strings.TrimSpace(fallback)
+}
+
+// exRightsMarked 除权除息日交易所给简称加的临时前缀（XD / XR / DR），
+// 且往往伴随截断（实测「XD澜起科」）。这种名字拼进问句就是
+// 「XD澜起科现在什么价？」，用户按正式简称提问时实体也匹配不到，
+// 所以不进候选池：等主数据换回正式简称（下一次同步）自然会回来。
+func exRightsMarked(name string) bool {
+	up := strings.ToUpper(strings.TrimSpace(name))
+	for _, p := range []string{"XD", "XR", "DR"} {
+		if strings.HasPrefix(up, p) {
+			return true
+		}
+	}
+	return false
 }

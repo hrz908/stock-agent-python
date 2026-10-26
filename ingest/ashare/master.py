@@ -69,6 +69,28 @@ def _is_st(name: str) -> bool:
     return name.upper()[:4].startswith(("ST", "*ST", "SST", "S*ST"))
 
 
+# 除权除息日交易所会把简称临时加上 XD / XR / DR 前缀（实测「XD澜起科」），
+# 且总长受限时还会截断。这种临时名写进主数据会污染下游：首屏引导问题拼出
+# 「XD澜起科（688008）」、用户问「澜起科技」反而匹配不到实体。
+# 处理：已有行不被带前缀的名字覆盖（等除权日过去，下一次同步换回正式简称）；
+# 新股首次入库只能先落一个去掉前缀的名字。
+_EX_RIGHTS_PREFIXES = ("XD", "XR", "DR")
+
+
+def _ex_rights_prefixed(name: str) -> bool:
+    return name.upper().startswith(_EX_RIGHTS_PREFIXES)
+
+
+def _strip_ex_rights(name: str) -> str:
+    """去掉 XD/XR/DR 前缀；去完太短的（截断严重）保留原文，交给上层过滤。"""
+    upper = name.upper()
+    for p in _EX_RIGHTS_PREFIXES:
+        if upper.startswith(p):
+            rest = name[len(p):].strip()
+            return rest if len(rest) >= 2 else name
+    return name
+
+
 def _listing_dates(ak) -> dict[str, object]:
     """交易所清单里的上市日期。单点失败只跳过该市场，不影响主流程。"""
     calls = (
@@ -194,7 +216,10 @@ def sync_basic(store) -> dict:
     if not codes:
         raise RuntimeError("A股代码表为空，终止同步")
     dates = _listing_dates(_ak())
-    rows = [(code, name, dates.get(code), _is_st(name)) for code, name in codes.items()]
+    rows = [
+        (code, _strip_ex_rights(name), dates.get(code), _is_st(name))
+        for code, name in codes.items()
+    ]
 
     with store.conn.cursor() as cur:
         cur.executemany(
@@ -202,7 +227,12 @@ def sync_basic(store) -> dict:
             INSERT INTO stock_basic (code, name, list_date, is_st, source, updated_at)
             VALUES (%s, %s, %s, %s, 'akshare', now())
             ON CONFLICT (code) DO UPDATE
-               SET name       = EXCLUDED.name,
+               SET name       = CASE
+                                  -- 上游这次带除权前缀、库里已是正式简称：保留库里的
+                                  WHEN EXCLUDED.name ~ '^(XD|XR|DR)' AND stock_basic.name !~ '^(XD|XR|DR)'
+                                    THEN stock_basic.name
+                                  ELSE EXCLUDED.name
+                                END,
                    list_date  = COALESCE(EXCLUDED.list_date, stock_basic.list_date),
                    is_st      = EXCLUDED.is_st,
                    status     = 'listed',
