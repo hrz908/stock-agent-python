@@ -13,6 +13,9 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_openai import OpenAIEmbeddings
 
 from config import (
+    DOC_FIRST_DOCS,
+    DOC_FIRST_PER_DOC,
+    DOC_FIRST_POOL,
     EMBED_DIM,
     ONLINE_EMBED_MODEL,
     OPENAI_API_BASE,
@@ -22,6 +25,7 @@ from config import (
     RERANK_CANDIDATES,
     RERANK_ENABLED,
     RERANK_THRESHOLD,
+    RETRIEVAL_MODE,
 )
 from db import get_pool
 from rag.reranker import rerank_scores
@@ -41,7 +45,7 @@ WITH vec AS (
   FROM chunks c
   {join}
   {where_vec}
-  ORDER BY c.embedding <=> %(vec)s::vector LIMIT 50
+  ORDER BY c.embedding <=> %(vec)s::vector LIMIT %(inner_limit)s
 ),
 lex AS (
   SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(c.tsv_zh, q) DESC) AS rk
@@ -49,7 +53,7 @@ lex AS (
   CROSS JOIN to_tsquery('simple', %(q_ts)s) q
   {join}
   {where_lex}
-  ORDER BY ts_rank_cd(c.tsv_zh, q) DESC LIMIT 50
+  ORDER BY ts_rank_cd(c.tsv_zh, q) DESC LIMIT %(inner_limit)s
 ),
 fused AS (
   SELECT id, SUM(1.0/(60+rk)) AS score
@@ -126,9 +130,10 @@ def _build_search_sql(
 ) -> tuple[str, dict]:
     """按过滤条件拼 SQL；过滤列都在 ashare_documents 上，文件 ingest 的文档不会被选中。
 
-    过滤必须下推到 vec/lex 两个 CTE 内：先过滤再取 Top50，否则特定股票/类型的
+    过滤必须下推到 vec/lex 两个 CTE 内：先过滤再取 TopN，否则特定股票/类型的
     片段可能根本进不了候选池，外层再过滤只会得到空结果。
     stock_codes 支持单个代码或代码列表（问题里可能同时点名多家公司）。
+    vec/lex 的候选上限由调用方在 params 里传 inner_limit（doc_first 需要更大的池）。
     """
     codes = _normalize_stock_codes(stock_codes)
     conditions: list[str] = []
@@ -221,6 +226,8 @@ class HybridRetriever(BaseRetriever):
             timings["embed_ms"] = int((time.monotonic() - t0) * 1000)
         vl = _vec_literal(emb)
         limit = max(self.k, self.candidates) if RERANK_ENABLED else self.k
+        # chunk 模式只需 limit 个块；doc_first 要先从更大的 RRF 池按文档聚合
+        inner_limit = max(limit, DOC_FIRST_POOL) if RETRIEVAL_MODE == "doc_first" else limit
         codes = _normalize_stock_codes(stock_codes if stock_codes else stock_code)
         sql, filter_params = _build_search_sql(
             stock_codes=codes,
@@ -229,6 +236,7 @@ class HybridRetriever(BaseRetriever):
         )
         params = {
             **filter_params,
+            "inner_limit": max(1, int(inner_limit)),
             "vec": vl,
             # 中文 bigram / ASCII 词拼成 OR tsquery；空查询用哨兵词避免空 tsquery
             "q_ts": query_tsquery(query),
@@ -258,6 +266,8 @@ class HybridRetriever(BaseRetriever):
                     "similarity": float(similarity) if similarity is not None else 0.0,
                 },
             ))
+        if RETRIEVAL_MODE == "doc_first":
+            docs = _doc_first_select(docs, limit)
         # 重排：RRF 只保证"两路都命中"，不保证真相关；交叉编码器直接判 query↔正文
         if RERANK_ENABLED and docs:
             t2 = time.monotonic()
@@ -322,6 +332,51 @@ class HybridRetriever(BaseRetriever):
 
 
 _WS_RE = re.compile(r"\s+")
+
+
+def _doc_first_select(docs: list[Document], limit: int) -> list[Document]:
+    """按文档聚合 RRF 排名后展开块，返回最多 limit 个候选。
+
+    chunk 模式下同一篇长研报的多块可能占满前 30，把目标文档挤到 31 名之外；
+    这里先按「文档」排序（取文档内最高 RRF 的块作为文档名次），再展开每篇的前
+    DOC_FIRST_PER_DOC 块，最后用后续文档和剩余块补足 limit。
+
+    注意：这是「文档级聚合」，不是简单的 per-doc 限流——离线重放里按块数硬限流
+    会把 Recall@30 压低，必须靠文档级顺序把目标文档先选进来。
+    """
+    if not docs or limit <= 0:
+        return []
+    groups: dict = {}
+    order: list = []
+    for doc in docs:
+        key = doc.metadata.get("doc_id") or doc.metadata.get("title") or doc.metadata.get("id")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(doc)
+
+    per_doc = max(1, DOC_FIRST_PER_DOC)
+    max_docs = max(1, DOC_FIRST_DOCS)
+    selected: list[Document] = []
+
+    def take(keys) -> None:
+        for key in keys:
+            selected.extend(groups[key][:per_doc])
+            if len(selected) >= limit:
+                return
+
+    take(order[:max_docs])
+    if len(selected) < limit:
+        take(order[max_docs:])
+    if len(selected) < limit:
+        # 仍不足：补齐已选文档里还没进来的块（保持原 RRF 序）
+        taken = {id(d) for d in selected}
+        for doc in docs:
+            if id(doc) not in taken:
+                selected.append(doc)
+                if len(selected) >= limit:
+                    break
+    return selected[:limit]
 
 
 def _content_key(text: str) -> str:

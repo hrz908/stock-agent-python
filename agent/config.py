@@ -55,8 +55,22 @@ RERANK_MODEL = os.getenv("RERANK_MODEL", "Qwen/Qwen3-Reranker-0.6B")
 RERANK_CANDIDATES = int(os.getenv("RERANK_CANDIDATES", "20"))
 RERANK_THRESHOLD = float(os.getenv("RERANK_THRESHOLD", "0.5"))
 RERANK_TIMEOUT = float(os.getenv("RERANK_TIMEOUT", "8"))
+# 重排接口 429/5xx 退避重试次数：N=100 时单请求 token 翻倍，实测会触发上游限流；
+# 不重试会静默回退 RRF，等于这一段没开重排
+RERANK_MAX_RETRIES = int(os.getenv("RERANK_MAX_RETRIES", "2"))
 # 进上下文的片段数（上线数量）；重排候选池见上面的 RERANK_CANDIDATES
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "6"))
+# ===== 检索候选选择模式 =====
+# chunk：RRF 前 N 块直接送重排（旧行为）；
+# doc_first：先按文档聚合 RRF 排名，选 Top D 篇文档，再展开每篇的若干块，
+# 防止同题材研报的多块占满候选池、把目标文档挤出前 30（语料扩充后实测的主要问题）
+RETRIEVAL_MODE = os.getenv("RETRIEVAL_MODE", "chunk").strip().lower()
+# doc_first 模式先从这么大的 RRF 池里按文档聚合（必须 >= RERANK_CANDIDATES）
+DOC_FIRST_POOL = int(os.getenv("DOC_FIRST_POOL", "300"))
+# 最多选多少篇文档
+DOC_FIRST_DOCS = int(os.getenv("DOC_FIRST_DOCS", "30"))
+# 每篇文档最多展开多少块（候选池层面；最终上下文仍受 RAG_PER_DOC 限制）
+DOC_FIRST_PER_DOC = int(os.getenv("DOC_FIRST_PER_DOC", "5"))
 # 同一文档最多进几块：按 doc_id 限流（按标题会把一篇年报压到 2 块）
 RAG_PER_DOC = int(os.getenv("RAG_PER_DOC", "3"))
 # 重排后按 RERANK_THRESHOLD 再裁一次上下文。默认关：历史行为是「只判是否命中，
