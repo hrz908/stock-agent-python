@@ -15,6 +15,10 @@ _BLOCK_REPLY = "抱歉，我无法处理该请求。如果你有股票行情或�
 
 _FALLBACK = "为了给你准确的答案，能补充一下具体是哪只股票、以及想看的时间范围或指标吗？"
 
+# 模型输出的「反问要素」：命中任一即认为澄清语义成立；全不命中时退固定话术，
+# 避免措辞波动把「反问补全信息」写成陈述句（实测 R-03 偶发不含疑问词）
+_CLARIFY_MARKERS = ("哪", "什么", "请", "具体", "补充")
+
 _CLARIFY_SYSTEM = (
     "你是股票投研助手。用户的问题信息不足，需要反问澄清。"
     "用一句友好的中文，指出缺少哪些关键信息（如具体标的、时间范围、指标口径），"
@@ -34,32 +38,26 @@ async def clarify(state: dict) -> dict:
         }
 
     query = state.get("rewritten") or state.get("query", "") or ""
-    ttft_ms = None
     try:
-        llm = get_small_llm(streaming=True, temperature=0.3)
-        parts = []
-        async for chunk in llm.astream([
+        # 非流式：先拿到完整文案再判「是否真的在反问」，不合格就整条换成固定话术，
+        # 避免流式已吐出的陈述句无法撤回
+        llm = get_small_llm(streaming=False, temperature=0.3)
+        resp = await llm.ainvoke([
             SystemMessage(content=_CLARIFY_SYSTEM),
             HumanMessage(content=f"用户问题：{query}"),
-        ]):
-            if isinstance(chunk.content, str) and chunk.content:
-                if ttft_ms is None:
-                    ttft_ms = int((time.monotonic() - t0) * 1000)
-                emit("token", {"delta": chunk.content})
-            parts.append(chunk)
-        text = "".join(
-            (p.content if isinstance(p.content, str) else "") for p in parts
-        ).strip()
+        ])
+        text = resp.content.strip() if isinstance(resp.content, str) else ""
     except Exception:  # noqa: BLE001 - 模型异常时用固定兜底话术
         text = ""
-    if not text:
-        # 模型没生成出文字：兜底话术同样要显式 emit，否则前端空白
-        emit("token", {"delta": _FALLBACK})
+    if not text or not any(m in text for m in _CLARIFY_MARKERS):
+        # 模型没生成出文字或没问到点子上：兜底话术同样要显式 emit，否则前端空白
+        text = _FALLBACK
+    emit("token", {"delta": text})
     total_ms = int((time.monotonic() - t0) * 1000)
     return {
-        "messages": [AIMessage(content=text or _FALLBACK)],
+        "messages": [AIMessage(content=text)],
         "timings": {
-            "clarify_ttft_ms": ttft_ms if ttft_ms is not None else total_ms,
+            "clarify_ttft_ms": total_ms,
             "clarify_ms": total_ms,
         },
     }

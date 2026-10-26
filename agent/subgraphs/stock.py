@@ -700,6 +700,7 @@ def _card_candidates(tool_results: list) -> list:
     - get_money_flow       -> card: fundflow_card（资金流向卡，最新交易日一行，
                               命中 get_top_list 时并入 lhb 席位区块）
     - get_financial_report -> card: report_card（财报速览卡，三表合并行）
+    - get_financial_indicator -> card: report_card（只有指标时的降级载荷，三表留空由前端显示 --）
     - get_history_daily    -> table: kline_table（K 线卡，最近 15 个交易日）
     - get_peer_compare     -> card: compare_card（同业对比卡，当日快照）
     - get_research_reports -> card: research_card（研报观点卡，最新一篇）
@@ -715,6 +716,7 @@ def _card_candidates(tool_results: list) -> list:
     quote = _quote_payload(tool_results)
     out = []
     has_moneyflow = False
+    indicator_card = None
     for item in tool_results:
         name = item.get("tool")
         result = item.get("result") or {}
@@ -750,6 +752,12 @@ def _card_candidates(tool_results: list) -> list:
                 out.append(("kline_table", payload))
         elif name == "get_financial_report":
             out.append(("report_card", data))
+        elif name == "get_financial_indicator":
+            # 只调了指标工具时也要能出财报卡：完整三表卡优先，
+            # 这里先记候选，循环结束后若没有 report 卡再补上（前端缺失字段显示 --）
+            rows = _rows_of(data)
+            if rows:
+                indicator_card = ("report_card", {"indicator": rows[0]})
         elif name == "get_peer_compare":
             out.append(("compare_card", data))
         elif name == "get_research_reports":
@@ -767,6 +775,9 @@ def _card_candidates(tool_results: list) -> list:
     # 龙虎榜单独命中、本轮没有资金流数据时：候选里补一张仅龙虎榜的资金流向卡
     if lhb and not has_moneyflow:
         out.append(("fundflow_card", {"lhb": lhb["rows"], "lhb_date": lhb["trade_date"]}))
+    # 只有 indicator 数据时补一张财报卡；本轮已取到三表数据则不重复发
+    if indicator_card and not any(c[0] == "report_card" for c in out):
+        out.append(indicator_card)
     return out
 
 
