@@ -5,7 +5,7 @@
   right: 0;
   bottom: 0;
   left: 0;
-  z-index: 1000;
+  z-index: var(--z-popup);
   animation: popup-fade-in 240ms ease both;
 }
 
@@ -37,7 +37,7 @@
   flex-direction: column;
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-card);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -69,7 +69,7 @@
   flex-direction: column;
   background: var(--surface);
   border-top: var(--hairline);
-  border-radius: var(--r-card) var(--r-card) 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding-bottom: env(safe-area-inset-bottom);
   animation: popup-bottom-in 240ms cubic-bezier(0.25, 0.8, 0.35, 1) both;
 }
@@ -81,11 +81,12 @@
 /* ===== 头部 / 主体 / 底部 ===== */
 .popup-header {
   flex: none;
-  padding: var(--pad-card) var(--pad-card) 0;
+  padding: var(--space-lg) var(--space-lg) 0;
 }
 
+/* 弹窗标题：全局大号（添加自选 / 新增提醒 / 编辑资料 / 二次确认都用这一处） */
 .popup-title {
-  font-size: var(--fs-title);
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--ink);
   text-align: center;
@@ -93,8 +94,8 @@
 }
 
 .popup-desc {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);
   color: var(--ink-3);
   text-align: center;
   line-height: 1.5;
@@ -106,7 +107,7 @@
 }
 
 .popup-body-inner {
-  padding: var(--sp-2) var(--pad-card) var(--pad-card);
+  padding: var(--space-md) var(--space-lg) var(--space-lg);
 }
 
 .popup-body--full {
@@ -117,12 +118,12 @@
 .popup-footer {
   flex: none;
   display: flex;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--pad-card) var(--pad-card);
+  gap: var(--space-lg);
+  padding: var(--space-lg) var(--space-lg) var(--space-lg);
   border-top: var(--hairline);
 }
 
-/* 弹窗按钮：全站按键规格 —— 无填充、胶囊形、描边与输入框统一用 --hairline。
+/* 弹窗按钮：全站按键规格 —— 无填充、8rpx 圆角、描边与输入框统一用 --hairline。
    既然描边全站一个色，主次就只能靠字色与字重表达 */
 .popup-btn {
   flex: 1;
@@ -132,10 +133,10 @@
   justify-content: center;
   background: transparent;
   border: var(--hairline);
-  box-shadow: var(--shadow-card);
-  font-size: var(--fs-body);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--font-lg);   /* 全站弹窗的取消 / 确认：全局大号 */
   font-weight: 600;
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-sm);
   /* 数字与中文混排时按钮文案不抖 */
   font-variant-numeric: tabular-nums;
 }

@@ -5,8 +5,8 @@
   font-family: 'antdmini-icon-local';
   font-style: normal;
   -webkit-font-smoothing: antialiased;
-  /* 尺寸跟随调用方：style="font-size:44rpx" 落在自定义组件的宿主节点上，
-     字号靠继承传进来；这里写死 32rpx 会把它盖掉，图标全变成同一个尺寸 */
+  /* 尺寸跟随调用方：style="font-size:var(--icon-base)" 落在自定义组件的宿主节点上，
+     字号靠继承传进来；这里写死一个字号会把它盖掉，图标全变成同一个尺寸 */
   font-size: inherit;
 }
 

@@ -15,7 +15,7 @@
 
 /* 表格：横向滚动容器，内部表格按列数撑开 */
 .cmp-scroll {
-  margin-top: var(--sp-2);
+  margin-top: var(--space-md);
   width: 100%;
 }
 
@@ -48,8 +48,8 @@
   flex: 1;
   flex-shrink: 0;
   min-width: 140rpx;
-  padding: var(--sp-2) var(--sp-2);
-  font-size: var(--fs-aux);
+  padding: var(--space-md) var(--space-md);
+  font-size: var(--font-base);     /* 对比数值：标准 */
   text-align: right;
   white-space: nowrap;
 }
@@ -59,13 +59,13 @@
   width: 128rpx;
   text-align: left;
   color: var(--ink-3);
-  font-size: var(--fs-min);
+  font-size: var(--font-base);     /* 指标名：标准 */
   word-break: break-word;        /* 不裁剪：指标名换行完整显示 */
 }
 
 .cmp-row--head .cmp-cell {
   color: var(--ink-3);
-  font-size: var(--fs-min);
+  font-size: var(--font-base);     /* 表头标的：标准 */
   font-weight: 500;
   white-space: nowrap;
 }

@@ -1,5 +1,12 @@
 // 全局字号档位：设置页写入本地缓存，各页把对应 class 挂到根节点 .page 上，
-// token.wxss 中的字号变量在该 class 下整体放大（custom property 会继承进子组件）。
+// token.wxss 中的字号变量在该 class 下整体平移（custom property 会继承进子组件）。
+//
+// 只有三档（2026-10-26 用户决策：超小 / 小两档连同 caption 档一起删除）：
+//   标准 / 大 / 超大，相邻档位差 4rpx，正文 30 / 34 / 38，最小字是小号 26。
+// token.wxss 里已没有 xsmall / small 两个档位类；
+// 旧缓存落在已删除的档位时按「非法值」回退标准。
+// 相对字级跟着档位走：小号 --fs-sm = 正文 -4rpx、大号 --fs-lg = 正文 +4rpx、
+// 超大号 --fs-xl = 正文 +8rpx。
 const STORAGE_KEY = 'font_scale';
 
 export const FONT_SCALE_OPTIONS = [
@@ -8,16 +15,21 @@ export const FONT_SCALE_OPTIONS = [
   { key: 'xlarge', label: '超大', className: 'font-scale--xlarge' }
 ];
 
+const DEFAULT_KEY = 'standard';
+
 // 非法值（旧缓存 / 手改缓存）一律退回标准，避免根节点挂上不存在的类
 function findOption(key) {
-  return FONT_SCALE_OPTIONS.find((item) => item.key === key) || FONT_SCALE_OPTIONS[0];
+  return (
+    FONT_SCALE_OPTIONS.find((item) => item.key === key) ||
+    FONT_SCALE_OPTIONS.find((item) => item.key === DEFAULT_KEY)
+  );
 }
 
 export function getFontScale() {
   try {
     return findOption(wx.getStorageSync(STORAGE_KEY)).key;
   } catch (e) {
-    return FONT_SCALE_OPTIONS[0].key;
+    return DEFAULT_KEY;
   }
 }
 

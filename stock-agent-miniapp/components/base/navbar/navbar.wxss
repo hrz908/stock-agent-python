@@ -11,11 +11,11 @@
   display: flex;
   align-items: center;
   height: 88rpx;
-  padding: 0 var(--sp-3);
+  padding: 0 var(--space-lg);
   box-sizing: border-box;
 }
 
-/* 左侧按钮：88rpx(=44px) 触摸目标，圆角与 --r-nav-btn 对齐。
+/* 左侧按钮：88rpx(=44px) 触摸目标，圆角与 --radius-lg 对齐。
    不再写负 margin：返回键要和主页抽屉键（slot left，起点是容器 padding）
    在同一条竖线上，负 margin 会让它比抽屉键更靠左 24rpx。 */
 .nav-btn {
@@ -25,7 +25,7 @@
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
-  border-radius: var(--r-nav-btn);
+  border-radius: var(--radius-lg);
 }
 
 /* 标题容器：以视口水平中心为锚点绝对定位（左 50% + 反向平移自身宽度一半）。
@@ -51,7 +51,7 @@
 .nav-title-text {
   max-width: 100%;
   min-width: 0;
-  font-size: var(--fs-title);
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--ink);
   letter-spacing: 0.5rpx;

@@ -2,10 +2,9 @@
    设计 Token · shadcn 风视觉语言（zinc 色阶）
    本项目唯一风格真相源，被 app.wxss @import，全站只允许引用这里的变量。
 
-   变更沿革：
-   - 2026-10-22 建立「浅色专业金融」主题（参考图三张），负责浅底 + 蓝强调色。
-   - 2026-10-22 重构为 shadcn 风：色板整体换成 zinc 色阶、圆角收紧、
-     卡片去投影、主按钮改近黑底白字。变量名沿用旧名，页面无需改名迁移。
+   尺寸标准与档位表的细则见 .codebuddy/rules/ui-design-tokens.md：
+   字号七档 / 行高 1.25·1.5·1.6 / 间距九档 / 内外边距组合 / 图标五档 + 88 触控 /
+   圆角六档 / 阴影三档 / 描边 1rpx。改这里前先改那份规则。
 
    规则：
    - 变量只允许在 page{} 定义；组件通过 CSS 自定义属性继承拿到
@@ -13,8 +12,91 @@
      但【工具类 class 不透传】，组件内部需要自己写或 apply-shared，见 DESIGN.md）。
    - canvas（uCharts / K 线）不吃 CSS 变量，配色在各自 js 里另配一份；
      改本文件色值时必须同步那批硬编码，否则图表与页面脱色。
+
+   变更沿革：
+   - 2026-10-22 建立「浅色专业金融」主题，当日重构为 shadcn 风：色板换 zinc 色阶、
+     主按钮改近黑底白字。
+   - 2026-10-26 上午按设计令牌规范硬收敛：字号只留 24/28/32/36/40；间距只留
+     4/8/12/16/24/32/48/64；圆角 4/8/12/16/50%；描边 2rpx → 1rpx。
+   - 2026-10-26 晚换《微信小程序设计令牌规范·最终版》（锚点仍是 32rpx 正文）：
+     字号补回 48/64 两档（大标题 / 结果页数字，普通页仍 40 封顶）；行高改 1.25/1.5/1.6；
+     间距补回 96（空状态巨型留白）；新增内边距 / 外边距组合 token 与字重 token；
+     圆角档名整体下移一位并补 24（xs4 / sm8 / md12 / lg16 / xl24），旧档位像素值不变；
+     阴影由 card/pop 两档改为 sm/md/lg 三档。
    ============================================================= */
 page {
+  /* ---- 字号七档：相邻差 4rpx，唯一档位表，不许再扩档 ----
+     普通页面在 --font-xl 封顶；--font-2xl / --font-3xl 只给空状态、结果页数字 ----
+     本项目的 --font-base 32rpx 是锚点，不随数据密度下调 ---- */
+  --font-xs: 24rpx;   /* 辅助：角标、提示、版权 */
+  --font-sm: 28rpx;   /* 次要：说明、标签、免责声明（全站最小实际字级） */
+  --font-base: 32rpx; /* 正文：正文、按钮、输入 */
+  --font-lg: 36rpx;   /* 强调：卡片标题、按键文案、引导语 */
+  --font-xl: 40rpx;   /* 标题：区块 / 弹窗标题、焦点数字（普通页字号上限） */
+  --font-2xl: 48rpx;  /* 大标题：空状态主文案、页面大标题 */
+  --font-3xl: 64rpx;  /* 特大：结果页 / 营销数字，一屏只允许一个 */
+
+  /* ---- 行高（倍率，不写死 rpx） ---- */
+  --lh-tight: 1.25;   /* 单行标题 1.2~1.25 */
+  --lh-base: 1.5;     /* 正文 / 列表 / 卡片（32 × 1.5 = 48rpx 基线） */
+  --lh-loose: 1.6;    /* 长文段落 1.6~1.75 */
+
+  /* ---- 字间距：小程序用 em，不用 rpx ---- */
+  --ls-xs: 0.04em;
+  --ls-sm: 0.02em;
+  --ls-base: 0;
+  --ls-lg: 0.01em;
+  --ls-xl: 0.02em;
+
+  /* ---- 字重：随字号反向，字越大越轻 ---- */
+  --fw-regular: 400;  /* 正文 */
+  --fw-medium: 500;   /* 按键、标签 */
+  --fw-semibold: 600; /* 卡片标题、区块标题 */
+  --fw-bold: 700;     /* 焦点数字、页面大标题 */
+
+  /* ---- 间距九档（8 点网格：只允许 4 或 8 的倍数） ---- */
+  --space-xxs: 4rpx;  /* 图标与文字下限、细部贴合 */
+  --space-xs: 8rpx;   /* 同组紧邻元素、图标与文字 */
+  --space-sm: 12rpx;  /* 紧凑内边距（标签 / 徽章） */
+  --space-md: 16rpx;  /* 同组元素间距、列表项、栅格 gap */
+  --space-lg: 24rpx;  /* 卡片内边距、组件间距 */
+  --space-xl: 32rpx;  /* 页面左右留白、区块标准间距 */
+  --space-2xl: 48rpx; /* 区块之间、页面底部留白 */
+  --space-3xl: 64rpx; /* 首屏大留白 */
+  --space-4xl: 96rpx; /* 空状态巨型留白 */
+
+  /* ---- 内边距组合（垂直 × 水平；垂直比水平小 4~8，行高已占垂直空间） ---- */
+  --pad-compact: var(--space-xs) var(--space-sm);      /* 8 × 12：标签、徽章 */
+  --pad-normal: var(--space-sm) var(--space-md);       /* 12 × 16：列表项 */
+  --pad-comfortable: var(--space-md) var(--space-lg);  /* 16 × 24：弹窗、空状态 */
+  --pad-page: 0 var(--space-xl);                       /* 页面左右安全区 */
+
+  /* ---- 外边距（以 32rpx 正文为锚：字号 × 0.5 / 0.75 / 1.5） ---- */
+  --gap-inner: var(--space-md);    /* 同组元素、标题与内容 */
+  --gap-between: var(--space-lg);  /* 组件 / 卡片间、段落间 */
+  --gap-section: var(--space-2xl); /* 区块间、页底留白 */
+
+  /* ---- 图标五档 + 触控底限 ---- */
+  --icon-xs: 28rpx;    /* 角标关闭、列表箭头 */
+  --icon-sm: 36rpx;    /* 次级箭头、搜索、功能小图标 */
+  --icon-base: 40rpx;  /* 按钮内图标、导航图标 */
+  --icon-lg: 48rpx;    /* 卡片头部、功能入口 */
+  --icon-xl: 56rpx;    /* 空状态、个人页大图标（表内上限） */
+  --icon-touch: 88rpx; /* 纯图标按钮 / 可点行的最小可点区域 ≈44px */
+
+  /* ---- 圆角六档 ---- */
+  --radius-xs: 4rpx;    /* 徽章 */
+  --radius-sm: 8rpx;    /* 标签 / 按键 / 输入框 */
+  --radius-md: 12rpx;   /* 弹窗内块、次级块 */
+  --radius-lg: 16rpx;   /* 卡片、弹窗面板 */
+  --radius-xl: 24rpx;   /* 底部弹层、大浮层 */
+  --radius-round: 50%;  /* 头像 / 圆点 / 圆形按钮 */
+
+  /* ---- 阴影三档：只给「浮起」的元素，页面分区靠留白与 --hairline ---- */
+  --shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);   /* 卡片 / 按键 / 输入框 / 悬浮按钮 */
+  --shadow-md: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);  /* Toast / FAB / 吸底输入栏 */
+  --shadow-lg: 0 8rpx 32rpx rgba(0, 0, 0, 0.12);  /* 弹窗面板 / Modal / 抽屉 */
+
   /* ---- 背景与层次（纯白底 + 白卡片 + 发丝描边 + 极轻投影） ---- */
   --bg: #ffffff;        /* 页面背景：纯白 */
   --surface: #ffffff;   /* 卡片面 */
@@ -37,10 +119,7 @@ page {
   --primary-fg: #fafafa; /* 主按钮文字（zinc-50） */
   --ring: var(--ink);    /* 焦点描边 */
 
-  /* ---- 状态语义色（数据/状态专用，不得挪作 UI 强调色）---- 
-       以下变量是为补齐 2026-10-22 之前就在用、但从未在 token 里定义过的引用
-       而补：settings 的退出登录按钮、event-card 的时间轴圆点、
-       report-card 的条形图此前全部处于失效状态（元素不可见/透明）。 */
+  /* ---- 状态语义色（数据/状态专用，不得挪作 UI 强调色）---- */
   --warn: #d97706;                     /* 警示：琥珀 amber-600，白底上对比度足够 */
   --warn-tint: rgba(217, 119, 6, 0.10);
   --warn-border: rgba(217, 119, 6, 0.30);
@@ -61,130 +140,91 @@ page {
   --accent-tint: rgba(37, 89, 235, 0.08);
   --accent-border: rgba(37, 89, 235, 0.30);
 
-  /* ---- 浮起面：边框 + 投影是**一套**，统一定义在这里 ----
-       --hairline  +  --shadow-card  = 全站「浮起面」：
-       卡片、按键、输入框、弹窗按键一律沿用，不按元素另配偏移与透明度。
-       只靠边框在白底上会显得干，加一层极轻的暖灰投影刚好托起来；
-       阴影取 zinc-950 的色偏而不是纯黑，白底上不发脏。
-       浮层（弹窗面板 / toast / 输入栏）更重一档，用 --shadow-pop ---- */
-  --shadow-card: 0 2rpx 4rpx rgba(9, 9, 11, 0.03), 0 8rpx 24rpx rgba(9, 9, 11, 0.05);
-  --shadow-pop: 0 8rpx 24rpx rgba(9, 9, 11, 0.08);
+  /* ---- 发丝线：全站分割线 / 边框统一用它，禁止再自定 border 粗细与颜色 ----
+       规范要求细线用 1rpx（微信会映射到物理像素），2rpx 在低 DPR 机器上会显粗 */
+  --hairline: 1rpx solid var(--line);
+  --hairline-dashed: 1rpx dashed var(--line);  /* 仅口径分隔这类「虚线」场景，需显式豁免 */
 
-  /* ---- 圆角（shadcn 形状规范：卡片/按钮/输入框 16rpx，标签 8rpx） ---- */
-  --r-card: 16rpx;
-  --r-tag: 8rpx;
-  --r-nav-btn: 16rpx;
-  --r-pill: 999rpx;               /* 胶囊全圆：chip / 药丸按钮 / 输入框 */
-
-  /* ---- 字号：已向 shadcn 层级收敛（2026-10-22 用户决策）----
-       原 8 档（64/56/44/40/32/28/22/20）收敛为 4 个层级值，
-       2026-10-25 增补 display 档（64）用于「每屏唯一的焦点数字」：
-       display 64（自选总浮动）/ hero 40（行情大数字 / 提醒阈值）/
-       title 36（页面标题、次级主数字、品牌名）/ body 30（正文）/
-       caption 24（辅助与弱辅助）。
-       value/brand/title 同值，aux/min 同值；price 与 hero 已分档。
-       body 30rpx 高于原 28rpx 无障碍底线，方向为放大，无合规风险。 */
-  --fs-display: 64rpx; /* display：每屏唯一焦点数字（自选总浮动） */
-  --fs-price: 40rpx;  /* hero：行情卡主价格（与涨跌额并排，再大会挤出卡宽） */
-  --fs-hero: 40rpx;   /* hero：次级主数字：计数 / 占比 / 均值 */
-  --fs-value: 36rpx;  /* title 级：次级主数字：资金流主力净额 */
-  --fs-brand: 36rpx;  /* title 级：抽屉品牌名 */
-  --fs-title: 36rpx;  /* title：卡片标题 / 页面标题 */
-  --fs-body: 30rpx;   /* body：正文 */
-  --fs-aux: 24rpx;    /* caption：辅助 */
-  --fs-min: 24rpx;    /* caption：弱辅助（已并入 caption 档）*/
-
-  /* ---- 间距：只有这五档（8pt 栅格），任何地方不许写裸 rpx ---- */
-  --sp-1: 8rpx;   /* 4px  图标与文字、紧密元素之间 */
-  --sp-2: 16rpx;  /* 8px  卡片内相邻行 */
-  --sp-3: 24rpx;  /* 12px 卡片内区块、行列表左右内边距 */
-  --sp-4: 32rpx;  /* 16px 区块标准间距：卡片与卡片、卡片与容器边缘 */
-  --sp-5: 48rpx;  /* 24px 大区块之间（如列表与底部操作区） */
-
-  /* ---- 语义别名 ----
-     TODO-restyle(阶段1B)：--pad-card(28rpx) / --gap-grid(20rpx) 现值仍非五档，
-     阶段 1B 排版修复时再统一收敛到 var(--sp-*) ---- */
-  /* ---- 例外档：仍被引用，原值保留，阶段 1B 再评估是否收敛进五档 ---- */
-  --sp-6: 96rpx;             /* 仅 components/base/empty 首屏标识区在用 */
-  --sp-card: 28rpx;          /* 仅 components/finance/_card.wxss 在用 */
-
-  --pad-card: 28rpx;         /* 卡片内边距：原值保留，确保阶段 0 无布局位移 */
-  --pad-page: var(--sp-4);   /* 页面左右留白 */
-  --gap-grid: 20rpx;         /* 栅格间距：原值保留，确保阶段 0 无布局位移 */
-
-  /* ---- 发丝线：全站分割线 / 边框统一用它，禁止再自定 border 粗细与颜色 ---- */
-  --hairline: 2rpx solid var(--line);
-  --hairline-dashed: 2rpx dashed var(--line);  /* 仅口径分隔这类「虚线」场景，需显式豁免 */
+  /* ---- 层级：只用这五层，组件内部的 1/10 之类小值属局部层叠 ---- */
+  --z-base: 0;
+  --z-popup: 100;
+  --z-mask: 200;
+  --z-toast: 300;
+  --z-modal: 400;
 }
 
 /* =============================================================
    全局字号档位（设置页「字体大小」可切换）
-   唯一例外：字号变量允许在这里被页面根节点上的档位类覆盖。
-   --fs-price 涨幅克制（40/42/44）：行情卡三个数字均分一行，
-   再大会把价格挤出格子；其余字级按 标准 / 大 / 超大 依次放大。
+   规范 §九「字体缩放」的落地：只有这里允许出现表外字号。
+   标准档以 page{} 的七档为 0，向上整体平移 4rpx / 8rpx：
+
+     档位      类名                   平移   xs  sm  base lg  xl  2xl 3xl
+     标准      （无类）                0      24  28  32   36  40  48  64
+     大        .font-scale--large      +4     28  32  36   40  44  52  68
+     超大      .font-scale--xlarge     +8     32  36  40   44  48  56  72
+
    档位类挂在各页根节点 .page 上，变量随 custom property 继承到所有子组件。
    ============================================================= */
 .page.font-scale--large {
-  --fs-display: 72rpx;
-  --fs-price: 42rpx;
-  --fs-hero: 44rpx;
-  --fs-value: 39rpx;
-  --fs-brand: 40rpx;
-  --fs-title: 40rpx;
-  --fs-body: 34rpx;
-  --fs-aux: 27rpx;
-  --fs-min: 27rpx;
+  --font-xs: 28rpx;
+  --font-sm: 32rpx;
+  --font-base: 36rpx;
+  --font-lg: 40rpx;
+  --font-xl: 44rpx;
+  --font-2xl: 52rpx;
+  --font-3xl: 68rpx;
 }
 
 .page.font-scale--xlarge {
-  --fs-display: 80rpx;
-  --fs-price: 44rpx;
-  --fs-hero: 48rpx;
-  --fs-value: 42rpx;
-  --fs-brand: 44rpx;
-  --fs-title: 44rpx;
-  --fs-body: 38rpx;
-  --fs-aux: 30rpx;
-  --fs-min: 30rpx;
+  --font-xs: 32rpx;
+  --font-sm: 36rpx;
+  --font-base: 40rpx;
+  --font-lg: 44rpx;
+  --font-xl: 48rpx;
+  --font-2xl: 56rpx;
+  --font-3xl: 72rpx;
 }
 
 /* =============================================================
    主题：仅浅色（终局，2026-10-22 晚用户最终决策「太暗了」，回到浅色）。
-   当天经历：浅色专业金融 → shadcn 亮色 → 短暂整站深色 → 回浅色，
-   以本文件为准，不要再按历史记忆里的深色值改。
    原先这里有一套 page.dark 深色变量，已删除；如将来重做深色，
    从 git 历史取回变量，并先给每个页面根节点注入 theme class，
    同时同步 app.json 窗口底色与 canvas 侧 JS 配色（共 5 个文件）。
    ============================================================= */
 
 /* =============================================================
-   全局工具类（阶段 1 排版修复直接用，替代逐页手写）
+   全局工具类
    注意：这里的 class 由 app.wxss @import 引入，属「全局样式」；
    组件样式隔离（无 apply-shared）下不会穿透进 components/* 内部节点，
    组件内部需要同样写法时，在其自身 wxss 里再写一遍或用 :host 继承。
-   命名提醒：components/base/navbar、components/base/tabs 内部有同名
-   .navbar / .tabs 私有类，二者各自隔离互不影响，改组件时不要混引。
    ============================================================= */
 
-/* ---- 导航栏：88rpx + 安全区 + flex 垂直居中（第 3 条） ---- */
+/* ---- 导航栏：88rpx + 安全区 + flex 垂直居中 ---- */
 .navbar {
   position: relative;
   display: flex;
   align-items: center;
-  height: 88rpx;
+  height: var(--icon-touch);
   padding-top: env(safe-area-inset-top);
   background: var(--bg);
 }
-/* ---- 容器与按钮（shadcn 组件对应物） ---- */
+
+/* ---- 底部安全区兜底：吸底元素外层统一挂它，别各写 env() ---- */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ---- 容器与按钮（shadcn 组件对应物）：浮起面 = --hairline + --shadow-sm ---- */
 .card {
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-card);
-  padding: var(--sp-3);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-sm);
 }
-/* ---- 标签页：gap 管间距（第 6 条） ---- */
-.tabs { display: flex; gap: var(--sp-3); }
+
+/* ---- 标签页：gap 管间距 ---- */
+.tabs { display: flex; gap: var(--space-lg); }
 
 /* ---- 卡片消息外层：chat 主页面与卡片画廊测试页共用。
        调卡片间距只改这里，两边自动同步（约定见 DESIGN.md「卡片画廊」节） ---- */

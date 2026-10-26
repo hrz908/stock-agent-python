@@ -13,7 +13,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: var(--sp-3) var(--sp-4) 0;
+  padding: var(--space-lg) var(--space-xl) 0;
 }
 
 /* ===== 搜索框 =====
@@ -30,27 +30,27 @@
 .search-box {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--space-md);
   height: 88rpx;
-  padding: 0 var(--sp-3);
+  padding: 0 var(--space-lg);
   box-sizing: border-box;
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-pill);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 
 .search-input {
   flex: 1;
   min-width: 0;
   height: 100%;
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   color: var(--ink);
 }
 
 .search-ph {
   color: var(--ink-3);
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
 }
 
 /* 清除键：原生 input 没有内建清除，自绘一个（热区 56rpx 足够点中） */
@@ -61,7 +61,7 @@
   justify-content: center;
   width: 56rpx;
   height: 56rpx;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
 }
 
 /* 联想结果：浮层，左对齐搜索框、宽度贴合（左右 0），从搜索框底边向下展开 */
@@ -70,12 +70,12 @@
   left: 0;
   right: 0;
   top: 100%;
-  margin-top: var(--sp-1);
+  margin-top: var(--space-xs);
   z-index: 10;
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-tag);
-  box-shadow: var(--shadow-pop);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 
@@ -83,7 +83,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--space-md) var(--space-lg);
   border-bottom: var(--hairline);
 }
 
@@ -92,12 +92,13 @@
 }
 
 .search-item-name {
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   color: var(--ink);
 }
 
+/* 下拉里的代码（别名）：全局小号 */
 .search-item-code {
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);
   color: var(--ink-3);
 }
 
@@ -108,20 +109,20 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
 }
 
 .picked-id {
   display: flex;
   align-items: baseline;
-  gap: var(--sp-2);
+  gap: var(--space-md);
   min-width: 0;
 }
 
 .picked-name {
   min-width: 0;
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
@@ -129,9 +130,10 @@
   white-space: nowrap;
 }
 
+/* 当前股票代码（名称的别名）：全局小号 */
 .picked-code {
   flex: none;
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);
   color: var(--ink-3);
 }
 
@@ -140,13 +142,13 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--space-xs);
   margin-left: auto;
-  padding: var(--sp-1);
+  padding: var(--space-xs);
 }
 
 .picked-refresh-text {
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);
   color: var(--ink);
 }
 
@@ -176,13 +178,13 @@
   flex: 1;
   height: 0;
   min-height: 0;
-  margin-top: var(--sp-3);
+  margin-top: var(--space-lg);
 }
 
 .card-list {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-grid);
+  gap: var(--space-md);
   /* 底部留白：最后一张卡不要贴着屏幕底边 */
-  padding-bottom: var(--sp-5);
+  padding-bottom: var(--space-2xl);
 }

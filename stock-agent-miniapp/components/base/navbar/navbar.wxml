@@ -10,7 +10,7 @@
       aria-label="{{leftAriaLabel}}"
       bindtap="onLeftTap"
     >
-      <base-icon type="LeftOutline" style="font-size:44rpx;color:var(--ink);" />
+      <base-icon type="LeftOutline" style="font-size:var(--icon-base);color:var(--ink);" />
     </view>
     <slot name="left" />
 

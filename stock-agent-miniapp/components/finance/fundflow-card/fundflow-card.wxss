@@ -18,25 +18,27 @@
   display: flex;
   align-items: baseline; /* 第1条例外：标题与数值按文字基线排是有意选择（小数点对齐），非 line-height 撑居中 */
   justify-content: space-between;
-  gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
 }
 
-/* 主数字 22px 级（--fs-value） */
+/* 主力净流入 = --font-xl（40rpx，字号上限）+ 700：本卡唯一的大数字。
+   与行情卡主价同一口径（2026-10-26 令牌收敛：display 档取消，焦点数字封顶 40rpx）。
+   「1.29亿」字数少，和右侧「占成交额 +4.20%」同排不会挤（最大档已验算） */
 .flow-big {
-  font-size: var(--fs-value);
+  font-size: var(--font-xl);
   font-weight: 700;
   line-height: 1.1;
 }
 
 .flow-pct {
-  font-size: var(--fs-aux);
+  font-size: var(--font-base);
   color: var(--ink-3);
 }
 
 /* 四档列表：顶部分隔线，逐行展开 */
 .flow-list {
-  margin-top: var(--sp-3);
+  margin-top: var(--space-lg);
   border-top: var(--hairline);
 }
 
@@ -45,10 +47,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  gap: var(--space-md);
   min-height: 72rpx;
   border-bottom: var(--hairline);
-  font-size: var(--fs-aux);
+  font-size: var(--font-base);   /* 四档标签与金额同为标准 */
 }
 
 /* 最后一行不带分隔线（:last-child 是结构伪类，非 WXSS 禁用项） */
@@ -62,23 +64,23 @@
 
 /* 数值不写 color：金额按正负着色（.up / .down 来自 _card.wxss），
    在这里写死 --ink 会以「后定义者胜」把着色整片盖掉。
-   字号比标签大一档——金额才是这一行的信息 */
+   字号与标签同档（标准），着色承担主次 */
 .flow-v {
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
 }
 
 .flow-spark {
-  margin-top: var(--sp-3);
+  margin-top: var(--space-lg);
   height: 64rpx;
 }
 
 /* 龙虎榜 */
 .lhb {
-  margin-top: var(--sp-3);
+  margin-top: var(--space-lg);
 }
 
 .lhb-title {
-  font-size: var(--fs-aux);
+  font-size: var(--font-base);
   color: var(--ink-3);
 }
 
@@ -86,9 +88,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
+  font-size: var(--font-base);
 }
 
 .lhb-seat {
@@ -101,8 +103,9 @@
 .lhb-vals {
   flex: none;
   display: flex;
-  gap: var(--sp-2);
-  width: 320rpx; text-align: right;
+  gap: var(--space-md);
+  /* 不再写固定 width：列宽由两个 .lhb-vals text 的 min-width 决定，
+     写死 320rpx 会把内容顶出卡片右边（2026-10-26 修） */
 }
 
 /* 资金流向数据改成「左右对齐」：名称 / 主数字靠左，数值 / 占比靠右。
@@ -133,23 +136,26 @@
   text-align: center;
 }
 
-/* 龙虎榜行（表格格式）：席位占 1/2 靠左，买 / 卖合计占另外 1/2，各列文字居中。
-   .lhb-vals 与 .lhb-seat 同为 flex:1 → 各半；内部买、卖再各 flex:1 → 各占 1/4、格内居中。 */
+/* 龙虎榜行（等距居中，2026-10-26 用户指定）：
+   三列各占 1/3、每格内容居中——席位 `.lhb-seat` 占 1 份，
+   买卖容器 `.lhb-vals` 占 2 份（内含两列各 1 份）≈ 每列 200rpx。
+   每列 200rpx 才放得下 "-9,800.00万" 这种 10 字符金额（旧版每列 147rpx，
+   「万」会被挤到第二行）；nowrap 再兜一层，金额永不折行。 */
 .lhb-seat {
-  flex: 1;                       /* 席位：整行 1/2 */
-  text-align: left;              /* 席位名左对齐（表头「席位」同步左对齐） */
-}
-
-.lhb-vals {
-  flex: 1;                       /* 买卖合计：整行 1/2（取消原固定 320rpx） */
-  width: auto;
-  gap: var(--gap-grid);
+  flex: 1;
   text-align: center;
 }
 
+.lhb-vals {
+  flex: 2;
+  gap: var(--space-md);
+}
+
 .lhb-vals text {
-  flex: 1;                       /* +买入、-卖出 各占整行 1/4 */
-  text-align: center;            /* 买入/卖出等距居中：各居其格中央（同数据栅格口径） */
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;           /* 金额不折行，单位不单独掉行 */
+  text-align: center;
 }
 
 /* 纵向等距：各块顶部间距统一为一档（卡内比页面紧一档） */
@@ -157,7 +163,7 @@
 .flow-list,
 .flow-spark,
 .lhb {
-  margin-top: var(--sp-2);
+  margin-top: var(--space-md);
 }
 
 /* ===== 龙虎榜表格化 ===== */
@@ -165,17 +171,17 @@
 .lhb-head {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);              /* 与 .lhb-row 的 gap 一致，保证列对齐 */
-  margin-top: var(--sp-1);       /* 与「龙虎榜」标题的间距 */
-  padding-bottom: var(--sp-1);
+  gap: var(--space-md);              /* 与 .lhb-row 的 gap 一致，保证列对齐 */
+  margin-top: var(--space-xs);       /* 与「龙虎榜」标题的间距 */
+  padding-bottom: var(--space-xs);
   border-bottom: var(--hairline);
-  font-size: var(--fs-min);
+  font-size: var(--font-base);
   color: var(--ink-3);
 }
 
-/* 表头对齐与数据行一致：
-   「席位」跟随 .lhb-seat 的左对齐；「买入 / 卖出」跟随 .lhb-vals text 的居中对齐。
-   这里不再覆盖 text-align。 */
+/* 表头对齐与数据行一致：三列居中（席位 / 买入 / 卖出），
+   列宽也复用 .lhb-seat / .lhb-vals 的 1:2 分配，所以表头与数据上下对齐。
+   这里不覆盖 text-align。 */
 .lhb-head .lhb-seat {
   color: var(--ink-3);           /* 覆盖 .lhb-seat 的 --ink-2，表头用弱文字 */
   font-weight: 400;
@@ -184,7 +190,7 @@
 /* 数据行：行间发丝分隔线，最后一行不画底线 */
 .lhb-row {
   margin-top: 0;
-  padding: var(--sp-1) 0;        /* 行距改由 padding 给，分隔线之间等距 */
+  padding: var(--space-xs) 0;        /* 行距改由 padding 给，分隔线之间等距 */
   border-bottom: var(--hairline);
 }
 

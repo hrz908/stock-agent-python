@@ -6,17 +6,17 @@
   left: 50%;
   top: 42%;
   transform: translate(-50%, -50%); /* 第2条例外：fixed 浮层的视口居中只能用 left/top 50% + translate，无法用 flex（没有可依赖的父容器）。已核对为全项目唯一例外。 */
-  z-index: 1100;
+  z-index: var(--z-toast);
   max-width: 70%;
-  padding: var(--sp-2) var(--sp-4);
+  padding: var(--space-md) var(--space-xl);
   background: rgba(23, 27, 33, 0.94);
-  border-radius: var(--r-tag);
-  box-shadow: var(--shadow-pop);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   animation: toast-in 180ms ease both;
 }
 
 .toast-text {
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);
   line-height: 1.6;
   color: var(--primary-fg); /* 深色药丸上的浅色文字 */
   text-align: center;

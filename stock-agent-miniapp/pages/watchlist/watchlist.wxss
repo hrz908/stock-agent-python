@@ -13,47 +13,50 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 var(--sp-4);
+  padding: 0 var(--space-xl);
 }
 
 /* ===== 总浮动概览卡 ===== */
 .overview-card {
   flex: none;
-  padding: var(--pad-card);
+  padding: var(--space-lg);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .overview-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  gap: var(--space-md);
 }
 
+/* 「自选总浮动」标题：普通（标准） */
 .overview-title {
-  font-size: var(--fs-aux);
+  font-size: var(--font-base);
   color: var(--ink-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* 上涨 / 下跌两枚标签：横向并排，上涨在左、下跌在右（在 overview-head 行内） */
+/* 上涨 / 下跌两枚标签：横向并排，上涨在左、下跌在右（在 overview-head 行内）。
+   例外：这两枚是总浮动卡里的计数，与同卡其它文字同为「普通」（2026-10-26 用户指定），
+   不走其它 chip 的小号 */
 .overview-tags {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--space-xs);
 }
 
 /* 小标签：圆角 6px + 边框 + 浅底（设计稿 .tag 规格）。
    数据计数用辅助级字号（11px），弱辅助级（10px）在小字号下读不清 */
 .mini-tag {
-  padding: 4rpx 12rpx;
-  border-radius: var(--r-tag);
+  padding: var(--space-xxs) var(--space-sm);
+  border-radius: var(--radius-sm);
   border: var(--hairline);
-  font-size: var(--fs-aux);
+  font-size: var(--font-base);
   background: var(--surface-2);
   color: var(--ink-2);
   white-space: nowrap;
@@ -72,10 +75,11 @@
   background: var(--down-tint);
 }
 
-/* 总浮动金额：本页唯一的 display 数字，与标签拉开 2.5 倍层级 */
+/* 总浮动金额：全站唯一的超大号数字（--font-xl = 正文 +8rpx），
+   本页最大的一处字号，其余文字都压在标准及以下 */
 .hero-amount {
-  margin-top: var(--sp-2);
-  font-size: var(--fs-display);
+  margin-top: var(--space-md);
+  font-size: var(--font-xl);
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: -0.5rpx;
@@ -98,9 +102,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
+  font-size: var(--font-base);   /* 百分比 · 已同步：普通 */
   color: var(--ink-3);
 }
 
@@ -109,12 +113,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--sp-1);
+  gap: var(--space-xs);
   flex: none;
 }
 
 .refresh-btn-text {
-  font-size: var(--fs-aux);
+  font-size: var(--font-base);   /* 刷新：普通 */
   color: var(--ink);
 }
 
@@ -139,24 +143,24 @@
 }
 
 /* ===== 筛选：占满整行的段式单选（radio） =====
-   无槽底色、无滑动黑块：整条只有一个胶囊轮廓，选中项靠字重与字色区分 */
+   无槽底色、无滑动黑块：整条只有一个 8rpx 圆角轮廓，选中项靠字重与字色区分 */
 .filter-radio {
   display: flex;
-  margin-top: var(--sp-3);
-  padding: 4rpx;
+  margin-top: var(--space-lg);
+  padding: var(--space-xxs);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-pill);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 .filter-radio__item {
   flex: 1;
   min-width: 0;
   text-align: center;
-  padding: 14rpx 0;
-  font-size: var(--fs-body);
+  padding: var(--space-sm) 0;
+  font-size: var(--font-lg);   /* 全部 / 涨幅榜 / 跌幅榜：大号 */
   color: var(--ink-2);
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-sm);
   transition: color .2s;
 }
 .filter-radio__item--on {
@@ -174,7 +178,7 @@
      min-height:0 兜住 flex item 默认的「最小内容尺寸」限制 */
   height: 0;
   min-height: 0;
-  margin-top: var(--sp-3);
+  margin-top: var(--space-lg);
   margin-bottom: 84px; /* 间距条例外：同上，无安全区时的让位值 */
   margin-bottom: calc(84px + env(safe-area-inset-bottom)); /* 间距条例外：底部按钮让位值，与 JS 的 bottomGap 配套 */
 }
@@ -182,8 +186,8 @@
 .stock-list {
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -200,8 +204,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--pad-card);
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-lg);
   background: var(--surface);
   transition: transform 200ms ease;
 }
@@ -223,7 +227,7 @@
 }
 
 .stock-name {
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--ink);
   overflow: hidden;
@@ -231,9 +235,10 @@
   white-space: nowrap;
 }
 
+/* 代码行（名称的别名）：全局小号 */
 .stock-code {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);
   color: var(--ink-3);
 }
 
@@ -244,14 +249,14 @@
 }
 
 .p1 {
-  font-size: var(--fs-title);
+  font-size: var(--font-lg);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .p2 {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
@@ -276,7 +281,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2rpx;
+  gap: var(--space-xxs);
   background: var(--up);
   opacity: 0;
 }
@@ -286,72 +291,73 @@
 }
 
 .stock-row-action-text {
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   color: var(--primary-fg); /* 深色底上的浅色文字 */
 }
 
 /* ===== 底部「添加股票」 ===== */
 .bottom-btn {
   position: absolute;
-  left: var(--sp-4);
-  right: var(--sp-4);
+  left: var(--space-xl);
+  right: var(--space-xl);
 }
 
-/* 底部主按钮：浮起面（--hairline + --shadow-card），主次靠字色与字重 */
+/* 底部主按钮：浮起面（--hairline + --shadow-sm），主次靠字色与字重 */
 .add-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--sp-1);
+  gap: var(--space-xs);
   height: 96rpx;
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-sm);
   background: transparent;
   border: var(--hairline);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .add-btn-text {
-  font-size: var(--fs-body);
+  font-size: var(--font-lg);   /* 底部主行动点：全局大号 */
   font-weight: 600;
   color: var(--ink);
 }
 
 /* ===== 添加自选表单 ===== */
 .add-form {
-  padding-bottom: var(--sp-1);
+  padding-bottom: var(--space-xs);
 }
 
 .form-field {
-  margin-top: var(--sp-3);
+  margin-top: var(--space-lg);
 }
 
+/* 表单里的字段名（股票代码 / 买入单价 / 持股数量）：小号 */
 .form-label {
-  margin-bottom: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-bottom: var(--space-xs);
+  font-size: var(--font-sm);
   color: var(--ink-3);
 }
 
 .form-input {
   width: 100%;
   height: 88rpx;
-  padding: 0 var(--sp-3);
+  padding: 0 var(--space-lg);
   box-sizing: border-box;
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   color: var(--ink);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-pill);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 
 .form-input-placeholder {
   color: var(--ink-3);
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
 }
 
 .form-error {
-  margin-top: var(--sp-2);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-md);
+  font-size: var(--font-sm);
   color: var(--up);
 }
 
@@ -365,11 +371,11 @@
   left: 0;
   right: 0;
   top: 100%;
-  margin-top: var(--sp-1);
+  margin-top: var(--space-xs);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-tag);
-  box-shadow: var(--shadow-pop);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
   z-index: 10;
 }
@@ -378,7 +384,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--space-md) var(--space-lg);
   border-bottom: var(--hairline);
   min-height: 88rpx;
 }
@@ -388,13 +394,14 @@
 }
 
 .search-item-name {
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   color: var(--ink);
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* 下拉里的代码（名称的别名）：全局小号 */
 .search-item-code {
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);
   color: var(--ink-3);
   font-feature-settings: 'tnum';
   flex: none; white-space: nowrap;
@@ -402,21 +409,22 @@
 
 /* ===== 弹窗里的交易所提示：一行一个交易所 ===== */
 .add-note {
-  margin-top: var(--sp-4);
-  padding-top: var(--sp-3);
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
   border-top: var(--hairline-dashed);
 }
 
+/* 「支持这些交易所的代码前缀」与下面沪市 / 深市 / 北交所三行：小号 */
 .note-title {
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);
   color: var(--ink-3);
 }
 
 .note-row {
   display: flex;
   align-items: baseline;
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);
   line-height: 1.6;
 }
 

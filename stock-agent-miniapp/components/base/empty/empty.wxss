@@ -3,8 +3,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--sp-6) var(--sp-4);
-  gap: var(--sp-1);}
+  padding: var(--space-3xl) var(--space-xl);
+  gap: var(--space-xs);}
 
 /* 空态图标：图标组件渲染成 <text>，显式 block 化，避免行内基线留白 */
 .empty-icon {
@@ -14,13 +14,14 @@
 
 /* 主文案比补充说明大一档：空态也要有层级，两行同号等于没说话 */
 .empty-text {
-  margin-top: var(--sp-3);
-  font-size: var(--fs-body);
+  margin-top: var(--space-lg);
+  font-size: var(--font-base);
   color: var(--ink-2);
 }
 
+/* 补充说明：小号（与标签同档） */
 .empty-sub {
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   color: var(--ink-3);
   line-height: 1.6;
   text-align: center;

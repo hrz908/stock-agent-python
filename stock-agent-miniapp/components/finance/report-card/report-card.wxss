@@ -19,15 +19,15 @@
    行间发丝线、末行不画线；没有「龙虎榜」那样的小标题。
    原横向条形图（.bar-track / .bar-fill）按需求移除。 */
 .rep-list {
-  margin-top: var(--sp-2);
+  margin-top: var(--space-md);
 }
 
 /* 行距只留 sp-1：三项数据是同一张表，行与行之间不需要留呼吸感 */
 .rep-row {
   display: flex;
   align-items: center;
-  gap: var(--gap-grid);
-  padding: var(--sp-1) 0;
+  gap: var(--space-md);
+  padding: var(--space-xs) 0;
   border-bottom: var(--hairline);
 }
 
@@ -38,7 +38,7 @@
 .rep-k {
   flex: 1;                       /* 名称：整行 1/2 */
   min-width: 0;
-  font-size: var(--fs-aux);
+  font-size: var(--font-base);     /* 指标键：标准（8 张卡统一） */
   color: var(--ink-2);
   text-align: left;
   word-break: break-word;        /* 不裁剪：超长标签换行完整显示 */
@@ -47,8 +47,8 @@
 .rep-v {
   flex: 1;                       /* 金额 + 同比：合计整行 1/2 */
   display: flex;
-  gap: var(--gap-grid);
-  font-size: var(--fs-aux);
+  gap: var(--space-md);
+  font-size: var(--font-base);     /* 金额与同比：标准 */
   color: var(--ink);
 }
 
@@ -60,7 +60,7 @@
   white-space: nowrap;           /* 兜底：数值不跳行 */
 }
 
-/* 金额是本行主信息，比同比大一档；同比保持 caption，靠颜色表达方向 */
+/* 金额与同比同为标准，主次只靠颜色（红涨绿跌）表达方向 */
 .rep-amt {
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
 }

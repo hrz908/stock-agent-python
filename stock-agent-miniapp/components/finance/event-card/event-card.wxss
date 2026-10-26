@@ -19,18 +19,18 @@
 .evt {
   position: relative;
   display: flex;
-  gap: var(--gap-grid);
-  margin-top: var(--sp-2);
+  gap: var(--space-md);
+  margin-top: var(--space-md);
 }
 
 /* 竖线下探量必须等于行间 margin，否则时间轴会断开或穿插下一条 */
 .evt::before {
   content: '';
   position: absolute;
-  left: 7rpx;
-  top: 24rpx;
-  bottom: calc(-1 * var(--sp-2));
-  width: 2rpx;
+  left: var(--space-xs);
+  top: var(--space-lg);
+  bottom: calc(-1 * var(--space-md));
+  width: 1rpx;
   background: var(--line);
 }
 
@@ -43,15 +43,15 @@
   flex: none;
   width: 16rpx;
   height: 16rpx;
-  border-radius: 50%;
-  margin-top: var(--sp-1);
+  border-radius: var(--radius-round);
+  margin-top: var(--space-xs);
 }
 
 /* 需关注：琥珀色（金色在白底上对比度不足，降一档到琥珀仍保留「提醒」语义）；
    常规：浅蓝。两者都不与涨跌红绿冲突 */
 .evt-dot--gold {
   background: var(--warn);
-  box-shadow: 0 0 0 6rpx var(--warn-tint);
+  box-shadow: 0 0 0 var(--space-xxs) var(--warn-tint);
 }
 
 .evt-dot--blue {
@@ -66,7 +66,7 @@
 }
 
 .evt-t {
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   line-height: 1.5;
   color: var(--ink);
 }
@@ -77,22 +77,22 @@
   color: var(--ink);
 }
 
-/* 事件类型小标签（财报 / 解禁 / 回购…） */
+/* 事件类型小标签（财报 / 解禁 / 回购…）：标签统一走全局小号 */
 .evt-type {
   display: inline-block;
-  margin-right: var(--sp-1);
-  padding: 4rpx 12rpx;
-  border-radius: var(--r-tag);
+  margin-right: var(--space-xs);
+  padding: var(--space-xxs) var(--space-sm);
+  border-radius: var(--radius-sm);
   border: var(--hairline);
   background: var(--surface-2);
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   color: var(--ink-2);
   vertical-align: middle;
 }
 
 .evt-s {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-xs);
+  font-size: var(--font-base);     /* 事件描述：标准 */
   line-height: 1.5;
   color: var(--ink-3);
 }
@@ -100,18 +100,18 @@
 .evt-foot {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  margin-top: var(--sp-1);
+  gap: var(--space-lg);
+  margin-top: var(--space-xs);
 }
 
 .evt-date {
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   color: var(--ink-3);
 }
 
 /* 原文链接：复制。min-height 收到 56rpx，避免把日期行顶高 */
 .evt-src {
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   color: var(--accent);
   text-decoration: underline;
   display: inline-flex; align-items: center; min-height: 56rpx;

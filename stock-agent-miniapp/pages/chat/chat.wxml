@@ -5,7 +5,7 @@
     <!-- 左侧：打开侧边抽屉的菜单图标（汉堡）。
          原本顶栏应有此键，缺失后抽屉只能靠右滑开，这里补回 -->
     <view slot="left" class="nav-menu-btn" aria-label="打开导航抽屉" bindtap="onMenuTap">
-      <base-icon type="UnorderedListOutline" style="font-size:44rpx;color:var(--ink);" />
+      <base-icon type="UnorderedListOutline" style="font-size:var(--icon-base);color:var(--ink);" />
     </view>
   </base-navbar>
   <!-- 对话区：高度由 JS 精算并固定为像素值，不随视口变化抖动 -->
@@ -94,7 +94,7 @@
           <view class="quick-ask" wx:for="{{quickAsks}}" wx:for-item="q" wx:key="id" data-q="{{q.query}}" data-id="{{q.id}}" data-code="{{q.stock_code}}" bindtap="onQuickAsk">
             <text wx:if="{{q.tag}}" class="quick-ask-tag">{{q.tag}}</text>
             <text class="quick-ask-text">{{q.display}}</text>
-            <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+            <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink-3);" />
           </view>
         </view>
         <!-- ===== AI 加载态 =====
@@ -154,12 +154,12 @@
            切换瞬间会闪一下。antd 图标集没有键盘图标，用网格图标（Appstore）
            代替——九宫格排布和键盘键位是同一套视觉语言 -->
       <view class="bar-btn {{voiceMode ? 'bar-btn--voice' : ''}}" aria-label="{{voiceMode ? '切换到键盘输入' : '切换到语音输入'}}" bindtap="onToggleInputMode">
-        <base-icon class="bar-btn-mic" type="AudioOutline" style="font-size:44rpx;" />
-        <base-icon class="bar-btn-keyboard" type="AppstoreOutline" style="font-size:44rpx;" />
+        <base-icon class="bar-btn-mic" type="AudioOutline" style="font-size:var(--icon-base);" />
+        <base-icon class="bar-btn-keyboard" type="AppstoreOutline" style="font-size:var(--icon-base);" />
       </view>
       <!-- 键盘态：输入区紧贴模式键右侧，整块可点（主动聚焦） -->
       <view wx:if="{{!voiceMode}}" class="bar-field" bindtap="onTapInputField">
-        <textarea class="bar-input" value="{{input}}" focus="{{inputFocus}}" placeholder="问点什么…" placeholder-style="color: #9AA1AC; font-size: 36rpx;" auto-height="{{true}}" adjust-position="{{false}}" cursor-spacing="24" confirm-type="send" show-confirm-bar="{{false}}" maxlength="-1" bindinput="onInput" bindconfirm="onSend" bindfocus="onInputFocus" bindblur="onInputBlur" bindkeyboardheightchange="onKeyboardHeightChange"></textarea>
+        <textarea class="bar-input" value="{{input}}" focus="{{inputFocus}}" placeholder="问点什么…" placeholder-class="bar-input-placeholder" auto-height="{{true}}" adjust-position="{{false}}" cursor-spacing="24" confirm-type="send" show-confirm-bar="{{false}}" maxlength="-1" bindinput="onInput" bindconfirm="onSend" bindfocus="onInputFocus" bindblur="onInputBlur" bindkeyboardheightchange="onKeyboardHeightChange"></textarea>
       </view>
       <!-- 语音态：胶囊整宽中央的语音键（以含模式键的全宽居中）。
            点一下开始聆听（预输入框见上方 .voice-panel），再点一下把终稿直接发给 agent。
@@ -171,7 +171,7 @@
            「收尾并发出」，未在聆听时用弱色表示暂不可用（见 chat.js 的 onSend） -->
       <view class="bar-send {{voiceMode ? 'bar-send--plain' : ''}} {{recording ? 'bar-send--live' : ''}}" aria-label="发送" bindtap="onSend">
         <view wx:if="{{sending}}" class="bar-send-stop"></view>
-        <base-icon wx:else type="SendOutline" style="font-size:44rpx;" />
+        <base-icon wx:else type="SendOutline" style="font-size:var(--icon-base);" />
       </view>
     </view>
   </view>
@@ -196,7 +196,7 @@
         <view class="drawer-section-title drawer-nav-title">导航</view>
         <view class="drawer-item" wx:for="{{menus}}" wx:for-item="m" wx:key="key" data-menu="{{m.key}}" bindtap="onMenuSelect">
           <text class="drawer-item-text">{{m.label}}</text>
-          <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+          <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink-3);" />
         </view>
       </view>
       <!-- 历史对话：只有这一块滚（占掉导航与底部按钮之间的全部高度）。
@@ -209,7 +209,7 @@
               <text class="history-item-title">{{item.title}}</text>
             </view>
             <view class="history-item-del" data-sid="{{item.session_id}}" catchtap="onSessionDelete">
-              <base-icon type="CloseOutline" style="font-size:28rpx;color:var(--ink-3);" />
+              <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--ink-3);" />
             </view>
           </view>
           <view wx:if="{{!sessions.length}}" class="history-empty">暂无历史对话</view>
@@ -222,7 +222,7 @@
         <!-- 内层 88rpx 与输入栏的 .bar-btn 同高，外层内边距与描边也照抄 .sender-bar，
              两个盒子用同一个公式算高度，不会因 rpx 换算差半像素 -->
         <view class="drawer-new-inner">
-          <base-icon wx:if="{{!newChatting}}" type="ChatAddOutline" style="font-size:32rpx;" />
+          <base-icon wx:if="{{!newChatting}}" type="ChatAddOutline" style="font-size:var(--icon-sm);" />
           <view wx:else class="drawer-new-spinner" />
           <text class="drawer-new-text">{{newChatting ? '创建中…' : '新对话'}}</text>
         </view>

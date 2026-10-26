@@ -9,18 +9,19 @@
     <view class="profile-card" bindtap="onProfileTap">
       <image wx:if="{{avatarSrc}}" class="profile-avatar" src="{{avatarSrc}}" mode="aspectFill" />
       <view wx:else class="profile-avatar profile-avatar--empty">
-        <base-icon type="UserOutline" style="font-size:56rpx;color:var(--ink-3);" />
+        <base-icon type="UserOutline" style="font-size:var(--icon-xl);color:var(--ink-3);" />
       </view>
       <view class="profile-info">
         <view class="profile-nickname">{{nickname}}</view>
         <view class="profile-desc">编辑头像与昵称</view>
       </view>
       <!-- 右侧箭头：整行可点，没有箭头时看不出这是一行入口 -->
-      <base-icon type="RightOutline" style="font-size:32rpx;color:var(--ink-3);" />
+      <base-icon type="RightOutline" style="font-size:var(--icon-sm);color:var(--ink-3);" />
     </view>
 
-    <!-- 字体大小：全局档位，选择后写入本地缓存，所有页面根节点的
-         font-scale--* 类在 onShow 时同步，字号变量随 custom property 向下生效 -->
+    <!-- 字体大小：全局档位（三档：标准 / 大 / 超大），选择后写入本地缓存，
+         所有页面根节点的 font-scale--* 类在 onShow 时同步，
+         字号变量随 custom property 向下生效 -->
     <view class="font-scale">
       <view class="font-scale-title">字体大小</view>
       <view class="font-scale-radio panel-flat">
@@ -38,7 +39,7 @@
          说明页的文案与真实数据链路保持一致（见 pages/privacy） -->
     <view class="link-row panel-flat" bindtap="onOpenPrivacy">
       <text class="link-row-text">隐私说明</text>
-      <base-icon type="RightOutline" style="font-size:28rpx;color:var(--ink-3);" />
+      <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink-3);" />
     </view>
 
     <!-- 消息推送卡片按需求整块移除（偏好设置组随之消失，pushEnabled 相关
@@ -74,7 +75,7 @@
       >
         <image wx:if="{{editAvatarSrc}}" class="edit-avatar" src="{{editAvatarSrc}}" mode="aspectFill" />
         <view wx:else class="edit-avatar edit-avatar--empty">
-          <base-icon type="UserOutline" style="font-size:64rpx;color:var(--ink-3);" />
+          <base-icon type="UserOutline" style="font-size:var(--icon-xl);color:var(--ink-3);" />
         </view>
       </button>
 

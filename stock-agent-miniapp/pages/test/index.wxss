@@ -15,47 +15,47 @@
   min-height: 0;
 }
 
-/* 卡片之间的间距：与 chat 消息流同款（--sp-3），用 gap 统一管 */
+/* 卡片之间的间距：与 chat 消息流同款（--space-lg），用 gap 统一管 */
 .gallery {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4) var(--sp-6);
+  gap: var(--space-lg);
+  padding: var(--space-lg) var(--space-xl) var(--space-3xl);
 }
 
 /* 开发版水印：这一页全是假数据，必须在第一屏说清楚 */
 .gallery-warn {
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--space-md) var(--space-lg);
   border: var(--hairline);
-  border-radius: var(--r-tag);
+  border-radius: var(--radius-sm);
   background: var(--warn-tint);
   border-color: var(--warn-border);
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   line-height: 1.5;
   color: var(--warn);
 }
 
 /* 页眉说明：弱辅助级，不抢卡片 */
 .gallery-hd {
-  padding: var(--sp-1) 0 var(--sp-2);
+  padding: var(--space-xs) 0 var(--space-md);
 }
 
 .gallery-hd-t {
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--ink-2);
 }
 
 .gallery-hd-d {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-min);
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);
   line-height: 1.6;
   color: var(--ink-3);
 }
 
 .gallery-ft {
-  padding: var(--sp-4) 0 var(--sp-2);
+  padding: var(--space-xl) 0 var(--space-md);
   text-align: center;
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   color: var(--ink-3);
 }

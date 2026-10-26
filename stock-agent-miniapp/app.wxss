@@ -4,22 +4,5 @@
 /* 图标字体：本地 base64 内联（原因见文件内注释），全局只此一处 @font-face */
 @import "styles/antd-icon.wxss";
 
-/* ===== 间距规格：已上收至 styles/token.wxss 的「间距五档」 =====
-   TODO-restyle：下列 page{} 内的 --sp-1~--sp-6 / --pad-card / --pad-page 与
-   token.wxss 重复定义，按「不吃后悔药，先注释」原则整块注释保留；
-   两者差异只有 --sp-6(96rpx) —— 已不在 shadcn 五档内，阶段 1B 统一清理。
-   引用方无需感知：五档变量名与原先完全一致。
-   注意：这里必须用行注释而非块注释包裹，CSS 注释不支持嵌套，
-   内层一旦出现 /* 会提前闭合外层注释，导致整段残留代码重新生效。
-
-page {
-  --sp-1: 8rpx;
-  --sp-2: 16rpx;
-  --sp-3: 24rpx;
-  --sp-4: 32rpx;
-  --sp-5: 48rpx;
-  --sp-6: 96rpx;
-  --pad-card: var(--sp-4);
-  --pad-page: var(--sp-4);
-}
-*/
+/* 间距 / 字号 / 圆角 / 图标全部只在 styles/token.wxss 定义一份，
+   本文件不再重复声明任何设计变量（尺寸标准见 .codebuddy/rules/ui-design-tokens.md） */

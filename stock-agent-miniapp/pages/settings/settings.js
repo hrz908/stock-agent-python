@@ -67,7 +67,7 @@ Page({
     // 不应再弹面板，只能靠按键唤起，所以这次聚焦消费掉标记后即按手动处理
     nicknameArmed: false,
 
-    // 字体大小：三档全局字号，选择写入本地缓存（见 utils/font-scale）
+    // 字体大小：三档全局字号（标准/大/超大），选择写入本地缓存（见 utils/font-scale）
     fontScaleOptions: FONT_SCALE_OPTIONS,
     fontScale: 'standard',
     fontScaleClass: '',

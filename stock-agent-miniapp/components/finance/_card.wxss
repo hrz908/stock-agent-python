@@ -5,19 +5,19 @@
 .fcard {
   width: 100%;
   box-sizing: border-box;
-  padding: var(--pad-card);
+  padding: var(--space-lg);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-card);
+  border-radius: var(--radius-lg);
   /* 与发丝描边配合的极轻投影：纯白底上只靠边框划块会显得干 */
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .fcard-hd {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--gap-grid);
+  gap: var(--space-md);
 }
 
 /* 头部左侧标题列（名称 + 代码）：占满剩余宽度并允许收缩，
@@ -35,29 +35,35 @@
   font-feature-settings: "tnum" 1;
 }
 
-/* 主标题：不裁剪不截断（需求：卡片信息不要 overflow）——超长名称换行完整显示 */
+/* 卡主标题（左上角）：大号 --font-lg（36rpx）+ 700 加黑，8 张卡统一。
+   字号封顶 --font-xl（40rpx）：卡内焦点数字才用上限档，标题靠 700 与 --ink 主色拿权重，
+   不靠字号（2026-10-26 令牌收敛，display 档已取消）。
+   不裁剪不截断（需求：卡片信息不要 overflow）——超长名称换行完整显示 */
 .fcard-name {
-  font-size: var(--fs-title);
-  font-weight: 600;
+  font-size: var(--font-lg);
+  font-weight: 700;
   line-height: 1.2;
   color: var(--ink);
   word-break: break-word;
 }
 
+/* 副标题 / 别名行（代码、日期·类型、口径）：全局标准（2026-10-26 用户指定，
+   由小号抬一档：标题抬到超大号后，代码行留在小号会显得脱节）。
+   8 张卡共用，不要再各卡改档 */
 .fcard-code {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-xs);
+  font-size: var(--font-base);
   color: var(--ink-3);
   word-break: break-word;
 }
 
 /* 数据栅格：一条顶部分隔线 + 两行三列（设计稿 3 列 × 2 行）。
-   卡内纵向节奏比页面紧一档：栅格与上方数据只隔 sp-2，不再用 --sp-card */
+   卡内纵向节奏比页面紧一档：栅格与上方数据只隔 sp-2，不再用 --space-lg */
 .fgrid {
   display: flex;
   flex-direction: column;
-  margin-top: var(--sp-2);
-  padding-top: var(--sp-2);
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
   border-top: var(--hairline);
 }
 
@@ -69,12 +75,12 @@
 
 .fgrid-row {
   display: flex;
-  gap: var(--gap-grid);
+  gap: var(--space-md);
 }
 
 /* 行间距用显式类名，不用兄弟选择器（WXSS 禁用） */
 .fgrid-row--gap {
-  margin-top: var(--sp-2);
+  margin-top: var(--space-md);
 }
 
 .fcell {
@@ -82,24 +88,25 @@
   min-width: 0;
 }
 
+/* 指标键：标准（8 张卡统一，口径同 K 线卡的区间涨幅 / 振幅 / MA5 / 量比） */
 .fcell-k {
-  font-size: var(--fs-min);
+  font-size: var(--font-base);
   color: var(--ink-3);
 }
 
 .fcell-v {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-body);
+  margin-top: var(--space-xs);
+  font-size: var(--font-base);
   color: var(--ink);
 }
 
 /* 底部说明：数据日期 / 来源 / 备注（口径类文案已按需求全部移除）。
    行高收到 1.5：说明多为单行，1.75 只是把每行撑开 */
 .fnote {
-  margin-top: var(--sp-2);
-  padding-top: var(--sp-1);
+  margin-top: var(--space-md);
+  padding-top: var(--space-xs);
   border-top: var(--hairline-dashed);
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   line-height: 1.5;
   color: var(--ink-3);
 }
@@ -142,7 +149,7 @@
 /* ---- 卡片标题对齐（8 张卡共用）----
    标题与副标题统一左对齐（默认呈现）；右上角 tag 已移除，头部只剩标题列，
    故 .fcard-hd 的 justify-content 回到 flex-start；
-   两者间距沿用 .fcard-code 的 --sp-1，保持等距。 */
+   两者间距沿用 .fcard-code 的 --space-xs，保持等距。 */
 .fcard-hd {
   justify-content: flex-start;
 }

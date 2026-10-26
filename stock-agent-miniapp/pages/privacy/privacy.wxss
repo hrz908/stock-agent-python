@@ -15,28 +15,28 @@
 }
 
 .inner {
-  padding: var(--sp-3) var(--sp-4) calc(var(--sp-6) + env(safe-area-inset-bottom));
+  padding: var(--space-lg) var(--space-xl) calc(var(--space-3xl) + env(safe-area-inset-bottom));
 }
 
 .meta {
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);
   color: var(--ink-3);
 }
 
 .sec {
-  margin-top: var(--sp-4);
+  margin-top: var(--space-xl);
 }
 
 .h {
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   font-weight: 600;
   line-height: 1.5;
   color: var(--ink);
 }
 
 .p {
-  margin-top: var(--sp-2);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-md);
+  font-size: var(--font-base);     /* 隐私说明正文：标准 */
   line-height: 1.8;
   color: var(--ink-2);
   word-break: break-word;
@@ -48,8 +48,8 @@
 }
 
 .tail {
-  margin-top: var(--sp-5);
-  font-size: var(--fs-min);
+  margin-top: var(--space-2xl);
+  font-size: var(--font-sm);
   line-height: 1.7;
   color: var(--ink-3);
 }

@@ -13,8 +13,8 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 顶部留白统一到各页一致（--sp-3） */
-  padding: var(--sp-3) var(--sp-4) 0;
+  /* 顶部留白统一到各页一致（--space-lg） */
+  padding: var(--space-lg) var(--space-xl) 0;
 }
 
 /* ===== 个人信息卡 =====
@@ -22,19 +22,19 @@
 .profile-card {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  gap: var(--space-lg);
+  padding: var(--space-lg) var(--space-lg) var(--space-lg) var(--space-xl);
   background: var(--surface);
   border: var(--hairline);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .profile-avatar {
   flex: none;
-  width: 112rpx;
-  height: 112rpx;
-  border-radius: 50%;
+  width: 128rpx;   /* 2026-10-26：头像再放大一号（原 112） */
+  height: 128rpx;
+  border-radius: var(--radius-round);
   overflow: hidden;
   background: var(--surface-2);
 }
@@ -53,7 +53,7 @@
 }
 
 .profile-nickname {
-  font-size: var(--fs-title);
+  font-size: var(--font-lg);   /* 昵称：大号 */
   font-weight: 600;
   color: var(--ink);
   text-align: left;
@@ -63,8 +63,8 @@
 }
 
 .profile-desc {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);   /* 编辑头像与昵称：小号 */
   color: var(--ink-3);
   text-align: left;
 }
@@ -72,23 +72,23 @@
 /* ===== 底部操作区 ===== */
 .bottom-btn {
   position: absolute;
-  left: var(--sp-4);
-  right: var(--sp-4);
+  left: var(--space-xl);
+  right: var(--space-xl);
 }
 
-/* 底部按钮：无填充、胶囊轮廓，描边与输入框同款（--hairline） */
+/* 底部按钮：无填充、8rpx 圆角，描边与输入框同款（--hairline） */
 .footer-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 96rpx;
-  border-radius: var(--r-pill);
-  font-size: var(--fs-body);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-lg);   /* 底部主行动点：全局大号 */
   font-weight: 600;
   background: transparent;
   color: var(--ink);
   border: var(--hairline);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 危险操作：只靠红字表达，描边与输入框一致 */
@@ -97,52 +97,52 @@
 }
 
 .footer-hint {
-  margin-top: var(--sp-2);
+  margin-top: var(--space-md);
   text-align: center;
-  font-size: var(--fs-min);
+  font-size: var(--font-sm);   /* 退出后会自动登录的提示：小号 */
   color: var(--ink-3);
 }
 
 /* 注销入口：次级文字链，不用危险色实底——不跟「退出登录」抢主次，
    但必须在页面上可发现（合规要求账号可删除） */
 .footer-link {
-  margin-top: var(--sp-4);
-  padding: var(--sp-2) 0;
+  margin-top: var(--space-xl);
+  padding: var(--space-md) 0;
   text-align: center;
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);   /* 注销账号：小号 */
   color: var(--ink-3);
   text-decoration: underline;
 }
 
 /* ===== 直角框体（本页复用） =====
-   字体大小段控与隐私说明入口共用同一套外形：白面 + --hairline + --shadow-card，
-   96rpx 等高、四角直角（border-radius: 0，不跟随 --r-card / --r-pill）。
+   字体大小段控与隐私说明入口共用同一套外形：白面 + --hairline + --shadow-sm，
+   96rpx 等高、四角直角（border-radius: 0，不跟随 --radius-lg / --radius-sm）。
    两块上下叠放，除内部分布外不允许各自改描边 / 投影 / 高度。 */
 .panel-flat {
   height: 96rpx;
   background: var(--surface);
   border: var(--hairline);
   border-radius: 0;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ===== 字体大小（全局档位） =====
    段式单选：选中靠字重与字色，不铺底块。
-   每项 flex:1，保证三个档位的点击区域等宽且占满整个框体高度 */
+   三档（标准/大/超大）每项 flex:1：等宽且占满整个框体高度，文字统一标准号 */
 .font-scale {
-  margin-top: var(--sp-3);
+  margin-top: var(--space-lg);
 }
 
 .font-scale-title {
-  padding: 0 var(--sp-1);
-  font-size: var(--fs-aux);
+  padding: 0 var(--space-xs);
+  font-size: var(--font-sm);   /* 「字体大小」标签：小号 */
   font-weight: 600;
   color: var(--ink-2);
 }
 
 .font-scale-radio {
   display: flex;
-  margin-top: var(--sp-2);
+  margin-top: var(--space-md);
 }
 
 .font-scale-radio__item {
@@ -151,7 +151,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   color: var(--ink-2);
   transition: color .2s;
 }
@@ -167,12 +167,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--sp-3);
-  padding: 0 var(--sp-3);
+  margin-top: var(--space-lg);
+  padding: 0 var(--space-lg);
 }
 
 .link-row-text {
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   color: var(--ink-2);
 }
 
@@ -190,7 +190,7 @@
   padding: 0;
   width: 160rpx;
   height: 160rpx;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: transparent;
   line-height: 1;
 }
@@ -203,7 +203,7 @@
 .edit-avatar {
   width: 160rpx;
   height: 160rpx;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--surface-2);
   border: var(--hairline);
 }
@@ -217,32 +217,32 @@
 
 .edit-field {
   width: 100%;
-  margin-top: var(--sp-4);
+  margin-top: var(--space-xl);
 }
 
 .edit-input {
   width: 100%;
   height: 88rpx;
-  padding: 0 var(--sp-3);
+  padding: 0 var(--space-lg);
   box-sizing: border-box;
   text-align: center;
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
   color: var(--ink);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-pill);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 
 .edit-input-placeholder {
   color: var(--ink-3);
-  font-size: var(--fs-body);
+  font-size: var(--font-base);
 }
 
 /* 超长提示行：红色（涨跌语义里的「警告」位），仅超长时出现 */
 .edit-tip {
-  margin-top: var(--sp-1);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);
   color: var(--danger);
   text-align: center;
 }
@@ -250,14 +250,14 @@
 .nickname-action {
   display: flex;
   justify-content: center;
-  margin-top: var(--sp-3);
+  margin-top: var(--space-lg);
 }
 
 .nickname-link {
-  padding: var(--sp-1) var(--sp-3);
-  font-size: var(--fs-aux);
+  padding: var(--space-xs) var(--space-lg);
+  font-size: var(--font-sm);
   color: var(--accent);
-  border-radius: var(--r-tag);
+  border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center; min-height: 88rpx;
 }
 

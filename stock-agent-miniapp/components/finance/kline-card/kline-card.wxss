@@ -8,17 +8,22 @@
   text-align: left;
 }
 
+/* ===== 本卡字级（2026-10-26）=====
+   标题（超大号）、副标题（标准）、指标键与数值（标准）都收归 _card.wxss，
+   8 张卡统一；本卡只覆写一条：支撑 / 压力行降一档走小号（图区脚注，
+   不该和区间涨幅抢视线）。 */
+
 /* 底部说明（数据日期等）左对齐 */
 .fnote {
   text-align: left;
 }
 
-/* 周期 chips：无填充、发丝轮廓、胶囊形；选中只提描边与字重 */
+/* 周期 chips：无填充、发丝轮廓、8rpx 圆角；选中只提描边与字重 */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-1);
-  margin-top: var(--sp-3);
+  gap: var(--space-xs);
+  margin-top: var(--space-lg);
 }
 
 .chip {
@@ -27,16 +32,17 @@
   justify-content: center;
   min-width: 88rpx;
   min-height: 88rpx;
-  padding: 0 var(--sp-2);
+  padding: 0 var(--space-md);
   box-sizing: border-box;
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--r-pill);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 
+/* 周期 chip 的文字：标签统一走全局小号 */
 .chip-text {
-  font-size: var(--fs-aux);
+  font-size: var(--font-sm);
   color: var(--ink-2);
 }
 
@@ -51,7 +57,7 @@
 
 /* K 线图：≥180rpx（设计稿②布局要点），SVG 拉伸铺满 */
 .chart {
-  margin-top: var(--sp-2);
+  margin-top: var(--space-md);
   width: 100%;
   height: 200rpx;
   background-repeat: no-repeat;
@@ -67,8 +73,8 @@
   justify-content: center;
   box-sizing: border-box;
   border: var(--hairline-dashed);
-  border-radius: var(--r-tag);
-  font-size: var(--fs-min);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-base);   /* 图区占位（搜索并选择股票后展示 / 暂无数据）：标准 */
   color: var(--ink-3);
 }
 
@@ -77,8 +83,8 @@
    支撑·压力：整行文案靠左，两项之间用「·」点号隔开（同行情卡底部口径）。
    K 线图本身（.chart）是唯一的整幅图形，不参与对齐。 */
 .sr-row {
-  margin-top: var(--sp-2);
-  font-size: var(--fs-aux);
+  margin-top: var(--space-md);
+  font-size: var(--font-sm);   /* 支撑 · 压力：小号（图区脚注，比指标栏低一档） */
   color: var(--ink-2);
   text-align: left;
 }
