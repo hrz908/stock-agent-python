@@ -662,8 +662,8 @@ async def tool_execute(state: dict) -> dict:
 # 于是三张卡并排铺出去（问一句估值 -> 估值卡 + 行情卡 + 资金流卡），
 # 相关性完全没被考虑。现在先收集候选，再按「用户问题的核心意图」只挑一张。
 
-# K 线（蜡烛图）话题：命中即整轮不出卡。
-# 看图去小程序「看个 K 线」页更完整，聊天流里再插一张缩略 K 线卡只会和正文抢位置
+# K 线（蜡烛图）话题：命中即锁定「只发 K 线卡」（2026-10-26 恢复下发；
+# 此前一律不出卡）。没取到 K 线数据时仍不发卡，不拿行情卡顶替
 _KLINE_MARKERS = (
     "k线", "蜡烛", "日k", "周k", "月k", "分钟k", "分时图", "均线", "k线图",
     "走势图", "技术分析", "技术形态", "macd", "kdj", "boll",
@@ -829,11 +829,12 @@ _TABLE_CARDS = {"kline_table"}
 
 
 def _emit_structured(state: dict, tool_results: list) -> None:
-    """按「用户问的是什么」发一张卡（不进入 token 流）；K 线话题一张都不发。
+    """按「用户问的是什么」发一张卡（不进入 token 流）。
 
     三条规则，按顺序判定：
     1. 没有候选（工具全失败 / 只调了 symbol_search）-> 不发；
-    2. 问题涉及 K 线（蜡烛图）-> 一张都不发（看图去「看个 K 线」页，别在聊天里抢位置）；
+    2. 问题涉及 K 线（蜡烛图）-> 只发 K 线卡（2026-10-26 恢复：聊天里也要能看到走势图；
+       若本轮没取到 K 线数据，则沿用旧行为，一张都不发，不拿行情卡顶替）；
     3. 否则只发相关性最高的一张：按问题关键词打分排序，同分按工具调用顺序；
        载荷校验不过就顺延到下一张，全都不合规才降到纯文本。
 
@@ -842,10 +843,16 @@ def _emit_structured(state: dict, tool_results: list) -> None:
     candidates = _card_candidates(tool_results)
     if not candidates:
         return
+    ranked = _rank_cards(state, candidates)
     if _is_kline_question(state):
-        logger.info("kline question, suppress cards: %s", [c[0] for c in candidates])
+        for card_type, payload in ranked:
+            if card_type == "kline_table" and validate_table(card_type, payload):
+                emit_table(card_type, payload)
+                return
+        logger.info("kline question without kline table, suppress cards: %s",
+                    [c[0] for c in candidates])
         return
-    for card_type, payload in _rank_cards(state, candidates):
+    for card_type, payload in ranked:
         if card_type in _TABLE_CARDS:
             if validate_table(card_type, payload):
                 emit_table(card_type, payload)
@@ -1193,7 +1200,7 @@ async def synthesize(state: dict) -> dict:
     prompt = render("stock.xml", now=now, query=query, tool_results=tr_text,
                     examples=load_template("stock_examples.xml"))
 
-    # 结构化数据走独立事件（按问题意图只挑一张卡，K 线话题不出卡）
+    # 结构化数据走独立事件（按问题意图只挑一张卡；K 线话题固定发 K 线卡）
     _emit_structured(state, tool_results)
 
     # 带上最近对话历史，让回答能衔接上下文

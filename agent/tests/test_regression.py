@@ -12,7 +12,7 @@
   P8 benchmark 调优新增行为（改写贯通 tool_call / 含糊指判 clarify / 兜底分级 / few-shot）
   P9 会话历史与 checkpoint 增长治理（消息窗口裁剪 / thread_id 口径 / session_id 校验）
 2026-10-26 新增：
-  P11 卡片选择（一次回复最多一张，K 线话题不出卡）
+  P11 卡片选择（一次回复最多一张，K 线话题发 K 线卡）
   P12 正文不追加免责声明
   P17 回答版式规范（分段 / 标点 / 不用加粗）
   P18 闲聊分支不再把问句当回答（提示词结构 + 流式标签净化）+ 行情问句不被概念词误判
@@ -591,7 +591,7 @@ def test_card_validation():
 
 # ===== P11：卡片选择（2026-10-26）=====
 def test_card_selection():
-    print("\n[P11] 一次回复只发一张卡，K 线话题不发卡")
+    print("\n[P11] 一次回复只发一张卡，K 线话题发 K 线卡")
     from subgraphs import stock as stock_mod
 
     emitted = []
@@ -622,10 +622,11 @@ def test_card_selection():
         return list(emitted)
 
     try:
-        # K 线（蜡烛图）话题：一张都不发，哪怕同时取到了行情
-        check("K线问句不发卡", run("贵州茅台最近15个交易日的日K走势怎么样？",
-                                [quote, history]) == [])
-        check("K线图/技术形态问句不发卡", run("看一下茅台的 K 线图和技术形态",
+        # K 线（蜡烛图）话题：发 K 线卡，哪怕同时取到了行情也压掉行情卡
+        check("K线问句只发K线卡", run("贵州茅台最近15个交易日的日K走势怎么样？",
+                                [quote, history]) == ["kline_table"])
+        # 本轮没取到 K 线数据时仍一张都不发（不拿行情卡顶替）
+        check("K线问句无K线数据时不发卡", run("看一下茅台的 K 线图和技术形态",
                                         [quote]) == [])
 
         # 核心意图 -> 只发对应的那一张（候选里即使有行情卡也压掉）

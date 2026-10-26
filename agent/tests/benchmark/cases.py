@@ -11,7 +11,7 @@ expect 字段说明：
 - tools_any   : 至少调用其中一个工具（数据类用例）
 - tools_all   : 必须全部调用的工具（多跳链用例，如 symbol_search + get_quote）
 - cards_any   : 至少出现其中一种卡片/表格
-- cards_none  : 这一轮不允许出现任何卡片（如 K 线话题：产品约定不出卡）
+- cards_none  : 这一轮不允许出现任何卡片（如闲聊 / 拒答轮次）
 - must_contain: 最终回答必须包含的子串（小写比较）
 - must_not_contain: 最终回答不允许出现的子串
 - rationale   : 这个用例想抓住什么失效模式（评估报告里引用）
@@ -103,10 +103,10 @@ CASES: list[Case] = [
         expect={
             "intent": {"stock", "stock_agent"},
             "tools_any": ["get_history_daily"],
-            # 产品约定：K 线（蜡烛图）话题一律不出卡，看图去「看个 K 线」页
-            "cards_none": True,
+            # 产品约定（2026-10-26）：K 线（蜡烛图）话题发 K 线卡
+            "cards_any": ["kline_table"],
         },
-        rationale="K线问句：取 15 日日 K，正文只给结论不逐行罗列，且不插任何卡片",
+        rationale="K线问句：取 15 日日 K，发 K 线卡，正文只给结论不逐行罗列",
     ),
     Case(
         id="T-02", category="technical", difficulty="hard",

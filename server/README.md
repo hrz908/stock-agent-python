@@ -193,7 +193,7 @@ server/
 | `card` | `compare_card` | `{items, ts_code, peers_source}`；items 为 `[{name, price, changePct, pe, pb, totalMv}]`（**当日快照，元口径**，最多本股 + 2 家同行）；`peers_source` = `explicit`（模型指定）/ `industry`（按行业自动补）/ `none`（只比本股） | 同业对比卡 |
 | `card` | `research_card` | 东财研报单行（org/rating/report_type/publish_date/summary/source_name/source_url/industry/eps_forecast/pe_forecast；**数据源无目标价**，targetPrice 恒空） | 研报观点卡 |
 | `card` | `event_card` | `{events, range, note}`；events 为 `[{type, date, title, desc, important, source_url, source_name}]`（由 `get_stock_news` 当日资讯确定性归纳，不做语义推断） | 公司事件卡 |
-| `table` | `kline_table` | `{rows: [{date, open, high, low, close, volume}], code?, name?}`（升序，最多 15 个交易日；`trade_date→date`、`vol→volume` 已映射；本轮查过行情时补 `code`/`name` 供卡片标题用） | K 线卡（仅在 K 线话题以外被选中最相关时才下发） |
+| `table` | `kline_table` | `{rows: [{date, open, high, low, close, volume}], code?, name?}`（升序，最多 15 个交易日；`trade_date→date`、`vol→volume` 已映射；本轮查过行情时补 `code`/`name` 供卡片标题用） | K 线卡（K 线话题下必发；其它话题只有被选中最相关时才下发） |
 
 > `symbol_list`（股票搜索候选）自 2026-10-26 起**不再下发**：它只是搜代码的中间结果，
 > 前端也没有对应卡片。契约校验（`cards.py`）里仍保留，方便将来复用。
@@ -205,17 +205,18 @@ server/
    （估值 / 资金 / 财报 / 研报 / 新闻 / 对比 / 行情各有自己的词表），同分按工具调用顺序；
    载荷校验不过就顺延到下一张，全都不合规才降级为纯文本。
    多张卡会与正文并列抢视线，且卡与卡之间没有主次，所以不做「都发出来」；
-2. **K 线（蜡烛图）话题一律不出卡**：命中 `_KLINE_MARKERS`（k线 / 蜡烛 / 日k / 周k / 分钟k /
-   分时图 / 均线 / 走势图 / 技术分析 / 技术形态 / macd 等）时整轮一张都不发——
-   看图去小程序「看个 K 线」页更完整，聊天流里插缩略 K 线卡只会和正文抢位置；
+2. **K 线（蜡烛图）话题只发 K 线卡**（2026-10-26 恢复，此前是「一律不出卡」）：
+   命中 `_KLINE_MARKERS`（k线 / 蜡烛 / 日k / 周k / 分钟k / 分时图 / 均线 / 走势图 /
+   技术分析 / 技术形态 / macd 等）时，本轮取到了 `kline_table` 就发 K 线卡，且不会同时发行情卡；
+   没取到 K 线数据则一张都不发，不拿行情卡顶替——缩略 K 线卡只是聊天里的辅助，
+   完整走势仍以「看个 K 线」页为准；
 3. 数据源按「天」返回的（估值 / 资金流）只取最新一天（按天发会把同一只股票的连续交易日
    并排铺三张）；研报取最新一篇；资讯整轮合成一张事件卡。多条目之间的差异由正文转述；
 4. `report_card` 来自组合工具 `get_financial_report`（并发拉新浪财务指标 + 利润表 + 现金流量表），
    任一子表取不到时对应字段为 `null`，前端渲染 `--`，不影响其它字段；
 5. `kline_table` 由 `get_history_daily` 发射（2026-10-23 复活；Go `/stock/kline` 仍保持下线），
    产品约定 K 线走势只取 15 个交易日，工具侧窗口收死（days 上限 15）。
-   注意它同样受上面第 2 条约束：问题提到 K 线就不发，只有「问的不是 K 线、但这张卡最相关」
-   时才可能作为那一张卡下发；
+   K 线话题按第 2 条直接发它；非 K 线话题里只有「这张卡最相关」时才作为那一张卡下发；
 6. 龙虎榜由 `get_top_list`（东财龙虎榜详情）提供，只取席位/买入/卖出三个量；
    近期未上榜时优雅降级（fundflow 卡不带 lhb 区块）。北向/南向/融资融券工具保持下线；
 7. `compare_card` 由 `get_peer_compare` 提供，五个维度全部来自 Go 网关当日行情快照
