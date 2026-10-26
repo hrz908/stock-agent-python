@@ -10,6 +10,7 @@ from datetime import datetime
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
+from config import ANSWER_ENABLE_THINKING
 from core.llm import get_llm
 from core.state import AgentState, recent_turns
 from core.template import render
@@ -26,7 +27,7 @@ async def llm_stream(state: dict) -> dict:
     history = recent_turns(state, 10, query=query)
     msgs = [SystemMessage(content=system)] + history
 
-    llm = get_llm(streaming=True, temperature=0.7)
+    llm = get_llm(streaming=True, temperature=0.7, thinking=ANSWER_ENABLE_THINKING)
     # 流式生成：逐块 emit token（经 custom 模式透传），同时累加成完整 AIMessage 写回 state
     parts = []
     ttft_ms = None

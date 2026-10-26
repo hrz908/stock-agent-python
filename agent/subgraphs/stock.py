@@ -34,7 +34,12 @@ from typing import Literal
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
-from config import MAX_INPUT_TOKENS, TOOL_CALL_LLM_TIMEOUT, TOOL_CONCURRENCY
+from config import (
+    ANSWER_ENABLE_THINKING,
+    MAX_INPUT_TOKENS,
+    TOOL_CALL_LLM_TIMEOUT,
+    TOOL_CONCURRENCY,
+)
 from core.keywords import is_concept_question
 from core.llm import estimate_tokens, get_llm, is_context_overflow, message_chars
 from core.state import AgentState, recent_turns
@@ -1145,7 +1150,7 @@ async def synthesize(state: dict) -> dict:
     # 上下文预算：超了先裁剪再发，绝不把超长请求丢给上游
     messages = _fit_context(messages)
 
-    llm = get_llm(streaming=True, temperature=0.4)
+    llm = get_llm(streaming=True, temperature=0.4, thinking=ANSWER_ENABLE_THINKING)
     ttft_ms = None
     try:
         parts = []

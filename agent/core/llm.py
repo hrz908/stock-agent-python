@@ -27,13 +27,18 @@ def _cached(
     temperature: float,
     timeout: float,
     max_retries: int,
+    thinking: bool | None = None,
 ) -> ChatOpenAI:
     key = (
         model, bool(streaming), round(float(temperature), 2),
-        round(float(timeout), 2), int(max_retries),
+        round(float(timeout), 2), int(max_retries), thinking,
     )
     llm = _LLM_CACHE.get(key)
     if llm is None:
+        kwargs = {}
+        if thinking is not None:
+            # 上游 SiliconFlow 的推理开关：false 时不做 reasoning，首 token 直接出正文
+            kwargs["extra_body"] = {"enable_thinking": thinking}
         llm = ChatOpenAI(
             model=model,
             openai_api_base=OPENAI_API_BASE,
@@ -43,6 +48,7 @@ def _cached(
             timeout=timeout,
             # OpenAI SDK 默认重试 2 次；不显式收口会让一次上游卡顿变成 60s+
             max_retries=max_retries,
+            **kwargs,
         )
         _LLM_CACHE[key] = llm
     return llm
@@ -53,12 +59,14 @@ def get_llm(
     temperature: float = 0.7,
     timeout: float | None = None,
     max_retries: int | None = None,
+    thinking: bool | None = None,
 ) -> ChatOpenAI:
     """主力对话模型：默认流式，温度略高以保证回答自然。
 
     timeout 是单次请求硬上限：工具链有 8s 兜底，LLM 生成之前没有，
     不设会让整个事件流无限期挂住（Go 网关 runTimeout 到点砍流，用户只看到断流、没有解释）。
     tool_call 等非流式决策可显式传更短的 timeout。
+    thinking=None 保留上游默认（决策类调用要推理）；作答节点显式传 False 缩短首 token。
     """
     return _cached(
         LLM_MODEL,
@@ -66,6 +74,7 @@ def get_llm(
         temperature,
         LLM_TIMEOUT if timeout is None else timeout,
         LLM_MAX_RETRIES if max_retries is None else max_retries,
+        thinking,
     )
 
 

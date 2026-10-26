@@ -21,7 +21,13 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from config import RAG_JUDGE_SKIP_SCORE, RAG_THRESHOLD, RAG_TOP_K, RERANK_THRESHOLD
+from config import (
+    ANSWER_ENABLE_THINKING,
+    RAG_JUDGE_SKIP_SCORE,
+    RAG_THRESHOLD,
+    RAG_TOP_K,
+    RERANK_THRESHOLD,
+)
 from core.keywords import is_concept_question
 from core.llm import get_llm, get_small_llm
 from core.state import AgentState, recent_turns
@@ -220,7 +226,7 @@ async def generate_with_citations(state: dict) -> dict:
     messages.extend(recent_turns(state, 6, query=query))
     messages.append(HumanMessage(content=state.get("query", "") or query))
 
-    llm = get_llm(streaming=True, temperature=0.3)
+    llm = get_llm(streaming=True, temperature=0.3, thinking=ANSWER_ENABLE_THINKING)
     # 流式生成：逐块 emit token，同时累加成完整 AIMessage 写回 state
     parts = []
     ttft_ms = None

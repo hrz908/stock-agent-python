@@ -33,6 +33,13 @@ TOOL_CALL_LLM_TIMEOUT = float(os.getenv("TOOL_CALL_LLM_TIMEOUT", "30"))
 # LLM 重试次数：OpenAI SDK 默认 2，配合 60s 超时会把一次上游卡顿放大成 60~180s。
 # 默认只重试 1 次，既保留瞬时抖动恢复能力，也避免 68s 这类长尾。
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "1"))
+# 生成类回答是否开启模型思考。上游 DeepSeek 默认先推理再出字，reasoning 不计入
+# 正文流：实测 T-01/T-02 的首 token 被 900~2700 个推理 token 拖到 5.5~29s。
+# 关闭后首 token 降到 0.6~1.8s，回答仍完整（答案质量以 benchmark 规则断言为准）。
+# 只作用于 chat / rag / stock synthesize 三个「作答」节点；tool_call 决策保持默认。
+ANSWER_ENABLE_THINKING = os.getenv("ANSWER_ENABLE_THINKING", "false").strip().lower() in (
+    "1", "true", "yes", "on",
+)
 # RAG 相关度阈值：针对余弦相似度（不是 RRF 融合分）。
 # 仅当重排关闭时生效。Qwen3 向量空间的地板值很高（无关 query 与语料的平均相似度
 # 也有 0.56，实测相关/无关的 top 相似度完全重叠），单靠它只能做粗筛，
