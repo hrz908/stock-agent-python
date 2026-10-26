@@ -27,6 +27,7 @@ from typing import Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
+from core.keywords import is_concept_question, is_structured_data_question
 from core.state import AgentState
 from nodes import clarify, classify, guardrail, post, refuse, rewrite
 from subgraphs.chat import build_chat_subgraph
@@ -46,9 +47,20 @@ def route_after_guardrail(state: dict) -> Literal['clarify', 'rewrite']:
 def route_by_intent(
     state: dict,
 ) -> Literal['stock', 'stock_agent', 'chat', 'off_topic', 'clarify']:
-    """纯函数路由：按 intent 分派；未知一律回退 clarify。"""
+    """纯函数路由：按 intent 分派；未知一律回退 clarify。
+
+    结构化财务数据问句（main financial indicators / 营收增长情况 / 同比）即使
+    classify 判成文档型 stock，也改路由到取数子图：这类问题需要工具数值与财报卡，
+    语料扩充后走 RAG 会绕过结构化结果（实测 F-01）。概念问题不受影响。
+    """
     intent = state.get('intent', '')
-    return intent if intent in _CLASSIFY_INTENTS else 'clarify'
+    if intent not in _CLASSIFY_INTENTS:
+        return 'clarify'
+    if intent == 'stock':
+        text = state.get('rewritten') or state.get('query', '') or ''
+        if is_structured_data_question(text) and not is_concept_question(text):
+            return 'stock_agent'
+    return intent
 
 
 def route_after_rag(state: dict) -> Literal['stock_agent', 'chat', 'post']:

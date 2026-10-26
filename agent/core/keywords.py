@@ -42,6 +42,14 @@ REALTIME_KEYWORDS_SUBSTR = (
 # 短英文指标整词匹配（词边界），防止 "apple" 命中 "pe"、"space" 命中 "ps"
 DATA_KEYWORDS_WORD = re.compile(r"(?<![a-zA-Z])(pe|pb|ps)(?![a-zA-Z])", re.IGNORECASE)
 
+# 结构化财务数据问句：问的是可被取数工具直接给出的数值/指标，
+# 即使 classify 判成文档型 stock，主图也应改路由到取数子图（工具 + 财报卡）。
+# 原因：语料扩充后 RAG 能命中财报原文，若仍走 RAG 会绕过结构化工具与卡片（实测 F-01）。
+STRUCTURED_DATA_KEYWORDS = (
+    "财务指标", "主要指标", "财报数据", "业绩数据", "营收数据", "净利润数据",
+    "增长情况", "同比", "环比",
+)
+
 # 概念型问句：问「是什么 / 怎么算 / 有什么区别」，不需要实时数值。
 CONCEPT_KEYWORDS = (
     "解释", "含义", "意思", "区别", "不同", "为什么", "怎么算", "如何算",
@@ -76,6 +84,16 @@ def is_realtime_data_question(text: str) -> bool:
     if any(k in q for k in REALTIME_KEYWORDS_SUBSTR):
         return True
     return bool(DATA_KEYWORDS_WORD.search(q))
+
+
+def is_structured_data_question(text: str) -> bool:
+    """问的是可被取数工具直接给出的结构化财务数值/指标 -> True。
+
+    与 is_document_question 的分工：问「财报说了什么」走 RAG；
+    问「主要财务指标 / 营收增长情况 / 同比多少」走取数工具并出财报卡。
+    """
+    q = (text or "").lower()
+    return any(k in q for k in STRUCTURED_DATA_KEYWORDS)
 
 
 def is_concept_question(text: str) -> bool:
