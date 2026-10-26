@@ -2,7 +2,9 @@
 // 只对比两家同行（本股 + 2 家，共 3 列），标题形如「A vs B vs C」。
 // 数据约定（agent 的 get_peer_compare）：全部维度取自当日行情快照，
 // 不含任何历史区间或财务接口——因此对比维度为 价/涨跌幅/PE/PB/总市值。
-// 着色规则：涨跌幅按正负（加号红 / 减号绿），PE / PB「更低者优」（绿）。
+// 着色规则：只有涨跌幅按正负着色（加号红 / 减号绿）。
+// PE / PB 曾按「更低者优」标绿，2026-10-26 用户取消：国内习惯绿=跌，
+// 给低估值标绿会被读成「在跌」，反而误导，估值只在数值本身比较。
 // 卡内只陈述客观事实，不写买卖推荐（合规红线）。
 import { fmtAmount, fmtNum, fmtPct, fmtPrice, direction } from '../../../utils/format';
 
@@ -11,11 +13,12 @@ const MAX_ITEMS = 3;
 
 // 对比维度配置：better = 'high' 越高越优 / 'low' 越低越优 / 'none' 不比较高低；
 // sign = true 的指标（涨跌幅）不比高低，按正负着色：加号红 / 减号绿
+// PE / PB 用 'none'：不标赢家、不上绿色（2026-10-26 用户指定取消）
 const METRICS = [
   { key: 'price', label: '最新价', better: 'none', fmt: fmtPrice },
   { key: 'changePct', label: '涨跌幅', better: 'none', sign: true, fmt: (v) => fmtPct(v) },
-  { key: 'pe', label: 'PE(TTM)', better: 'low', fmt: (v) => fmtNum(v) },
-  { key: 'pb', label: 'PB', better: 'low', fmt: (v) => fmtNum(v) },
+  { key: 'pe', label: 'PE(TTM)', better: 'none', fmt: (v) => fmtNum(v) },
+  { key: 'pb', label: 'PB', better: 'none', fmt: (v) => fmtNum(v) },
   { key: 'totalMv', label: '总市值', better: 'none', fmt: (v) => fmtAmount(v) }
 ];
 
