@@ -35,6 +35,7 @@ import fakeredis.aioredis as fake_aioredis
 import httpx
 
 from gateway.adapters import agent_bridge
+from gateway.api.v1 import chat as chat_module
 from gateway.domain.amount import money, thousands, with_sign
 from gateway.domain.stockcode import display_code, normalize_code
 from gateway.infra.agent_limiter import AgentLimiter
@@ -139,8 +140,8 @@ def make_config(**overrides) -> Config:
     return cfg
 
 
-def auth_headers() -> dict[str, str]:
-    token = sign_token(USER_ID, JWT_SECRET, 3600)
+def auth_headers(user_id: int = USER_ID) -> dict[str, str]:
+    token = sign_token(user_id, JWT_SECRET, 3600)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -344,6 +345,53 @@ async def test_sse_slow_first(app) -> None:
         agent_bridge.upsert_session = original_upsert  # type: ignore[assignment]
 
 
+async def test_sse_heartbeat(app) -> None:
+    """首个事件之后的长静默必须发 ping。
+
+    工具取数 + 模型组织语言期间可能几十秒没有任何 token；没有心跳时
+    小程序/代理会把连接判死（表现为「连接异常」而服务端还在生成）。
+    前端 services/agent.js 的 ping 分支只做静默忽略，不触发渲染。
+    """
+    print("[3c] 对话 SSE · 静默期心跳")
+
+    async def _stalling_stream(thread_id: str, query: str, user_id: str):
+        yield {"event": "tool_start", "data": {"tool": "quote", "label": "正在获取行情"}}
+        await asyncio.sleep(0.2)
+        yield {"event": "token", "data": {"delta": "好"}}
+        yield {"event": "done", "data": {"thread_id": thread_id, "usage": {}}}
+
+    async def _noop_upsert(user_id: str, session_id: str, title: str) -> None:
+        return
+
+    original = agent_bridge.stream_events
+    original_upsert = agent_bridge.upsert_session
+    original_hb = chat_module.HEARTBEAT_SECONDS
+    agent_bridge.stream_events = _stalling_stream  # type: ignore[assignment]
+    agent_bridge.upsert_session = _noop_upsert  # type: ignore[assignment]
+    chat_module.HEARTBEAT_SECONDS = 0.05
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # 换个 user_id：前面几个 SSE 用例已经把默认用户那桶 QPS 吃掉了
+            stream = client.stream(
+                "POST",
+                "/api/v1/agent/stream",
+                headers=auth_headers(USER_ID + 1),
+                json={"query": "心跳", "session_id": "sess_smoke_beat"},
+            )
+            async with stream as resp:
+                raw = (await resp.aread()).decode("utf-8")
+        names = [name for name, _ in parse_sse(raw)]
+        check("静默期发 ping", "ping" in names, str(names))
+        check("ping 在 token 之前", names.index("ping") < names.index("token"), str(names))
+        check("首事件已到则不再发 status", "status" not in names, str(names))
+        check("收尾仍是 done", names[-1] == "done", str(names))
+    finally:
+        chat_module.HEARTBEAT_SECONDS = original_hb
+        agent_bridge.stream_events = original  # type: ignore[assignment]
+        agent_bridge.upsert_session = original_upsert  # type: ignore[assignment]
+
+
 async def test_quickask(app) -> None:
     print("[4] Quick Ask")
     import re
@@ -506,6 +554,7 @@ async def main() -> None:
     await test_envelope_and_auth(app)
     await test_sse(app)
     await test_sse_slow_first(app)
+    await test_sse_heartbeat(app)
     await test_quickask(app)
     await redis.aclose()
 
