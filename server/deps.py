@@ -27,6 +27,9 @@ class Runtime:
     pg: Postgres
     redis: aioredis.Redis
     limiter: SlidingWindowLimiter
+    # 启动探活结果：Redis 连不上时按降级模式跑（限流 fail-open、缓存旁路、
+    # Quick Ask 退回进程内兜底池），与 Go 版「连不上不阻断启动」一致
+    redis_ok: bool = True
     # 行情源 / 微信 / 企业微信等有状态单例，启动时装配后挂在这里
     services: dict[str, Any] = field(default_factory=dict)
 

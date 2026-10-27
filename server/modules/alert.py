@@ -79,15 +79,12 @@ def _parse_threshold(cond_type: str, raw: Any) -> tuple[Decimal, str]:
     except (InvalidOperation, ValueError, TypeError):
         return Decimal(0), "阈值必须是数字"
 
-    if cond_type in (COND_PRICE_UP, COND_PRICE_DOWN):
-        if value <= 0:
-            return Decimal(0), "价格阈值必须大于 0"
-    elif cond_type in (COND_PCT_UP, COND_PCT_DOWN):
-        if value <= 0 or value > 100:
-            return Decimal(0), "涨跌幅阈值需在 0 ~ 100 之间"
-    elif cond_type == COND_VOLUME:
-        if value < Decimal("0.1") or value > 100:
-            return Decimal(0), "成交量倍数需在 0.1 ~ 100 之间"
+    if cond_type in (COND_PRICE_UP, COND_PRICE_DOWN) and value <= 0:
+        return Decimal(0), "价格阈值必须大于 0"
+    elif cond_type in (COND_PCT_UP, COND_PCT_DOWN) and (value <= 0 or value > 100):
+        return Decimal(0), "涨跌幅阈值需在 0 ~ 100 之间"
+    elif cond_type == COND_VOLUME and (value < Decimal("0.1") or value > 100):
+        return Decimal(0), "成交量倍数需在 0.1 ~ 100 之间"
     return value, ""
 
 
@@ -264,7 +261,7 @@ async def create_alert(request: Request, user_id: CurrentUser):
             row = await cursor.fetchone()
     except ApiError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # 唯一索引冲突：并发下两个请求同时通过了「先查」，这里兜底成 409
         if "uk_alert_user_stock_cond" in str(exc) or "duplicate key" in str(exc):
             raise ApiError(CODE_CONFLICT, "该股票的该条件提醒已存在") from exc
@@ -285,7 +282,7 @@ async def list_alerts(user_id: CurrentUser, stock_code: str = Query(default=""))
 
     try:
         rules = await _fetch_rules(user_id, code)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("list alert rules failed: user=%s", user_id)
         raise ApiError(CODE_INTERNAL, "查询提醒失败") from exc
 
@@ -357,7 +354,7 @@ async def update_alert(rule_id: str, request: Request, user_id: CurrentUser):
                 "WHERE id = %s AND user_id = %s",
                 args,
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("update alert rule failed: id=%s", identifier)
         raise ApiError(CODE_INTERNAL, "修改提醒失败") from exc
 
@@ -384,7 +381,7 @@ async def delete_alert(rule_id: str, user_id: CurrentUser):
                 "DELETE FROM alert_rule WHERE id = %s AND user_id = %s",
                 (identifier, user_id),
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("delete alert rule failed: id=%s", identifier)
         raise ApiError(CODE_INTERNAL, "删除提醒失败") from exc
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -77,7 +77,7 @@ class StockSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "StockSnapshot":
+    def from_dict(cls, data: dict) -> StockSnapshot:
         return cls(
             code=str(data.get("code") or ""),
             name=str(data.get("name") or ""),
@@ -132,7 +132,7 @@ def market_status(now: datetime | None = None) -> str:
 
     详情页只需区分「是否交易时段」，不值得为此维护一张节假日表。
     """
-    moment = (now or datetime.now(timezone.utc)).astimezone(CST)
+    moment = (now or datetime.now(UTC)).astimezone(CST)
     if moment.weekday() >= 5:
         return "closed"
     minutes = moment.hour * 60 + moment.minute

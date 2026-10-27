@@ -14,8 +14,9 @@ import asyncio
 import logging
 import os
 import sys
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from server.deps import Runtime
 
@@ -36,7 +37,7 @@ def _ensure_agent_path() -> None:
 
 def _redis_url(cfg: Any) -> str:
     addr = (cfg.redis_addr or "127.0.0.1:6379").strip()
-    if addr.startswith("redis://") or addr.startswith("rediss://"):
+    if addr.startswith(("redis://", "rediss://")):
         return addr
     auth = f":{cfg.redis_password}@" if cfg.redis_password else ""
     return f"redis://{auth}{addr}/{cfg.redis_db}"
@@ -108,7 +109,7 @@ async def startup(rt: Runtime) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("tool warmup failed: %s", exc)
 
-    _cleanup_task = asyncio.create_task(_checkpoint_cleanup_loop())
+    _cleanup_task = asyncio.create_task(_cleanup_loop())
     _ready = True
     logger.info("agent bridge ready")
 
@@ -120,8 +121,8 @@ async def shutdown() -> None:
         _cleanup_task.cancel()
         try:
             await _cleanup_task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
+        except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
+            logger.info("checkpoint cleanup task stopped: %s", exc)
         _cleanup_task = None
 
     if not _ready:
@@ -155,7 +156,7 @@ async def stream_events(
     与旧的 ndjson 通道相比少了一层序列化，但事件名与 data 结构一字不改，
     前端的 SSE 解析逻辑无需变动。
     """
-    from app.main import stream_events as _stream  # noqa: PLC0415
+    from app.main import stream_events as _stream
 
     async for event in _stream(thread_id, query, user_id):
         yield event
@@ -165,38 +166,38 @@ async def stream_events(
 
 
 async def list_sessions(user_id: str) -> list[dict[str, Any]]:
-    from core.sessions import list_sessions as _list  # noqa: PLC0415
+    from core.sessions import list_sessions as _list
 
     return await _list(user_id)
 
 
 async def upsert_session(user_id: str, session_id: str, title: str) -> None:
-    from core.sessions import upsert_session as _upsert  # noqa: PLC0415
+    from core.sessions import upsert_session as _upsert
 
     await _upsert(user_id, session_id, title, auto_title=not title.strip())
 
 
 async def session_messages(user_id: str, session_id: str) -> list[dict[str, Any]]:
-    from core.sessions import session_messages as _messages  # noqa: PLC0415
+    from core.sessions import session_messages as _messages
 
     return await _messages(user_id, session_id)
 
 
 async def delete_session(user_id: str, session_id: str) -> bool:
-    from core.sessions import delete_session as _delete  # noqa: PLC0415
+    from core.sessions import delete_session as _delete
 
     return await _delete(user_id, session_id)
 
 
 def valid_session_id(session_id: str) -> bool:
-    from core.sessions import valid_session_id as _valid  # noqa: PLC0415
+    from core.sessions import valid_session_id as _valid
 
     return _valid(session_id)
 
 
 def thread_id_of(user_id: str, session_id: str) -> str:
     """thread_id 口径与 agent 侧一致：default:{user_id}:{session_id}。"""
-    from core.sessions import thread_id_of as _tid  # noqa: PLC0415
+    from core.sessions import thread_id_of as _tid
 
     return _tid(user_id, session_id)
 
@@ -216,7 +217,7 @@ async def go_get(path: str, params: dict[str, Any] | None = None) -> dict[str, A
     直接调用本进程的业务函数，返回统一的 {ok, data} / {ok:false, error} 结构，
     与 agent/tools/__init__.py 里 go_get 的既有契约一致。
     """
-    from server.modules import stock as stock_module  # noqa: PLC0415
+    from server.modules import stock as stock_module
 
     try:
         if path == "/api/v1/stocks/search":

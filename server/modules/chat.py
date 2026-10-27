@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -81,7 +80,7 @@ def _frame(event: str, data: Any) -> bytes:
     except (TypeError, ValueError):
         # 序列化失败降级为 null，不中断整条流
         payload = "null"
-    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+    return f"event: {event}\ndata: {payload}\n\n".encode()
 
 
 def _reject_message(code: str | None) -> str:
@@ -172,7 +171,7 @@ async def _sse_stream(
             except asyncio.CancelledError:
                 # 客户端断开：向上抛出，让上层取消上游生成器
                 raise
-            except Exception as exc:  # noqa: BLE001 - 任何异常都转成 error 事件
+            except Exception as exc:
                 logger.exception("agent stream failed: thread=%s", thread_id)
                 yield _frame(
                     "error", {"code": "agent_error", "msg": f"{type(exc).__name__}: {exc}"}
@@ -182,8 +181,8 @@ async def _sse_stream(
                 if not finished:
                     try:
                         await iterator.aclose()
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as exc:  # noqa: BLE001 - 关闭上游失败不影响已发出的帧
+                        logger.info("close agent stream failed: thread=%s err=%s", thread_id, exc)
     finally:
         await limiter.release_concurrent(user_id)
 
@@ -231,7 +230,7 @@ async def agent_stream(request: Request, user_id: CurrentUser):
 async def list_sessions(user_id: CurrentUser):
     try:
         items = await agent_bridge.list_sessions(str(user_id))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info(
             "rid=%s agent sessions list failed: %s", current_request_id(), exc
         )
@@ -251,7 +250,7 @@ async def create_session(request: Request, user_id: CurrentUser):
 
     try:
         await agent_bridge.upsert_session(str(user_id), session_id, title)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info(
             "rid=%s agent session create failed: %s", current_request_id(), exc
         )
@@ -265,7 +264,7 @@ async def session_messages(session_id: str, user_id: CurrentUser):
         raise ApiError(CODE_BAD_REQUEST, "session_id 不合法")
     try:
         items = await agent_bridge.session_messages(str(user_id), session_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info(
             "rid=%s agent session messages failed: %s", current_request_id(), exc
         )
@@ -279,7 +278,7 @@ async def delete_session(session_id: str, user_id: CurrentUser):
         raise ApiError(CODE_BAD_REQUEST, "session_id 不合法")
     try:
         deleted = await agent_bridge.delete_session(str(user_id), session_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info(
             "rid=%s agent session delete failed: %s", current_request_id(), exc
         )

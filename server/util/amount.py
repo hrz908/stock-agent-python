@@ -14,19 +14,19 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 _CENT = Decimal("0.01")
-_TEN_THOUSAND = Decimal("10000")
-_HUNDRED_MILLION = Decimal("100000000")
+_TEN_THOUSAND = Decimal(10000)
+_HUNDRED_MILLION = Decimal(100000000)
 
 
 def to_decimal(value: object) -> Decimal:
     if isinstance(value, Decimal):
         return value
     if value is None or value == "":
-        return Decimal("0")
+        return Decimal(0)
     try:
         return Decimal(str(value))
     except Exception:  # noqa: BLE001 - 脏数据按 0 处理，不阻断列表渲染
-        return Decimal("0")
+        return Decimal(0)
 
 
 def fixed(value: Decimal, places: int) -> str:

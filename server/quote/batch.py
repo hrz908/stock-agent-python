@@ -62,7 +62,7 @@ async def fetch_details(codes: list[str]) -> dict[str, QuoteDetail]:
     if source.uses_custom_api:
         from decimal import Decimal
 
-        zero = Decimal("0")
+        zero = Decimal(0)
         snaps, _ = await fetch_quotes(uniq)
         status = market_status()
         for code, snap in snaps.items():

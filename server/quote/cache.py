@@ -89,7 +89,8 @@ async def batch_get_quotes(codes: list[str]) -> dict[str, StockSnapshot]:
                 continue
             try:
                 out[code] = StockSnapshot.from_dict(json.loads(raw))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 - 单条脏缓存只跳过，不拖垮整批
+                logger.info("unmarshal cached quote %s failed: %s", code, exc)
                 continue
     return out
 

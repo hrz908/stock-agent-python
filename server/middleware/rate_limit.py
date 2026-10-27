@@ -16,7 +16,7 @@ import itertools
 import logging
 import time
 import uuid
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 import redis.asyncio as aioredis
 from fastapi import Request

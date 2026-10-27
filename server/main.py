@@ -28,10 +28,10 @@ from server.middleware.rate_limit import SlidingWindowLimiter
 from server.modules import alert as alert_module
 from server.modules import auth as auth_module
 from server.modules import chat as chat_module
+from server.modules import quickask as quickask_module
 from server.modules import stock as stock_module
 from server.modules import user as user_module
 from server.modules import watchlist as watchlist_module
-from server.wecom.client import WeComClient
 from server.quote.source import MarketSource
 from server.resp import (
     CODE_BAD_REQUEST,
@@ -44,6 +44,7 @@ from server.resp import (
 )
 from server.security.auth import require_auth
 from server.wechat.session import WeChatClient
+from server.wecom.client import WeComClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -98,6 +99,8 @@ def _build_api_router() -> APIRouter:
     # 行情 / 搜索会放大成多个第三方上游请求，按用户单独限流
     market = APIRouter(dependencies=[Depends(require_auth), Depends(market_rate_limit)])
     market.include_router(stock_module.router)
+    # Quick Ask 的候选池过期时会批量拉行情，与行情同一档限流
+    market.include_router(quickask_module.router)
     api.include_router(market)
 
     return api
@@ -118,10 +121,12 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         await _apply_schema(pg)
 
         redis_client = create_redis(cfg)
-        await ping_redis(redis_client)
+        redis_ok = await ping_redis(redis_client)
 
         limiter = SlidingWindowLimiter(redis_client)
-        rt = Runtime(cfg=cfg, pg=pg, redis=redis_client, limiter=limiter)
+        rt = Runtime(
+            cfg=cfg, pg=pg, redis=redis_client, limiter=limiter, redis_ok=redis_ok
+        )
         rt.services["wechat"] = WeChatClient(
             cfg.wechat_appid, cfg.wechat_secret, cfg.http.wechat_timeout
         )
@@ -162,8 +167,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                     continue
                 try:
                     await service.close()
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001 - 收尾失败不影响进程退出
+                    logger.info("close service %s failed: %s", name, exc)
             await redis_client.aclose()
             await pg.close()
             await clear_runtime()

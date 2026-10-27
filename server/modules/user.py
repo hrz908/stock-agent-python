@@ -75,9 +75,7 @@ def _detect_image(head: bytes) -> bool:
         return True
     if head.startswith(b"\x89PNG\r\n\x1a\n"):
         return True
-    if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        return True
-    return False
+    return len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP"
 
 
 async def _current_user(user_id: int) -> dict[str, Any]:
@@ -88,7 +86,7 @@ async def _current_user(user_id: int) -> dict[str, Any]:
                 (user_id,),
             )
             row = await cursor.fetchone()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("load user failed: user=%s", user_id)
         raise ApiError(CODE_INTERNAL, "查询失败") from exc
 
@@ -136,7 +134,7 @@ async def update_profile(request: Request, user_id: CurrentUser):
                 "UPDATE users SET nickname = %s, avatar = %s, updated_at = now() WHERE id = %s",
                 (nickname, avatar, user["id"]),
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("update profile failed: user=%s", user["id"])
         raise ApiError(CODE_INTERNAL, "保存失败") from exc
 
@@ -148,7 +146,10 @@ async def update_profile(request: Request, user_id: CurrentUser):
 
 
 @router.post("/avatar")
-async def upload_avatar(user_id: CurrentUser, file: UploadFile = File(default=None)):
+async def upload_avatar(
+    user_id: CurrentUser,
+    file: UploadFile = File(default=None),  # noqa: B008 - FastAPI 的 multipart 声明惯例
+):
     if file is None or not file.filename:
         raise ApiError(CODE_BAD_REQUEST, "缺少头像文件")
 
@@ -196,7 +197,7 @@ async def upload_avatar(user_id: CurrentUser, file: UploadFile = File(default=No
                 "UPDATE users SET avatar = %s, updated_at = now() WHERE id = %s",
                 (rel, user_id),
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("update avatar failed: user=%s", user_id)
         # 回滚刚落盘的文件，别在磁盘上留一个没人引用的孤儿
         try:
@@ -218,14 +219,13 @@ async def delete_account(user_id: CurrentUser):
     # 硬删当前用户及其业务数据。对话会话与 checkpoint 由 agent 侧持有，
     # 小程序会在调用本接口前先逐条 DELETE /agent/sessions/:sid。
     try:
-        async with runtime().pg.pool.connection() as conn:
-            async with conn.transaction():
-                await conn.execute("DELETE FROM alert_rule WHERE user_id = %s", (user["id"],))
-                await conn.execute(
-                    "DELETE FROM user_watchlist WHERE user_id = %s", (user["id"],)
-                )
-                await conn.execute("DELETE FROM users WHERE id = %s", (user["id"],))
-    except Exception as exc:  # noqa: BLE001
+        async with runtime().pg.pool.connection() as conn, conn.transaction():
+            await conn.execute("DELETE FROM alert_rule WHERE user_id = %s", (user["id"],))
+            await conn.execute(
+                "DELETE FROM user_watchlist WHERE user_id = %s", (user["id"],)
+            )
+            await conn.execute("DELETE FROM users WHERE id = %s", (user["id"],))
+    except Exception as exc:
         logger.exception("delete account failed: user=%s", user["id"])
         raise ApiError(CODE_INTERNAL, "注销失败") from exc
 

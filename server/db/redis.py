@@ -17,7 +17,7 @@ logger = logging.getLogger("stocka.server.db")
 
 def _split_addr(addr: str) -> tuple[str, int]:
     text = (addr or "").strip() or "127.0.0.1:6379"
-    if text.startswith("redis://") or text.startswith("rediss://"):
+    if text.startswith(("redis://", "rediss://")):
         # 允许直接写 URL；交给 from_url 处理
         raise ValueError("URL form is handled separately")
     if ":" in text:
@@ -38,7 +38,7 @@ def create_redis(cfg: Config) -> aioredis.Redis:
         "max_connections": pool_size,
         "health_check_interval": 30,
     }
-    if addr.startswith("redis://") or addr.startswith("rediss://"):
+    if addr.startswith(("redis://", "rediss://")):
         client = aioredis.from_url(addr, **common)
     else:
         host, port = _split_addr(addr)

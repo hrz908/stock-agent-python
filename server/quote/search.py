@@ -42,12 +42,13 @@ def _decode_unicode_escape(text: str) -> str:
     while index < len(matches):
         match = matches[index]
         out.append(text[pos : match.start()])
-        code_unit = int(match.group(0)[2:], 16)
+        # 这里必须显式 base=16：group(0) 形如 "\u5c0f"，用 base=0 会解析失败
+        code_unit = int(match.group(0)[2:], 16)  # noqa: FURB166
 
         if 0xD800 <= code_unit <= 0xDBFF and index + 1 < len(matches):
             next_match = matches[index + 1]
             if next_match.start() == match.end():
-                low = int(next_match.group(0)[2:], 16)
+                low = int(next_match.group(0)[2:], 16)  # noqa: FURB166
                 if 0xDC00 <= low <= 0xDFFF:
                     combined = 0x10000 + ((code_unit - 0xD800) << 10) + (low - 0xDC00)
                     out.append(chr(combined))

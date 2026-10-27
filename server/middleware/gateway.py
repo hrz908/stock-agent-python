@@ -14,7 +14,8 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -160,7 +161,7 @@ class GatewayMiddleware:
                 await self._json(
                     send_wrapper, http_status(exc.code), body(exc.code, exc.message, None)
                 )
-        except Exception:  # noqa: BLE001 - 单请求崩溃不拖垮进程
+        except Exception:
             logger.exception("rid=%s panic", rid)
             if not state["sent"]:
                 await self._json(

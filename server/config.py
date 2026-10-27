@@ -33,7 +33,8 @@ _UNIT_SECONDS = {
 def parse_duration(raw: Any) -> float:
     """把 Go 风格时长字符串解析成秒；数字原样按秒返回。"""
     if isinstance(raw, bool):
-        raise ValueError(f"invalid duration: {raw!r}")
+        # 与同函数其它校验统一用 ValueError，调用方只需 catch 一种
+        raise ValueError(f"invalid duration: {raw!r}")  # noqa: TRY004
     if isinstance(raw, (int, float)):
         return float(raw)
     text = str(raw).strip()

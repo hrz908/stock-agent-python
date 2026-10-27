@@ -28,21 +28,21 @@ sys.path.insert(0, str(ROOT))
 # Windows 控制台默认可能是 cp1252，直接 print 中文会 UnicodeEncodeError
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-except Exception:  # noqa: BLE001 - 老终端不支持时忽略
+except Exception:  # noqa: BLE001, S110 - 老终端不支持时忽略
     pass
 
-import fakeredis.aioredis as fake_aioredis  # noqa: E402
-import httpx  # noqa: E402
+import fakeredis.aioredis as fake_aioredis
+import httpx
 
-from server import agent_bridge  # noqa: E402
-from server.agent_limiter import AgentLimiter  # noqa: E402
-from server.config import Config  # noqa: E402
-from server.deps import Runtime, set_runtime  # noqa: E402
-from server.domain.stockcode import display_code, normalize_code  # noqa: E402
-from server.main import create_app  # noqa: E402
-from server.middleware.rate_limit import SlidingWindowLimiter  # noqa: E402
-from server.security.jwt import sign_token  # noqa: E402
-from server.util.amount import money, thousands, with_sign  # noqa: E402
+from server import agent_bridge
+from server.agent_limiter import AgentLimiter
+from server.config import Config
+from server.deps import Runtime, set_runtime
+from server.domain.stockcode import display_code, normalize_code
+from server.main import create_app
+from server.middleware.rate_limit import SlidingWindowLimiter
+from server.security.jwt import sign_token
+from server.util.amount import money, thousands, with_sign
 
 JWT_SECRET = "smoke-secret"
 USER_ID = 7
@@ -235,7 +235,7 @@ async def test_sse(app) -> None:
 
     async def _noop_upsert(user_id: str, session_id: str, title: str) -> None:
         """旁路会话注册：本地没装 agent 依赖，替成空实现。"""
-        return None
+        return
 
     original = agent_bridge.stream_events
     original_upsert = agent_bridge.upsert_session
@@ -299,8 +299,104 @@ async def test_sse(app) -> None:
         agent_bridge.upsert_session = original_upsert  # type: ignore[assignment]
 
 
+async def test_quickask(app) -> None:
+    print("[4] Quick Ask")
+    import re
+
+    from server.modules.quickask import api as qa_api
+    from server.modules.quickask.models import Candidate
+
+    fake_pool = [
+        Candidate("SH600519", "贵州茅台", "食品饮料", change_pct=1.2, volume_ratio=1.1, score=90),
+        Candidate("SZ300750", "宁德时代", "电力设备", change_pct=6.5, volume_ratio=1.0, score=95),
+        Candidate("SZ002594", "比亚迪", "汽车", change_pct=-3.0, volume_ratio=2.5, score=80),
+        Candidate("SH600036", "招商银行", "银行", change_pct=0.5, volume_ratio=0.9, score=70),
+        Candidate("SZ300059", "东方财富", "非银金融", change_pct=2.0, volume_ratio=1.5, score=60),
+        Candidate("SZ000001", "平安银行", "银行", change_pct=-1.0, volume_ratio=1.0, score=50),
+    ]
+
+    async def fake_load_pool():
+        return fake_pool, "redis"
+
+    original = qa_api.load_pool
+    qa_api.load_pool = fake_load_pool  # type: ignore[assignment]
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/api/v1/quick-asks?session_id=smoke_qa_1", headers=auth_headers()
+            )
+            body = resp.json()
+            check("quick-asks 200", resp.status_code == 200, resp.text)
+            check("X-Cache MISS", resp.headers.get("X-Cache") == "MISS", resp.text)
+            data = body["data"]
+            check("默认 4 条", len(data["quick_asks"]) == 4, str(len(data["quick_asks"])))
+            check("source 透传", data["source"] == "redis", str(data["source"]))
+            check(
+                "generated_at 带 +08:00",
+                data["generated_at"].endswith("+08:00"),
+                data["generated_at"],
+            )
+            codes = [item["stock_code"] for item in data["quick_asks"]]
+            check("同批不重复", len(codes) == len(set(codes)), str(codes))
+            check("裸码 6 位", all(len(c) == 6 and c.isdigit() for c in codes), str(codes))
+            check(
+                "id 格式 qa_{code}_{ms}",
+                all(re.fullmatch(r"qa_\d{6}_\d{13}", item["id"]) for item in data["quick_asks"]),
+                str([i["id"] for i in data["quick_asks"]]),
+            )
+            check(
+                "display 含股票名",
+                all(item["stock_name"] in item["display"] for item in data["quick_asks"]),
+                str([(i["stock_name"], i["display"]) for i in data["quick_asks"]]),
+            )
+            check(
+                "query 含代码",
+                all(item["stock_code"] in item["query"] for item in data["quick_asks"]),
+                str([(i["stock_code"], i["query"]) for i in data["quick_asks"]]),
+            )
+            check(
+                "tag 合法",
+                all(item["tag"] in {"盘面", "资金", "基本面", "技术", "风险", "观察"}
+                    for item in data["quick_asks"]),
+                str([i["tag"] for i in data["quick_asks"]]),
+            )
+
+            resp = await client.get(
+                "/api/v1/quick-asks?session_id=smoke_qa_1", headers=auth_headers()
+            )
+            check("同会话 30s 内 HIT", resp.headers.get("X-Cache") == "HIT", resp.text)
+
+            resp = await client.get(
+                "/api/v1/quick-asks?count=10&session_id=smoke_qa_2", headers=auth_headers()
+            )
+            check("count 上界 clamp 到 6", len(resp.json()["data"]["quick_asks"]) == 6, resp.text)
+
+            resp = await client.get(
+                "/api/v1/quick-asks?count=1&session_id=smoke_qa_3", headers=auth_headers()
+            )
+            check("count 下界 clamp 到 3", len(resp.json()["data"]["quick_asks"]) == 3, resp.text)
+
+            resp = await client.post(
+                "/api/v1/quick-asks/click",
+                headers=auth_headers(),
+                json={"stock_code": "SH 600519"},
+            )
+            check("click 200", resp.status_code == 200, resp.text)
+            check("click 返回 ok", resp.json()["data"] == {"ok": True}, resp.text)
+
+            resp = await client.post(
+                "/api/v1/quick-asks/click",
+                headers=auth_headers(),
+                json={"stock_code": "abc"},
+            )
+            check("click 非法代码 400", resp.status_code == 400, resp.text)
+    finally:
+        qa_api.load_pool = original  # type: ignore[assignment]
+
+
 async def test_rate_limit() -> None:
-    print("[4] 限流（真实执行 Lua）")
+    print("[5] 限流（真实执行 Lua）")
     cfg = make_config()
     cfg.ratelimit.ip_per_min = 2
     redis = fake_aioredis.FakeRedis(decode_responses=True)
@@ -329,7 +425,7 @@ async def test_rate_limit() -> None:
 
 
 async def test_agent_limiter() -> None:
-    print("[5] 对话三道闸门")
+    print("[6] 对话三道闸门")
     redis = fake_aioredis.FakeRedis(decode_responses=True)
     limiter = AgentLimiter(redis, qps=1, concurrent=1, daily_quota=2)
 
@@ -364,6 +460,7 @@ async def main() -> None:
 
     await test_envelope_and_auth(app)
     await test_sse(app)
+    await test_quickask(app)
     await redis.aclose()
 
     await test_rate_limit()

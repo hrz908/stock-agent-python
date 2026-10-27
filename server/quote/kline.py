@@ -26,7 +26,7 @@ class KBar:
     d: str
     o: Decimal
     h: Decimal
-    l: Decimal  # noqa: E741 - 与上游字段名一致，避免转换时错位
+    l: Decimal
     c: Decimal
     v: int
 

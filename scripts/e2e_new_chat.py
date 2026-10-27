@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """「新对话」按钮的端到端联调脚本（真实链路，不加假实现）。
 
 链路：小程序按钮 → POST /api/v1/agent/sessions → Go 网关（鉴权 + 转发）

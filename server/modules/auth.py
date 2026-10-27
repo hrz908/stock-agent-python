@@ -14,7 +14,13 @@ from fastapi import APIRouter, Depends, Request
 
 from server.deps import config, runtime
 from server.middleware.guards import login_rate_limit
-from server.resp import CODE_BAD_GATEWAY, CODE_BAD_REQUEST, CODE_INTERNAL, ApiError, ok_response
+from server.resp import (
+    CODE_BAD_GATEWAY,
+    CODE_BAD_REQUEST,
+    CODE_INTERNAL,
+    ApiError,
+    ok_response,
+)
 from server.security.jwt import sign_token
 from server.web import read_json
 
@@ -102,7 +108,7 @@ async def login(request: Request):
 
     try:
         openid = await _openid_of(code)
-    except Exception as exc:  # noqa: BLE001 - 上游任何失败都转成 502
+    except Exception as exc:
         logger.warning("login resolve openid failed: %s", exc)
         raise ApiError(CODE_BAD_GATEWAY, "微信登录失败，请重试") from exc
 

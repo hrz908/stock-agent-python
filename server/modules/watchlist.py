@@ -40,9 +40,9 @@ logger = logging.getLogger("stocka.server.watchlist")
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
 NO_QUOTE = "--"
-HUNDRED = Decimal("100")
-ZERO = Decimal("0")
-MAX_COST_PRICE = Decimal("100000000")
+HUNDRED = Decimal(100)
+ZERO = Decimal(0)
+MAX_COST_PRICE = Decimal(100000000)
 MAX_QUANTITY = 100000000
 
 _INDEX_MESSAGE = "股票代码格式不正确，应为 SH/SZ/BJ + 6 位数字"
@@ -277,7 +277,7 @@ async def get_watchlist(
 ):
     try:
         rows = await _query_rows(user_id, ordered=True)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("query watchlist failed: user=%s", user_id)
         raise ApiError(CODE_INTERNAL, "查询自选股失败") from exc
 
@@ -314,7 +314,7 @@ async def add_watchlist(request: Request, user_id: CurrentUser):
             )
             row = await cursor.fetchone()
         count = int(row[0]) if row else 0
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("count watchlist failed: user=%s", user_id)
         raise ApiError(CODE_INTERNAL, "添加自选股失败") from exc
 
@@ -350,7 +350,7 @@ async def add_watchlist(request: Request, user_id: CurrentUser):
         async with pool.connection() as conn:
             cursor = await conn.execute(sql, args)
             saved = await cursor.fetchone()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("upsert watchlist failed: user=%s code=%s", user_id, normalized)
         raise ApiError(CODE_INTERNAL, "添加自选股失败") from exc
 
@@ -385,7 +385,7 @@ async def _refresh_params(request: Request) -> tuple[str, str]:
                         filter_ = payload["filter"]
                     if order == "" and isinstance(payload.get("order"), str):
                         order = payload["order"]
-        except Exception:  # noqa: BLE001 - body 为空或不是 JSON，按「没传」处理
+        except Exception:  # noqa: BLE001, S110 - body 为空或不是 JSON，按「没传」处理
             pass
     return (filter_ or "all"), order
 
@@ -394,7 +394,7 @@ async def _refresh_params(request: Request) -> tuple[str, str]:
 async def refresh_watchlist(request: Request, user_id: CurrentUser):
     try:
         rows = await _query_rows(user_id, ordered=False)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("query watchlist failed: user=%s", user_id)
         raise ApiError(CODE_INTERNAL, "刷新行情失败") from exc
 
@@ -432,7 +432,7 @@ async def delete_watchlist(stock_code: str, user_id: CurrentUser):
                 (user_id, normalized),
             )
             affected = cursor.rowcount or 0
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("delete watchlist failed: user=%s code=%s", user_id, normalized)
         raise ApiError(CODE_INTERNAL, "移出自选失败") from exc
 

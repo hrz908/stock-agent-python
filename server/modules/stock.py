@@ -18,7 +18,8 @@ from fastapi.responses import Response
 from server.deps import runtime
 from server.domain.stockcode import normalize_code
 from server.quote.kline import fetch_bars, period_supported
-from server.quote.search import SearchResult, search as upstream_search
+from server.quote.search import SearchResult
+from server.quote.search import search as upstream_search
 from server.resp import (
     CODE_BAD_GATEWAY,
     CODE_BAD_REQUEST,
@@ -240,10 +241,8 @@ async def service_quote(code: str) -> dict[str, Any]:
     if detail is None:
         raise ApiError(CODE_BAD_GATEWAY, "行情获取失败，请稍后重试")
     payload = _detail_payload(detail)
-    try:
-        await _cache_set(cache_key, json_bytes(CODE_OK, "ok", payload), QUOTE_CACHE_TTL)
-    except Exception:  # noqa: BLE001
-        pass
+    # _cache_set 内部已吞掉异常：缓存写失败不能影响行情返回
+    await _cache_set(cache_key, json_bytes(CODE_OK, "ok", payload), QUOTE_CACHE_TTL)
     return payload
 
 
@@ -299,7 +298,7 @@ async def get_kline(
 
     try:
         bars = await fetch_bars(normalized, period, limit)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info("fetch kline failed: code=%s period=%s err=%s", normalized, period, exc)
         raise ApiError(CODE_BAD_GATEWAY, "K线获取失败，请稍后重试") from exc
     if not bars:
@@ -342,7 +341,7 @@ async def fetch_profile(digits: str) -> dict[str, Any] | None:
         async with runtime().pg.pool.connection() as conn:
             cursor = await conn.execute(_PROFILE_SQL, (digits,))
             row = await cursor.fetchone()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info("fetch stock profile failed: code=%s err=%s", digits, exc)
         raise ApiError(CODE_INTERNAL, "主数据查询失败，请稍后重试") from exc
     if row is None or not row[0]:

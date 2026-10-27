@@ -141,7 +141,7 @@ class WeComClient:
             data = await self._do_json(
                 "POST", self._webhook, {"msgtype": "text", "text": {"content": content}}
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # webhook URL 里的 key 等同密码，错误文本会带上完整 URL，必须脱敏后再往外抛
             raise RuntimeError(self._mask(str(exc))) from exc
 

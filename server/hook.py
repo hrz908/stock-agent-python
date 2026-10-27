@@ -30,13 +30,13 @@ def register(name: str, handler: QuoteUpdatedHandler) -> None:
 async def _safe_run(handler: QuoteUpdatedHandler, user_id: int) -> None:
     try:
         await handler(user_id)
-    except Exception:  # noqa: BLE001 - 单个钩子崩溃不能影响其它订阅者
+    except Exception:
         logger.exception("hook handler failed: user_id=%s", user_id)
 
 
 def emit_quote_updated_async(user_id: int) -> None:
     """异步广播「行情已更新」，不阻塞当前请求。"""
-    for handler in list(_handlers):
+    for handler in _handlers:
         task = asyncio.create_task(_safe_run(handler, user_id))
         _background.add(task)
         task.add_done_callback(_background.discard)
