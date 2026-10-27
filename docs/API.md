@@ -1,28 +1,24 @@
-# 溜来 · 后端服务（server）
+# 溜来 · 后端接口手册
 
 技术栈：**Python 3.11 + FastAPI + psycopg3 + redis-py + LangGraph**（对话走 SSE，不保留 WebSocket）
 
-> **2026-10-27 迁移说明**：本目录原为 Go（Gin + GORM）服务，现已整体重写为 Python，
-> 并与 `agent/` **合并为同一个 FastAPI 进程**（网关 + LangGraph 问答同端口 8080）。
-> 对外契约一字未改：`{code,message,data}` 信封、`/api/v1/*` 路径、SSE 帧格式、
+> 对外契约：`{code,message,data}` 信封、`/api/v1/*` 路径、SSE 帧格式、
 > `Content-Type: text/event-stream`、金额一律字符串、HTTP 401 触发小程序静默重登。
-> 部署契约也未变：容器内监听 8080、`/healthz`（不鉴权不限流）、`uploads` 卷。
-> Go 源码见 git 历史与 `upstream` 远端仓库。
+> 部署契约：容器内监听 8080、`/healthz`（不鉴权不限流）、`uploads` 卷。
 
-迁移后的关键差异（运维要知道的三条）：
+架构要点（运维要知道的三条）：
 
-1. **不再有 `agent` 容器**：`deploy/docker-compose.prod.yml` 里只剩 `server`（Python）+ `postgres` + `redis`。
-2. **不再需要 `AGENT_BASE_URL` / `GO_SERVER_URL` / `GO_SERVER_TOKEN`**：agent 工具层改为直接调用
-   本进程的业务函数（`server/agent_bridge.py`），少一次 HTTP 与一次 JWT 自验签。
-3. **代码位于 `server/`（Python 包）**，入口 `server.main:app`；启动方式见下文「一、运行」。
+1. **单进程**：`deploy/compose/prod.yml` 里只有 `server` + `postgres` + `redis`，没有独立 agent 容器。
+2. **无自调用鉴权**：agent 工具层直接调本进程的业务函数（`src/gateway/adapters/agent_bridge.py`），
+   `AGENT_BASE_URL` / `GO_SERVER_URL` / `GO_SERVER_TOKEN` 全部作废。
+3. **代码在 `src/gateway/`（Python 包）**，入口 `gateway.main:app`；启动方式见下文「一、运行」。
 
-**仓库定位**：本目录与小程序工程 `stock-agent-miniapp` **平级**，是后端唯一实现，
-不属于任何单个小程序工程。后续其它页面（或其它端）需要后端能力时，一律在**本目录内按模块扩展**，
-不要再新建第二个后端工程。
+**仓库定位**：后端唯一实现，与小程序工程 `stock-agent-miniapp` 平级。
+其它端需要后端能力时一律在 `src/gateway/` 内按模块扩展，不要再新建第二个后端工程。
 
-**迁移进度**：Go 版全部接口已 1:1 迁移完成并通过契约冒烟——登录 / 用户资料与头像 / 自选股 /
-行情 · 搜索 · K线 · 主数据 / 提醒规则（含触发检查与企业微信推送）/ 快捷提问（热度池 +
-多样性抽样 + 模板拼句）/ 对话 SSE 与历史会话。
+**覆盖范围**：登录 / 用户资料与头像 / 自选股 / 行情 · 搜索 · K线 · 主数据 /
+提醒规则（含触发检查与企业微信推送）/ 快捷提问（热度池 + 多样性抽样 + 模板拼句）/
+对话 SSE 与历史会话。契约回归：`bash scripts/dev.sh test`。
 
 ---
 
@@ -31,34 +27,30 @@
 ### 1）起依赖（PostgreSQL + Redis）
 
 ```bash
-cd server
-docker compose up -d     # 首次会自动跑 migrations/ 下的 SQL 建库建表
-docker compose ps        # 等两个容器都 healthy 再起服务
+docker compose -f deploy/compose/dev.yml up -d     # 首次会自动跑 sql/migrations/ 建库建表
+docker compose -f deploy/compose/dev.yml ps        # 等两个容器都 healthy 再起服务
 ```
 
-> `docker-compose.yml` 把 `migrations/` 挂到了 `docker-entrypoint-initdb.d`，
-> 只在**数据目录为空时**执行一次。之后改表请加新的迁移文件，别直接改 `001_init.sql`。
+> `deploy/compose/dev.yml` 把 `sql/migrations/` 挂到了 `docker-entrypoint-initdb.d`，
+> 只在**数据目录为空时**执行一次。之后改表请加新的迁移文件，别直接改已有文件。
 
 ### 2）起服务
 
 本地直跑（Python 3.11+）：
 
 ```bash
-python -m venv .venv
-.venv/Scripts/pip install -r server/requirements.txt -r agent/requirements.txt   # Windows
-# .venv/bin/pip install -r server/requirements.txt -r agent/requirements.txt     # macOS / Linux
-
-bash scripts/dev.sh dev     # = uvicorn server.main:app --reload --port 8080
+bash scripts/dev.sh setup   # 建 .venv + 装 requirements/dev.txt
+bash scripts/dev.sh dev     # = uvicorn gateway.main:app --reload --port 8080
 ```
 
-> 网关与 agent 已合并为同一进程：`server.main:app` 同时提供 `/api/v1/*` 与 LangGraph 问答，
+> 网关与 agent 已合并为同一进程：`gateway.main:app` 同时提供 `/api/v1/*` 与 LangGraph 问答，
 > 不再需要单独启动 agent，`AGENT_BASE_URL` / `GO_SERVER_URL` / `GO_SERVER_TOKEN` 全部作废。
 
 或者整镜像跑（与生产一致，不污染本机 Python）：
 
 ```bash
-docker compose -f server/docker-compose.yml up -d     # 只起 pg + redis
-docker build -f server/Dockerfile -t stock-agent-python:local .
+docker compose -f deploy/compose/dev.yml up -d     # 只起 pg + redis
+docker build -f deploy/docker/gateway.Dockerfile -t stock-agent-python:local .
 docker run --rm --network server_default -p 18080:8080 \
   -e ENV=dev -e JWT_SECRET=local-dev-secret-32bytes \
   -e DSN="postgres://postgres:postgres@postgres:5432/stock_agent?sslmode=disable" \
@@ -99,8 +91,8 @@ bash scripts/dev.sh test     # 契约冒烟：信封 / 鉴权 / 限流 / SSE 帧
 数值型与时长型配置解析失败会直接终止启动：写错环境变量时静默回退默认值，
 问题会藏到运行期才暴露，不如启动时就报错。
 
-启动时会执行 `schema.sql`（幂等 DDL，等价于原 Go 版对用户 / 自选 / 提醒三张表的 AutoMigrate）。
-`migrations/` 里 005 之后（向量库、A股语料、A股主数据、财务指标）由 SQL 迁移持有；
+启动时会执行 `sql/bootstrap.sql`（幂等 DDL，等价于原 Go 版对用户 / 自选 / 提醒三张表的 AutoMigrate）。
+`sql/migrations/` 里 005 之后（向量库、A股语料、A股主数据、财务指标）由 SQL 迁移持有；
 已有库改表请新增迁移文件并手工执行（initdb 只在空数据卷跑）。
 
 ---
@@ -108,64 +100,44 @@ bash scripts/dev.sh test     # 契约冒烟：信封 / 鉴权 / 限流 / SSE 帧
 ## 二、目录结构
 
 ```
-server/
+src/gateway/
   main.py                       # 应用装配：lifespan、异常→信封、路由挂载、prod 自检
-  config.py                     # 环境变量 / config.yaml（env > yaml > 默认，兼容旧键名）
-  resp.py                       # 统一响应体 {code,message,data} + ApiError
-  context.py                    # request_id 的 contextvar
-  web.py                        # 请求体读取与逐接口限长
-  deps.py                       # 进程级依赖容器（pg / redis / limiter / services）
-  agent_bridge.py               # 与 agent 合流：预热、事件流、会话 CRUD、工具层直调
-  agent_limiter.py              # 对话三道闸门（QPS / 并发 / 日配额）
-  hook.py                       # 模块间事件（行情已更新）
-  schema.sql                    # 网关自管三张表的幂等 DDL
-  middleware/
-    gateway.py                  # 纯 ASGI：Recovery / RequestID / CORS / IP 限流 / AccessLog / BodyLimit
-    rate_limit.py               # 滑动窗口 Lua（放行才写入、Redis 故障 fail-open）
-    guards.py                   # 路由级限流依赖（login / market）
-    clientip.py                 # 可信反代下解析真实 IP
-  security/
-    jwt.py                      # HS256 签发 / 校验（拒绝算法混淆）
-    auth.py                     # require_auth：user_id 只从 Bearer 解出
-  db/
-    postgres.py                 # psycopg3 连接池（启动必须探活成功）
-    redis.py                    # redis.asyncio（连不上降级，不阻断启动）
-  quote/
-    source.py                   # 腾讯行情 / 详情（GBK 转码、字段下标、K线 URL 白名单）
-    cache.py                    # 30s 快照：分片 MGET / Pipeline 批量写
-    batch.py                    # 去重→分批→批间并发；单批失败不取消其它批
-    search.py                   # smartbox（\uXXXX 转义 + 只留 A 股）
-    kline.py                    # 日/周前复权与分钟线
-  modules/
-    auth.py                     # 登录：code → openid → 用户 → JWT
-    user.py                     # 资料 / 头像上传 / 注销
-    watchlist.py                # 自选：添加（先拉行情再写库）/ 列表 / 刷新 / 软删除
-    alert.py                    # 提醒 CRUD + 触发检查（防抖锁、企微双通道）
-    stock.py                    # 搜索 / 行情详情 / K线 / 主数据
-    chat.py                     # SSE 对话 + 历史会话
-    quickask/                   # 快捷提问：pool / sample / template / api 四层
-  util/
-    amount.py                   # 金额定点格式化（负零归一）
-    unique.py                   # 保序去重
-  domain/stockcode.py           # 代码归一化 / 展示格式
-  wechat/session.py             # 小程序 code2session
-  wecom/client.py               # 企业微信应用消息 / 群机器人
-  migrations/                   # 建表 SQL（initdb 只在空数据卷执行一次）
+  api/v1/                       # 路由层：只做取参 / 校验入参 / 拼响应
+    auth.py user.py watchlist.py alert.py stock.py chat.py quickask.py
+  services/                     # 业务编排：事务边界、跨模块协作，不写 SQL
+    auth.py user.py watchlist.py alert.py stock.py chat.py
+    quickask/                   # pool（候选池）/ sample（抽样）/ template（拼句）
+  repositories/                 # 数据访问：全部 SQL + 行→对象映射
+    users.py watchlist.py alert.py stock.py
+  adapters/                     # 外部系统与跨包适配
+    quote/                      # source / cache / batch / search / kline
+    wechat.py                   # 小程序 code2session
+    wecom.py                    # 企业微信应用消息 / 群机器人
+    agent_bridge.py             # 与 agent 合流：预热、事件流、会话 CRUD、工具层直调
+  infra/                        # 与业务无关的基础设施
+    config.py resp.py context.py deps.py web.py hook.py collections.py cache.py
+    agent_limiter.py            # 对话三道闸门（QPS / 并发 / 日配额）
+    db/postgres.py db/redis.py  # psycopg3 池（启动必须探活）/ redis.asyncio（降级）
+  middleware/                   # gateway / rate_limit / guards / clientip
+  security/                     # jwt.py（HS256，拒算法混淆）/ auth.py（user_id 只从 Bearer 解出）
+  domain/                       # amount.py（金额定点格式化）/ stockcode.py（代码归一化）
+  api/api.http                  # 手工调试用的请求样本
 ```
 
-**分层约定**：`server/` 是普通 Python 包；`modules/` 只放业务，`quote/` `db/` `middleware/`
-`security/` 是与页面无关的共享基础设施。agent 侧代码仍在 `agent/`，通过 `agent_bridge`
-以**同进程函数调用**接入，不再走 HTTP。
+**分层约定**：`api → services → repositories → infra` 单向依赖，禁止反跳
+（`api/` 里出现 SQL 字符串即违规）。`adapters/` 收所有「进程外」的东西，
+agent 也在这里接入——用**同进程函数调用**，不再走 HTTP。
 
 **新增一个页面的后端，三步**：
 
-1. 新建 `server/modules/<模块名>.py`，定义 `router = APIRouter(prefix=..., tags=[...])`
+1. 新建 `api/v1/<模块名>.py`，定义 `router = APIRouter(prefix=..., tags=[...])`
    与 handler（用 `CurrentUser` 拿 user_id，用 `ApiError` 返回业务错误）；
 2. 在 `main.py` 的 `_build_api_router()` 里 include 到合适的一档：
    公开 / 已鉴权（`protected`）/ 行情限流（`market`）；
-3. 需要新表就加到 `schema.sql`（网关自管）或 `migrations/`（agent 或主数据侧）。
+3. 有表操作就加 `repositories/<模块名>.py`，需要新表加到 `sql/bootstrap.sql`
+   （网关自管）或 `sql/migrations/`（agent 或主数据侧）。
 
-模块之间**不要互相 import**：跨模块联动走 `hook.py` 的事件订阅
+模块之间**不要互相 import**：跨模块联动走 `infra/hook.py` 的事件订阅
 （现在的用法：`watchlist` 刷新完广播「行情已更新」，`alert` 订阅后做提醒检查）。
 
 ---
@@ -192,7 +164,7 @@ server/
 ### 主数据（迁移 008）
 
 `stock_basic` / `stock_industry` / `stock_concept` 三张表 + 视图 `v_stock_profile`，
-由 `ingest` 的 `python -m ashare.cli sync-master` 灌数（日更清单、周更行业与概念）。
+由 `ingest` 的 `python -m ingest.ashare.cli sync-master` 灌数（日更清单、周更行业与概念）。
 
 - `GET /stocks/search`：先打腾讯 smartbox；上游失败或返回空时用 `stock_basic` 兜底
   （代码前缀 + 名称/拼音三元组匹配）。响应头 `X-Search-Source` 标明本次来源

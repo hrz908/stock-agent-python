@@ -9,7 +9,8 @@ bash scripts/install-hooks.sh           # 装钩子 + remote.prod + release/push
 bash scripts/install-hooks.sh --check   # 只体检，有缺失时退出码 1
 ```
 
-> PowerShell 里的 `bash` 指向 WSL，会报 `/bin/bash: No such file or directory`；用 Git Bash 执行本节命令（装好之后日常走 `git release`，不需要 bash）。
+> 终端用 **Git Bash**（本机默认 shell），本节命令直接 `bash scripts/install-hooks.sh`。
+> 已在 PowerShell 里时 `bash` 指向 WSL，会报 `/bin/bash: No such file or directory`，换到 Git Bash 窗口再跑（装好之后日常走 `git release`，不需要 bash）。
 
 装完后 `git pushsafe` / `git release` 就能直接用（任意子目录）。脚本只写"缺失项"，已存在且内容不同的会保留并提示，`--force` 才覆盖。
 
@@ -51,10 +52,10 @@ git config --global alias.pushsafe '!git fetch origin && git diff --quiet && git
 
 | 文件/目录 | 用途 | 恢复方式 |
 |---|---|---|
-| `server/.env` | 本地跑服务必需（`dev.sh dev`） | 从旧机拷，或按 `deploy/.env.production.example` 填本地版 |
+| 仓库根 `.env` | 本地跑服务必需（`dev.sh dev`） | 从旧机拷，或按 `deploy/.env.production.example` 填本地版 |
 | `stock-agent-miniapp/project.private.config.json` | 开发者工具个人配置 | 可不要，工具会重新生成 |
-| `stock-agent-miniapp/node_modules` + `miniprogram_npm` | 小程序依赖 | `npm install` + 工具里「构建 npm」 |
-| `.venv`（仓库根，server+agent 共用一套） | Python 依赖 | `bash scripts/dev.sh setup`（有 uv 走 uv，秒级） |
+| `stock-agent-miniapp/node_modules` + `miniprogram_npm` | 小程序依赖 | `bash scripts/dev.sh miniapp` + 工具里「构建 npm」 |
+| `.venv`（仓库根，server+agent 共用一套） | Python 依赖 | `bash scripts/dev.sh setup`（有 uv 走 uv，秒级；无 pip 的 uv venv 会自动 ensurepip） |
 | Docker Desktop / Python 3.11（uv 可选）/ Node | 本地开发 | 各自装 |
 | `/opt/stock-agent/models`（服务器） | 向量模型权重 | 只在服务器需要，本地不用 |
 
@@ -79,10 +80,11 @@ git release --dry-run   # 打印本地与服务器当前提交，不推送
 
 - **CRLF**：`.git/hooks/pre-push` 必须是 LF，否则 `sh` 报 syntax error（脚本用 heredoc 写入，天然 LF；手工拷文件要确认）。
 - **别用 WSL 的 bash**：本机 `bash` 指向 WSL，`git release` 走的是 Git 自带的 bash，没这个问题。
+- **Git Bash 的 TTY**：`psql` / `redis` 是交互式命令，mintty 窗口里 docker 拿不到 Windows 控制台，`dev.sh` 会自动加 `winpty` 前缀；被管道调用（CI、脚本里）时这两条会直接报错退出。
 - **服务器连不上 GitHub**（`[release] 错误: 服务器更新失败`，服务器上 `git fetch` 报
   `Failed to connect to github.com port 443`）：改用 `git release --via-ssh`，
   本地把分支打成 bundle 传到服务器 `/tmp`，服务器侧从文件取代码、跳过 fetch；线路恢复后照旧 `git release`。
 - **代理端口**：全局 `http.proxy` 写死 `127.0.0.1:7897`，换代理端口后 push 会卡住或报 `Failed to connect`。
 - **`JWT_SECRET` 换机器迁移服务器时要保持不变**：换了等于所有用户 token 失效，小程序强制重新登录。
 
-服务器侧的安装、备份、探活见 [`deploy/README.prod.md`](../deploy/README.prod.md)。
+服务器侧的安装、备份、探活见 [`deploy/README.md`](../deploy/README.md)。

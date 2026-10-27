@@ -1,6 +1,6 @@
 # agent/（Python 智能体）
 
-FastAPI 入口 `main.py`；LangGraph 主图在 `graph.py`。
+代码在 `src/agent/`（包名 `agent`）；LangGraph 主图在 `agent/core/graph.py`，问答事件流在 `agent/core/events.py`（由 `gateway.adapters.agent_bridge` 消费）。不再有独立 HTTP 入口。
 
 ## 主图（2026-10-23 LangGraph 架构改造后）
 guardrail → rewrite → classify → 按 intent 分流：
@@ -26,7 +26,7 @@ guardrail → rewrite → classify → 按 intent 分流：
 ## 本地验证
 - venv：`agent/.venv`（uv 建，py3.13.16，全依赖）；根 `.venv` 是 py3.14，装不了 langchain。
 - Windows 控制台必须 `-X utf8`，否则中文 print 触发 cp1252 UnicodeEncodeError。
-- 回归：`python -X utf8 tests/test_regression.py`（内置强制 STOCK_MCP_ENABLED=0）；MCP 联调：`python -X utf8 tests/smoke_mcp_tools.py`。
+- 回归：`python -X utf8 tests/regression/test_regression.py`（内置强制 STOCK_MCP_ENABLED=0）；MCP 联调：`python -X utf8 tests/smoke_mcp_tools.py`。
 - 本地直起 uvicorn 时 psycopg 在 ProactorEventLoop 下不可用 → checkpointer warmup 失败（被容错吞掉，/healthz 正常）；Docker/Linux 无此问题。
 
 ## 部署
