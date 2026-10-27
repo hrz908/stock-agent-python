@@ -45,7 +45,8 @@ CALLS = [
     ("get_quote", {"code": CODE}),
     ("get_valuation", {"code": CODE}),
     ("get_money_flow", {"code": CODE}),
-    ("get_history_daily", {"code": CODE, "days": 15}),
+    # 故意要 3 天：工具窗口收死 15 根，卡片才画得出形态（回归「最少 15 个交易日」）
+    ("get_history_daily", {"code": CODE, "days": 3}),
     ("get_stock_news", {"code": CODE, "limit": 20}),
     ("get_top_list", {"code": CODE}),
     ("get_financial_report", {"code": CODE}),
@@ -168,7 +169,7 @@ def main() -> int:
         dates = [r["date"] for r in rows]
         check("K 线交易日不重复且升序", len(dates) == len(set(dates)) and dates == sorted(dates),
               str(dates))
-        check("K 线不超过 15 根", len(rows) <= 15, str(len(rows)))
+        check("K 线固定 15 根（入参 3 天也取满）", len(rows) == 15, str(len(rows)))
     else:
         print("  SKIP  历史行情不可用")
 

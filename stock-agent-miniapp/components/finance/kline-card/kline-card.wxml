@@ -5,8 +5,8 @@
 <view class="fcard card-class">
   <view class="fcard-hd">
     <view class="fcard-title-col">
-      <!-- 标题优先级：外部指定 > 股票名 + 走势 > 兜底「K 线走势」 -->
-      <view class="fcard-name">{{title || (name ? name + ' 走势' : 'K 线走势')}}</view>
+      <!-- 标题优先级：外部指定 > 股票名 + 走势 > 兜底「K线走势」（按需求 K 与线之间不留空格） -->
+      <view class="fcard-name">{{title || (name ? name + ' 走势' : 'K线走势')}}</view>
       <view class="fcard-code num">{{code || subtitle}}</view>
     </view>
 

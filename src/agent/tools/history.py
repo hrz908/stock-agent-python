@@ -1,7 +1,7 @@
 """历史日线 K 线工具（数据源：baostock query_history_k_data_plus）。
 
-产品约定：K 线走势只需要 15 个交易日数据——窗口收死，默认与上限都是
-15 个交易日，模型传更大的 days 会被夹紧。
+产品约定：K 线走势固定 15 个交易日——窗口收死成 15，模型传更大或更小的
+days 都按 15 处理（少于 15 根蜡烛太稀，卡片上看不出形态）。
 
 baostock 直接返回复权后价格（adjustflag：2=前复权 / 1=后复权 / 3=不复权），
 不再需要原 Tushare 方案的 adj_factor 手动换算。
@@ -14,7 +14,7 @@ from langchain_core.tools import tool
 from agent.tools import call_tool_safe
 from agent.tools.market import num, run_bs, text, to_baostock_code
 
-# K 线窗口：默认与硬上限一致（产品约定：走势只需要 15 个交易日）
+# K 线窗口：固定 15 个交易日（产品约定：走势卡至少 15 根，见 kline-card 的 MAX_BARS）
 _KLINE_DAYS = 15
 
 # 「N 个交易日」换算成自然日的放大系数 + 节假日余量。
@@ -33,21 +33,22 @@ _K_FIELDS = "date,open,high,low,close,preclose,volume,amount,pctChg"
 async def get_history_daily(
     code: str, days: int = _KLINE_DAYS, adj: str = "qfq", end_date: str = ""
 ) -> dict:
-    """获取个股最近 N 个交易日的日 K 线（开高低收、涨跌幅、成交量额），支持前/后复权。
-    K 线走势只需要 15 个交易日数据：days 默认 15 且上限 15，更大的值会被截到 15。
+    """获取个股最近 15 个交易日的日 K 线（开高低收、涨跌幅、成交量额），支持前/后复权。
+    K 线走势固定 15 个交易日：传更小的 days 也会取满 15，传更大的值截到 15。
 
     Args:
         code: 股票代码，如 "600519"。
-        days: 返回最近多少个交易日，默认 15，上限 15（产品约定，传入更大的值无效）。
+        days: 窗口固定 15 个交易日（产品约定，传入其它值无效）。
         adj: 复权方式，qfq=前复权 / hfq=后复权 / ""=不复权，默认 qfq。
         end_date: 截止日期 YYYYMMDD，留空取到今天。
 
     Returns:
         {"ok": True, "data": [{trade_date,open,high,low,close,pre_close,pct_chg,
-        vol,amount}...]} 成功（按日期升序，最多 15 行，vol 单位股、amount 单位元）；
-        {"ok": False, "error": "..."} 失败。
+        vol,amount}...]} 成功（按日期升序，固定 15 行，新股/长期停牌不足 15 行；
+        vol 单位股、amount 单位元）；{"ok": False, "error": "..."} 失败。
     """
-    n = max(1, min(int(days) if days else _KLINE_DAYS, _KLINE_DAYS))
+    # 窗口收死：days 不再参与计算，一律取满 15 根（少于 15 根卡片上蜡烛太稀）
+    n = _KLINE_DAYS
     end = datetime.now()
     if end_date:
         try:

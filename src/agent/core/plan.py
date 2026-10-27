@@ -49,26 +49,12 @@ _DEFER_WORDS = ("对比", "比较", "同业", "同行", "竞品", "哪个好", "
 # 英文指标整词匹配：直接子串会把 "pe" 撞进 "peers"
 _ABBR_RE = re.compile(r"(?<![a-zA-Z])(pe|pb|ps|peg)(?![a-zA-Z])", re.IGNORECASE)
 
-# K 线天数：「最近5个交易日」「近 10 日」「3天」；工具上限 15
-_DAYS_RE = re.compile(r"(?:最近|近|过去)?\s*(\d{1,2})\s*(?:个)?(?:交易日|日|天)")
-
-_MIN_DAYS = 1
-_MAX_DAYS = 15
-_DEFAULT_DAYS = 5
+# K 线窗口：固定 15 个交易日（与 tools/history 的 _KLINE_DAYS、卡片 MAX_BARS 一致）。
+# 用户说「最近5个交易日」也取满 15 根——走势卡少于 15 根看不出形态，正文仍按 5 日口径作答。
+_KLINE_DAYS = 15
 
 # 一条问句最多并行几个工具（最慢的那个决定首屏）
 _MAX_PLAN_TOOLS = 2
-
-
-def _clip_days(raw: str) -> int:
-    m = _DAYS_RE.search(raw or "")
-    if not m:
-        return _DEFAULT_DAYS
-    try:
-        n = int(m.group(1))
-    except ValueError:
-        return _DEFAULT_DAYS
-    return max(_MIN_DAYS, min(_MAX_DAYS, n))
 
 
 def _matched_families(text: str) -> list[tuple[str, int]]:
@@ -87,7 +73,7 @@ def _matched_families(text: str) -> list[tuple[str, int]]:
 
 def _args_for(tool: str, code: str, query: str) -> dict:
     if tool == "get_history_daily":
-        return {"code": code, "days": _clip_days(query)}
+        return {"code": code, "days": _KLINE_DAYS}
     return {"code": code}
 
 

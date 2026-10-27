@@ -193,7 +193,7 @@ Component({
     name: { type: String, value: '' },
     code: { type: String, value: '' },
     // 自定义标题：多卡并列时（自选K线页的五个周期）用它写「日K线」这类周期名，
-    // 留空则退回「<股票名> 走势 / K 线走势」的对话内写法
+    // 留空则退回「<股票名> 走势 / K线走势」的对话内写法
     title: { type: String, value: '' },
     // 空态文案：给了就占住图区高度写这句话，没数据时卡片不会塌成一条
     placeholder: { type: String, value: '' },

@@ -1431,10 +1431,12 @@ def test_fast_plan_and_chat_shortcut():
         check("名称+行情 -> 名称表解析后直连",
               plan and plan[0]["args"]["code"] == "600519", str(plan))
 
-        plan = asyncio.run(fast_tool_calls("宁德时代最近5个交易日K线走势"))
-        check("K线 -> get_history_daily 且天数解析正确",
-              plan and plan[0]["name"] == "get_history_daily"
-              and plan[0]["args"]["days"] == 5, str(plan))
+        # 产品约定：走势卡固定 15 根，用户说「5 个交易日」也按 15 取数
+        for q in ("宁德时代最近5个交易日K线走势", "宁德时代K线走势", "宁德时代最近30个交易日K线"):
+            plan = asyncio.run(fast_tool_calls(q))
+            check(f"K线固定取 15 根：{q}",
+                  plan and plan[0]["name"] == "get_history_daily"
+                  and plan[0]["args"]["days"] == 15, str(plan))
 
         plan = asyncio.run(fast_tool_calls("宁德时代估值贵不贵"))
         check("估值 -> get_valuation",
