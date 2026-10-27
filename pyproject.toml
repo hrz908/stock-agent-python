@@ -1,0 +1,53 @@
+# 仓库唯一的工具配置（ruff / pyright / pytest）。
+# 不放 [project] / [build-system]：三个部署单元都不以可安装包形式分发，
+# 运行时只靠 PYTHONPATH=src 解析 `gateway` / `agent` / `ingest` / `shared` 四个包。
+# 依赖清单在 requirements/，镜像只装各自需要的那份。
+
+[tool.ruff]
+line-length = 100
+# 与镜像的 python:3.11-slim 对齐
+target-version = "py311"
+src = ["src"]
+extend-exclude = ["__pycache__", "*.pyc", "data", "parsed"]
+
+[tool.ruff.lint]
+# ASYNC 抓 async/await 误用（LangGraph 节点里最常见）
+# B   = bugbear（可变默认参数、重复 try 等）
+# I   = import 排序，替代 isort
+# UP  = 语法现代化提示
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试与压测脚本：长行、同步文件 IO、旧 % 格式化都在一次性脚本里；
+# E402 因为脚本普遍要先插 src/ 到 sys.path 再 import 自家包
+"tests/**" = ["E501", "E402", "ASYNC109", "ASYNC230", "ASYNC240", "UP031"]
+# ingest 多为长 SQL / 长日志串，历史代码按 120 列写；BLE001 不启用，
+# 因为入库管线按单条失败隔离，宽捕获是刻意设计（失败只跳过该文档，不终止整源）
+"src/ingest/**" = ["E501"]
+# CLI 脚本要先把仓库根塞进 sys.path 才能 import 自家模块
+"src/ingest/ashare/cli.py" = ["E402"]
+# watcher 是轮询式常驻任务（没有事件源）；Path 上的小文件 stat 不值得为它开线程池
+"src/ingest/main.py" = ["ASYNC110", "ASYNC240"]
+"src/ingest/pipeline.py" = ["ASYNC240"]
+# call_tool_safe 的 timeout 参数是对外 API（工具层统一传超时），不是内部实现细节
+"src/agent/tools/__init__.py" = ["ASYNC109"]
+# KBar 的字段名沿用 OHLC 惯例（o/h/l/c/v），对外 JSON 也这么下发，不改名
+"src/gateway/adapters/quote/kline.py" = ["E741"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+pythonVersion = "3.11"
+# 项目没有类型标注，先从 basic 起步；reportMissingImports 是重点：
+# LangGraph / LangChain 的字段名拼错、不存在的模块导入主要靠它抓
+typeCheckingMode = "basic"
+reportMissingImports = true
+# src 布局：IDE 不配置 sys.path 也能解析四个包
+extraPaths = ["src"]
+exclude = ["__pycache__", ".venv"]
+
+[tool.pytest.ini_options]
+# 不依赖 pip install -e：pytest 自己把 src 放进 sys.path
+pythonpath = ["src"]
+testpaths = ["tests"]

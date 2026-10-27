@@ -1,0 +1,15 @@
+# 本地开发依赖（只装进 .venv，生产镜像不装这里的东西）
+#
+# 用法：bash scripts/dev.sh setup
+#
+# 为什么不并进 requirements/gateway.txt、requirements/agent.txt：那两份是生产镜像的
+# 构建输入，多一个 ruff 就多进镜像几 MB，而容器里永远不跑 lint/测试。
+#
+# ruff 原先只在旧 .venv 里手工装过、没有任何声明，导致「删掉 .venv 重装后
+# dev.sh lint 直接 ModuleNotFoundError」。配置在根 pyproject.toml。
+-r gateway.txt
+-r agent.txt
+ruff>=0.17.0
+# 契约冒烟用：进程内假 Redis（真实执行限流 Lua 脚本，需要 [lua] 提供的 lupa），
+# 只在测试里用，不进镜像
+fakeredis[lua]>=2.20.0
