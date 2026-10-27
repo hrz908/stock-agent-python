@@ -24,7 +24,8 @@ set -euo pipefail
 REPO_URL="https://github.com/hrz908/stock-agent-rag.git"
 BRANCH="main"
 DEPLOY_DIR="/opt/stock-agent"
-COMPOSE_FILE="docker-compose.prod.yml"
+# 相对 deploy/ 目录（脚本各处都会先 cd 到那里）
+COMPOSE_FILE="compose/prod.yml"
 SSL_DIR="/etc/nginx/ssl"
 NGINX_CONF="/etc/nginx/conf.d/stock-agent.conf"
 
@@ -176,7 +177,7 @@ gen_self_signed_cert() {
 # 因此：已存在且不同就保留线上版本，只提示差异；要覆盖必须显式 --force。
 install_nginx_conf() {
     local force="${1:-}"
-    local src="$DEPLOY_DIR/deploy/nginx.prod.conf"
+    local src="$DEPLOY_DIR/deploy/nginx/prod.conf"
     if [ -f "$NGINX_CONF" ] && [ "$force" != "--force" ]; then
         if cmp -s "$src" "$NGINX_CONF"; then
             log "nginx 配置与仓库一致"

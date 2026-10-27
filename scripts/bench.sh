@@ -18,7 +18,7 @@ VENV_PY="$ROOT/.venv/bin/python"
 [[ -x "$VENV_PY" ]] || VENV_PY="$ROOT/.venv/Scripts/python.exe"
 
 PY=("$VENV_PY" -X utf8)
-BENCH_DIR="$ROOT/agent/tests/benchmark"
+BENCH_DIR="$ROOT/tests/benchmark"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8080}"
 TAG="${TAG:-latest}"
 CONC="${CONC:-4}"
@@ -56,19 +56,19 @@ EOF
 
 die() { echo "✗ $*" >&2; exit 1; }
 need_venv() {
-  [[ -x "$VENV_PY" ]] || die "缺少 .venv：python -m venv .venv && .venv/Scripts/pip install -r server/requirements.txt -r agent/requirements.txt"
+  [[ -x "$VENV_PY" ]] || die "缺少 .venv：python -m venv .venv && uv pip install -r requirements/dev.txt"
 }
 
 load_env() {
   # 与 scripts/dev.sh 同口径：.env 提供 JWT_SECRET / DSN（后者由 harness 映射为 DATABASE_URL）
-  if [[ -f "$ROOT/server/.env" ]]; then
-    set -a; . "$ROOT/server/.env"; set +a
+  if [[ -f "$ROOT/.env" ]]; then
+    set -a; . "$ROOT/.env"; set +a
   fi
 }
 
 cmd_smoke() {
   need_venv; load_env
-  (cd "$ROOT" && "${PY[@]}" agent/tests/benchmark/run.py run \
+  (cd "$ROOT" && "${PY[@]}" tests/benchmark/run.py run \
     --tag smoke --mode http --base-url "$BASE_URL" \
     --concurrency 2 --users 2 --ids "$SMOKE_IDS")
 }
@@ -78,12 +78,12 @@ cmd_quality() {
   local -a uargs=()
   [[ -n "$USERS" ]] && uargs=(--users "$USERS")
   cd "$ROOT"
-  "${PY[@]}" agent/tests/benchmark/run.py run \
+  "${PY[@]}" tests/benchmark/run.py run \
     --tag "$TAG" --mode http --base-url "$BASE_URL" \
     --concurrency "$CONC" "${uargs[@]}"
   # 规则断言是必跑项；评委按 JUDGE_IDS 抽样（空则跳过，见 judge 命令）
-  "${PY[@]}" agent/tests/benchmark/run.py eval --tag "$TAG" --no-judge
-  "${PY[@]}" agent/tests/benchmark/run.py report --tag "$TAG"
+  "${PY[@]}" tests/benchmark/run.py eval --tag "$TAG" --no-judge
+  "${PY[@]}" tests/benchmark/run.py report --tag "$TAG"
 }
 
 cmd_judge() {
@@ -91,22 +91,22 @@ cmd_judge() {
   local -a jargs=()
   [[ -n "${JUDGE_IDS:-}" ]] && jargs=(--ids "$JUDGE_IDS")
   cd "$ROOT"
-  "${PY[@]}" agent/tests/benchmark/run.py eval --tag "$TAG" \
+  "${PY[@]}" tests/benchmark/run.py eval --tag "$TAG" \
     --judge-sample "${JUDGE_SAMPLE:-0.3}" "${jargs[@]}"
-  "${PY[@]}" agent/tests/benchmark/run.py report --tag "$TAG"
+  "${PY[@]}" tests/benchmark/run.py report --tag "$TAG"
 }
 
 cmd_retrieval() {
   need_venv; load_env
   [[ -f "$BENCH_DIR/retrieval_cases.jsonl" ]] || die \
     "缺少 $BENCH_DIR/retrieval_cases.jsonl；先跑 gen_retrieval_cases.py 生成评测集"
-  (cd "$ROOT" && "${PY[@]}" agent/tests/benchmark/sweep_retrieval.py all \
+  (cd "$ROOT" && "${PY[@]}" tests/benchmark/sweep_retrieval.py all \
     --tag "${RETRIEVAL_TAG:-retrieval}")
 }
 
 cmd_inproc() {
   need_venv; load_env
-  (cd "$ROOT" && "${PY[@]}" agent/tests/benchmark/run.py run \
+  (cd "$ROOT" && "${PY[@]}" tests/benchmark/run.py run \
     --tag "${TAG}-inproc" --mode inproc --concurrency 2)
 }
 
@@ -115,27 +115,27 @@ cmd_perf() {
   local -a res_args=()
   [[ -n "${CONTAINER:-}" ]] && res_args+=(--container "$CONTAINER")
   [[ -n "${SAMPLE_PG:-}" ]] && res_args+=(--sample-pg)
-  (cd "$ROOT" && "${PY[@]}" agent/tests/benchmark/perf.py \
+  (cd "$ROOT" && "${PY[@]}" tests/benchmark/perf.py \
     --tag "$TAG" --base-url "$BASE_URL" --steps "$STEPS" \
     --duration "$DURATION" "${res_args[@]}")
 }
 
 cmd_perf_quick() {
   need_venv; load_env
-  (cd "$ROOT" && "${PY[@]}" agent/tests/benchmark/perf.py \
+  (cd "$ROOT" && "${PY[@]}" tests/benchmark/perf.py \
     --tag "${TAG}-quick" --base-url "$BASE_URL" \
     --steps "1,4" --duration 20 --cooldown 3)
 }
 
 cmd_report() {
   need_venv; load_env
-  (cd "$ROOT" && "${PY[@]}" agent/tests/benchmark/run.py report --tag "$TAG")
+  (cd "$ROOT" && "${PY[@]}" tests/benchmark/run.py report --tag "$TAG")
 }
 
 cmd_compare() {
   need_venv; load_env
   [[ -n "${BEFORE:-}" && -n "${AFTER:-}" ]] || die "compare 需要 BEFORE=xxx AFTER=yyy"
-  (cd "$ROOT" && "${PY[@]}" agent/tests/benchmark/run.py compare \
+  (cd "$ROOT" && "${PY[@]}" tests/benchmark/run.py compare \
     --before "$BEFORE" --after "$AFTER")
 }
 

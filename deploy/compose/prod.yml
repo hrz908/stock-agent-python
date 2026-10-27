@@ -1,15 +1,14 @@
-# 生产部署编排（服务器上用这个，别用 server/docker-compose.yml——那是本地开发版）
+# 生产部署编排（服务器上用这个，别用 deploy/compose/dev.yml——那是本地开发版）
 #
 #   cd deploy
 #   cp .env.production.example .env   # 填好密钥
-#   docker compose -f docker-compose.prod.yml up -d --build
-#   docker compose -f docker-compose.prod.yml logs -f server
+#   docker compose -f compose/prod.yml up -d --build
+#   docker compose -f compose/prod.yml logs -f server
 #
 # 与本地开发版的差异：
-#   - Go server 也进 compose 网络（容器名 server），agent 回调地址为 http://server:8080，
-#     不再是 host.docker.internal；
+#   - gateway 与 agent 同进程进 compose 网络（容器名 server），不再回调 HTTP 网关；
 #   - postgres / redis 不映射宿主端口，只有同网络的容器能访问；
-#   - server 的 8080 只绑 127.0.0.1，对外的 HTTPS/WSS 统一走宿主机 nginx（deploy/nginx.prod.conf）；
+#   - server 的 8080 只绑 127.0.0.1，对外的 HTTPS/WSS 统一走宿主机 nginx（deploy/nginx/prod.conf）；
 #   - 全部服务 restart: unless-stopped，开机自愈。
 #
 # 数据库位置由 .env 的 DATABASE_DSN 决定：留空=用本文件的 postgres 服务（带 localpg profile，
@@ -56,7 +55,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       # 仅数据目录为空时执行一次初始化；之后改表请加新的迁移文件
-      - ../server/migrations:/docker-entrypoint-initdb.d:ro
+      - ../../sql/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres -d stock_agent']
       interval: 3s
@@ -93,9 +92,9 @@ services:
 
   server:
     build:
-      # 网关与 agent 同进程：构建上下文上移到仓库根，一次 COPY 两个包进同一镜像
-      context: ..
-      dockerfile: server/Dockerfile
+      # 网关与 agent 同进程：构建上下文是仓库根，一次 COPY 两个包进同一镜像
+      context: ../../
+      dockerfile: deploy/docker/gateway.Dockerfile
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     container_name: stock-agent-server
@@ -140,8 +139,9 @@ services:
   # 可选：文档 ingest watcher。需要时加 --profile ingest 启动
   ingest:
     build:
-      context: ../ingest
-      dockerfile: Dockerfile
+      # 仓库根作上下文：要和 agent 共用 src/shared
+      context: ../../
+      dockerfile: deploy/docker/ingest.Dockerfile
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     container_name: stock-agent-ingest
@@ -174,8 +174,8 @@ services:
   # 取消 docker-compose 里 /models volume 挂载的注释，把模型权重放到宿主机 ASHARE_MODEL_DIR 下。
   ashare:
     build:
-      context: ../ingest
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: deploy/docker/ingest.Dockerfile
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
         # 1 = 镜像内装 torch/sentence-transformers（离线必需）
@@ -204,7 +204,7 @@ services:
       # 本地模型权重挂载（纯 API 模式下不再需要，恢复本地 embedding 时取消注释）
       # - ${ASHARE_MODEL_DIR:-../models}:/models:ro
       # init-db 子命令直接读这份迁移，避免在容器里再造一份 SQL
-      - ../server/migrations:/app/migrations:ro
+      - ../../sql/migrations:/app/migrations:ro
     depends_on:
       postgres:
         condition: service_healthy

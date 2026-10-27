@@ -11,7 +11,7 @@
 #
 # 备份落在 /var/backups/stock-agent（700 root），不在仓库目录内：
 #   /opt/stock-agent 属主是 ubuntu，`git clean -xfd` 会连 .env 一起删，备份不能放那。
-# 迁移只在数据卷为空时执行（docker-compose.prod.yml 的 initdb 挂载），
+# 迁移只在数据卷为空时执行（deploy/compose/prod.yml 的 initdb 挂载），
 # 也就是说改表/误删没有回滚路径——这份备份是唯一退路。
 #
 # 备份里含 pg 数据与 deploy/.env 副本：.env 曾在服务器上丢失过一次，
@@ -21,7 +21,6 @@
 set -euo pipefail
 
 DEPLOY_DIR="/opt/stock-agent"
-COMPOSE_FILE="docker-compose.prod.yml"
 PG_CONTAINER="stock-agent-postgres"
 PG_USER="postgres"
 PG_DB="stock_agent"

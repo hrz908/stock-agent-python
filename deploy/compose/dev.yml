@@ -1,21 +1,21 @@
 # 本地开发依赖：PostgreSQL(pgvector) + Redis [+ Ingest]
 #
-#   docker compose up -d                       # 启动核心依赖（pg/redis）
-#   docker compose --profile ingest up -d      # 附带启动文档 ingest 服务
-#   docker compose down                        # 停掉（数据保留在卷里）
-#   docker compose down -v                     # 连数据一起清掉
+#   docker compose -f deploy/compose/dev.yml up -d                    # 启动核心依赖（pg/redis）
+#   docker compose -f deploy/compose/dev.yml --profile ingest up -d   # 附带启动文档 ingest 服务
+#   docker compose -f deploy/compose/dev.yml down                     # 停掉（数据保留在卷里）
+#   docker compose -f deploy/compose/dev.yml down -v                   # 连数据一起清掉
 #
-# 网关与 agent 已合并为同一个 Python 进程，跑在宿主机而不是容器里：
-#   bash scripts/dev.sh dev        # = uvicorn server.main:app --port 8080
-# 所以本文件不再包含 agent / server 服务，只提供它们依赖的中间件。
+# 网关与 agent 是同一个 Python 进程，跑在宿主机而不是容器里：
+#   bash scripts/dev.sh dev        # = uvicorn gateway.main:app --port 8080
+# 所以本文件不包含 gateway 服务，只提供它依赖的中间件。
 #
-# 端口映射到宿主机，与 server/config.py 的默认 DSN / Redis 地址一致：
+# 端口映射到宿主机，与 gateway 配置的默认 DSN / Redis 地址一致：
 #   postgres://postgres:postgres@localhost:5432/stock_agent?sslmode=disable
 #   127.0.0.1:6379
 #
 # 说明：
 #   postgres 镜像使用 pgvector/pgvector:pg16（内置 vector 扩展），
-#   migrations/005_agent.sql 里的 CREATE EXTENSION vector 依赖此镜像。
+#   sql/migrations/005_agent.sql 里的 CREATE EXTENSION vector 依赖此镜像。
 
 services:
   postgres:
@@ -31,7 +31,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       # 仅首次初始化（数据目录为空时）执行，之后改表请用新的迁移文件
-      - ./migrations:/docker-entrypoint-initdb.d:ro
+      - ../../sql/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres -d stock_agent']
       interval: 3s
@@ -55,8 +55,9 @@ services:
 
   ingest:
     build:
-      context: ../ingest
-      dockerfile: Dockerfile
+      # 构建上下文是仓库根：ingest 要复用 src/shared（中文分词等公共实现）
+      context: ../../
+      dockerfile: deploy/docker/ingest.Dockerfile
     container_name: stock-agent-ingest
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/stock_agent?sslmode=disable
