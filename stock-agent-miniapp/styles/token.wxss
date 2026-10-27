@@ -85,49 +85,52 @@ page {
   --radius-round: 999rpx;
 
   /* ---- 阴影三档：只给浮起元素 ----
-     阴影取文字深色的 RGB，带一点冷调；纯黑阴影在白卡上会发脏 */
-  --shadow-sm: 0 2rpx 8rpx rgba(26, 29, 36, 0.06);
-  --shadow-md: 0 4rpx 16rpx rgba(26, 29, 36, 0.08);
-  --shadow-lg: 0 8rpx 32rpx rgba(26, 29, 36, 0.12);
+     阴影取文字深色的 RGB（#09090B），带一点冷调；纯黑阴影在白面上会发脏 */
+  --shadow-sm: 0 2rpx 8rpx rgba(9, 9, 11, 0.06);
+  --shadow-md: 0 4rpx 16rpx rgba(9, 9, 11, 0.08);
+  --shadow-lg: 0 8rpx 32rpx rgba(9, 9, 11, 0.12);
 
   /* ===========================================================
-     色彩 · 冷灰蓝（唯一色值来源）
-     palette：#F5F7FA（页面底）/ #DCDFE6（描边）/ #2363C7（主色）/ #1A1D24（文字）
-     底色低饱和、描边与底色同族；全站饱和色只留给涨跌与警告。
+    色彩 · shadcn zinc 中性色 + 冷蓝主色（唯一色值来源）
+    palette：#FFFFFF（页面底）/ #E4E4E7（描边）/ #2363C7（主色·冷蓝）/ #09090B（文字）
+    页面与卡面同为纯白，靠 1rpx 描边 + --shadow-sm 分层；
+    强调色只给链接与焦点，全站饱和色只留给主色、涨跌与警告。
 
-     分层：① 核心 9（换肤入口）② 扩展角色 ③ 数据语义色。
-     铁律：业务样式只写 var(--*)；hex / rgba / 命名色只允许出现在本文件。
-     =========================================================== */
+    分层：① 核心 9（换肤入口）② 扩展角色 ③ 数据语义色。
+    铁律：业务样式只写 var(--*)；hex / rgba / 命名色只允许出现在本文件。
+    =========================================================== */
 
   /* ---- ① 核心 9 ---- */
   --primary: #2363C7;
-  --success: var(--primary);
-  --warning: #E67E22;
-  --danger: #D93025;
-  --text-primary: #1A1D24;
-  --text-secondary: #525966;
-  --text-disabled: #828A99;
-  --bg-page: #F5F7FA;
-  --border: #DCDFE6;
+  --success: #16A34A;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --text-primary: #09090B;
+  --text-secondary: #71717A;
+  --text-disabled: #A1A1AA;
+  --bg-page: #FFFFFF;
+  --border: #E4E4E7;
 
   /* ---- ② 扩展角色：核心 9 之外的必需面 ---- */
-  --text-hint: rgba(26, 29, 36, 0.45);   /* 角标 / 提示，不承载正文 */
+  --text-hint: rgba(9, 9, 11, 0.45);     /* 角标 / 提示，不承载正文 */
   --text-inverse: #FFFFFF;               /* 反白文字（主色底、遮罩上） */
-  --bg-card: #FFFFFF;                    /* 卡片 / 导航白面 */
-  /* 次级表面（快捷提问、用户提问块、禁用按钮）用低透明度文字色：
-     页面底与白卡上都能落出层次，也不与描边撞色 */
-  --bg-disabled: rgba(26, 29, 36, 0.12);
-  --mask: rgba(26, 29, 36, 0.40);        /* 弹层遮罩 */
+  --bg-card: #FFFFFF;                    /* 卡片 / 导航白面（与页面底同色，靠描边分层） */
+  /* 次级表面（快捷提问、用户提问块、禁用按钮）用 zinc-100：
+     纯白页上唯一的一层浅灰，且比描边浅一档；
+     不要改回 rgba 深色叠白——叠到 0.12 正好和 --border 撞成一个灰 */
+  --bg-disabled: #F4F4F5;
+  --mask: rgba(9, 9, 11, 0.40);          /* 弹层遮罩 */
 
   /* ---- ③ 数据语义色：涨跌与状态，不参与 UI 强调 ----
      红涨绿跌是行情预期，换色会被误读：
-     涨跟随 --danger，跌单独一枚深绿（--success 已被主色占用为蓝，不可复用）。
-     跌绿 #15803D：白卡 5.0:1、页面底 4.8:1，正文级数字也读得清 */
-  --up: var(--danger);
+     涨取红 600：--danger 的红 500 在白底只有 3.8:1，而涨跌数字按正文读，
+     压深一档到 4.8:1 才够；
+     跌绿 #15803D：白底 5.0:1，且比 --success 的 #16A34A 深一档，两枚绿不混用 */
+  --up: #DC2626;
   --down: #15803D;
   --flat: var(--text-hint);
-  --up-tint: rgba(217, 48, 37, 0.08);
-  --up-border: rgba(217, 48, 37, 0.28);
+  --up-tint: rgba(220, 38, 38, 0.08);
+  --up-border: rgba(220, 38, 38, 0.28);
   --down-tint: rgba(21, 128, 61, 0.08);
   --down-border: rgba(21, 128, 61, 0.28);
 
@@ -196,12 +199,14 @@ page {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* 卡片：白面 + 1rpx 描边 + 12rpx 圆角，默认不加阴影 */
+/* 卡片：白面 + 1rpx 描边 + 12rpx 圆角 + 最轻一档投影。
+   页面底同为纯白，只靠描边划块会显得干，投影是分层的另一半 */
 .card {
   background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   padding: var(--pad-normal);
+  box-shadow: var(--shadow-sm);
 }
 
 .tabs {

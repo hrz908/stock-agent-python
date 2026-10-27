@@ -27,6 +27,7 @@
   background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .profile-avatar {
@@ -124,6 +125,7 @@
   background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ===== 字体大小（全局档位） =====

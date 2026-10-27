@@ -23,6 +23,7 @@
   background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .overview-head {
@@ -186,6 +187,7 @@
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 /* ===== 自绘左滑行（替代 t-swipe-cell） ===== */

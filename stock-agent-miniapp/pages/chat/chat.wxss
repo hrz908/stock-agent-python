@@ -664,6 +664,66 @@
   color: var(--text-hint);
 }
 
+/* 已停录：波形换成静止圆点，一眼区分「还在听」和「已经停了等你发」 */
+.voice-hold-dot {
+  flex: none;
+  width: var(--space-sm);
+  height: var(--space-sm);
+  border-radius: var(--radius-round);
+  background: var(--text-disabled);
+}
+
+/* 同传方向：可点的小胶囊，点一下中英互换 */
+.voice-panel-lang {
+  flex: none;
+  padding: var(--space-xxs) var(--space-sm);
+  border: var(--hairline);
+  border-radius: var(--radius-round);
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* 播报开关：图标键，开启时提亮到正文字色；关闭态不能点出声 */
+.voice-panel-speak {
+  flex: none;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-round);
+  color: var(--text-disabled);
+}
+
+.voice-panel-speak--on {
+  color: var(--text-primary);
+}
+
+/* 译文：与原文用虚线分开，字号小一档、颜色弱一档，最多三行 */
+.voice-panel-dst {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: var(--hairline-dashed);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: var(--font-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.voice-panel-dst-wait {
+  color: var(--text-hint);
+}
+
+/* 失败提示用警告色：这是「为什么慢」的唯一可见线索（插件限流只表现为变慢） */
+.voice-panel-dst-fail {
+  color: var(--warning);
+}
+
 @keyframes voice-live-in {
   from {
     opacity: 0;
@@ -839,7 +899,7 @@
   margin: var(--space-lg) var(--space-lg) var(--space-md);
   padding: var(--space-xs);
   box-sizing: border-box;
-  /* 抽屉里唯一的主动作：无填充、--hairline 描边（按键与输入框同一套语言） */
+  /* 抽屉里唯一的主动作：无填充、--hairline 描边（按键与输入栏同一套语言） */
   background: transparent;
   border: var(--hairline);
   border-radius: var(--radius-sm);
@@ -895,6 +955,8 @@
   padding-top: 0;
 }
 
+/* 四个导航键：底色与抽屉底同一个令牌（base-popup 左抽屉也是 --bg-disabled），
+   两块看起来是一整片；不做白卡、不加投影——抽屉里只有历史会话行还是白卡 */
 .drawer-item {
   display: flex;
   align-items: center;
@@ -902,7 +964,7 @@
   min-height: 96rpx;
   margin-bottom: var(--space-xs);
   padding: 0 var(--space-md);
-  background: var(--bg-card);
+  background: var(--bg-disabled);
   border-radius: var(--radius-sm);
 }
 
@@ -951,23 +1013,22 @@
   color: var(--text-secondary);
 }
 
-/* 会话行：平时无壳，当前会话才套一个方框。
-   透明边框常驻占位，选中时只改颜色——加边不加边会让行高与文字左右位移；
-   行与行之间留一档间距，选中框才不会和上下行贴在一起 */
+/* 会话行：底色与抽屉底同一片（--bg-disabled），不套白卡、不加边框；
+   行与行之间留一档间距，免得几条会话糊成一坨 */
 .history-item {
   display: flex;
   align-items: center;
   height: 88rpx;
   margin-bottom: var(--space-md);
   padding: 0 var(--space-xs) 0 var(--space-md);
-  background: var(--bg-card);
+  background: var(--bg-disabled);
   border-radius: var(--radius-sm);
 }
 
-/* 当前会话：浅灰底标出选中态，不加描边也不加阴影 */
-/* 当前会话：同样是白卡，靠左侧黑竖条 + 600 字重标出选中 */
+/* 当前会话：同样吃抽屉底色，靠左侧黑竖条 + 600 字重标出选中
+   （不加白底、不加描边、不加投影——抽屉里所有元素都不再抬高） */
 .history-item--active {
-  background: var(--bg-card);
+  background: var(--bg-disabled);
   border-left: 4rpx solid var(--text-primary);
   padding-left: var(--space-sm);
 }

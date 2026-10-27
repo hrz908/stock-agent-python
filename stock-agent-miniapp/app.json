@@ -12,9 +12,9 @@
   },
   "window": {
     "navigationStyle": "custom",
-    "backgroundColor": "#F5F7FA",
-    "backgroundColorTop": "#F5F7FA",
-    "backgroundColorBottom": "#F5F7FA",
+    "backgroundColor": "#FFFFFF",
+    "backgroundColorTop": "#FFFFFF",
+    "backgroundColorBottom": "#FFFFFF",
     "navigationBarTextStyle": "black"
   },
   "plugins": {

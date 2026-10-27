@@ -20,15 +20,19 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const CHAT_JS = path.join(ROOT, 'pages', 'chat', 'chat.js');
 const CARDS_JS = path.join(ROOT, 'pages', 'chat', 'cards.js');
 
-// ESM -> CJS：只处理 chat.js 的顶层 import（默认导入 / 命名导入两种形态）。
+// ESM -> CJS：只处理 chat.js 的顶层 import（默认 / 命名 / 命名空间三种形态）。
 // 必须锚到行首且限定子句字符集：文件顶部的注释里出现过
 // 「不要改成 import { generateSessionId }」这样的字样，宽松的正则会从注释里的
 // import 一路贪婪到第一个真实的 from，把整段代码替换坏
-const RE_IMPORT = /^import\s+([\w{}\s,]+?)\s+from\s+['"]([^'"]+)['"];?/gm;
+const RE_IMPORT = /^import\s+(\*\s+as\s+[\w$]+|\{[^}]*\}|[\w$]+)\s+from\s+['"]([^'"]+)['"];?/gm;
 
 function toCommonJS(src) {
   return src.replace(RE_IMPORT, (_, clause, mod) => {
     const c = clause.trim();
+    // 命名空间导入（import * as tts）：整包透传，调用方按名字取方法
+    if (/^\*\s+as\s+/.test(c)) {
+      return 'const ' + c.replace(/^\*\s+as\s+/, '') + " = __req('" + mod + "');";
+    }
     if (c.startsWith('{')) {
       const names = c
         .slice(1, -1)
@@ -160,6 +164,19 @@ function createChatPage(opts) {
       startRecognize: noop,
       stopRecognize: noop,
       abortRecognize: noop
+    },
+    // 同传链路（翻译 / 播报 / 片段切分）：本套用例不触发语音输入，给最小替身
+    '../../services/translate': {
+      translate: () => Promise.resolve('')
+    },
+    '../../services/tts': {
+      prefetch: noop,
+      speak: () => Promise.resolve(),
+      stop: noop,
+      release: noop
+    },
+    '../../utils/segment': {
+      takeStableSegment: () => null
     },
     '../../services/sessions': {
       listSessions: () => {

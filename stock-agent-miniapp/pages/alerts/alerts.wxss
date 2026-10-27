@@ -25,6 +25,7 @@
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 /* 单格：标签在上、数字在下，数字明显压过标签 */
@@ -88,6 +89,7 @@
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 .alert-card-head {

@@ -7,22 +7,25 @@
 // 组件里不允许再出现裸 hex / rgba，需要新色时先加令牌、再加到这里。
 // 2026-10-27：变量名随 skill 规范收敛（--text-primary / --bg-page / --primary ...）。
 const PALETTE = {
-  // 核心 9
+  // 核心 9（zinc 中性色 + 冷蓝主色）
   primary: '#2363C7',
-  success: '#2363C7',
-  warning: '#E67E22',
-  danger: '#D93025',
-  textPrimary: '#1A1D24',
-  textSecondary: '#525966',
-  textDisabled: '#828A99',
-  bgPage: '#F5F7FA',
-  border: '#DCDFE6',
+  success: '#16A34A',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  textPrimary: '#09090B',
+  textSecondary: '#71717A',
+  textDisabled: '#A1A1AA',
+  bgPage: '#FFFFFF',
+  border: '#E4E4E7',
   // 扩展角色
-  textHint: 'rgba(26, 29, 36, 0.45)',
+  textHint: 'rgba(9, 9, 11, 0.45)',
   textInverse: '#FFFFFF',
   bgCard: '#FFFFFF',
-  bgDisabled: 'rgba(26, 29, 36, 0.12)',
-  mask: 'rgba(26, 29, 36, 0.40)'
+  bgDisabled: '#F4F4F5',
+  mask: 'rgba(9, 9, 11, 0.40)',
+  // 数据语义（与 token.wxss 的 --up / --down 同值）
+  up: '#DC2626',
+  down: '#15803D'
 };
 
 // 图表数据系列标识色：不随 UI 色板走（浅色主题下金/灰在白底对比度不足，
@@ -37,8 +40,8 @@ const CHART_SERIES = {
 const COLOR_VARS = {
   'var(--text-primary)': PALETTE.textPrimary,
   'var(--text-inverse)': PALETTE.textInverse,
-  'var(--up)': PALETTE.danger,
-  'var(--down)': PALETTE.success,
+  'var(--up)': PALETTE.up,
+  'var(--down)': PALETTE.down,
   'var(--flat)': PALETTE.textHint,
   'var(--border)': PALETTE.border,
   'var(--bg-page)': PALETTE.bgPage,
@@ -47,10 +50,10 @@ const COLOR_VARS = {
 };
 
 // 涨跌方向 -> 色值（国内红涨绿跌）
-// 跌绿单独一枚：--success 已与主色同蓝，不能当作跌色
+// 涨比 --danger 深一档（数字按正文读），跌绿比 --success 深一档，两组都不混用
 const TREND_COLORS = {
-  up: PALETTE.danger,
-  down: '#15803D',
+  up: PALETTE.up,
+  down: PALETTE.down,
   flat: PALETTE.textHint
 };
 

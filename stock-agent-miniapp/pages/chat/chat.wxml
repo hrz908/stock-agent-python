@@ -10,7 +10,10 @@
   </base-navbar>
   <!-- 对话区：高度由 JS 精算并固定为像素值，不随视口变化抖动 -->
   <view class="chat-wrap" style="height: {{chatHeight}}px;">
-    <scroll-view class="chat-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}" scroll-with-animation="{{scrollAnimated}}" scroll-top="{{scrollTop}}">
+    <!-- 手势同时绑在 scroll-view 上：enhanced 的滚动容器会吞掉一部分 touchmove，
+         事件到不了根节点，右滑开抽屉就成了「时灵时不灵」。两处都绑 →
+         冒泡正常情况下子先父后各跑一次，_applySwipe 里有锁，重复调用是安全的 -->
+    <scroll-view class="chat-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}" scroll-with-animation="{{scrollAnimated}}" scroll-top="{{scrollTop}}" bindtouchstart="onSwipeStart" bindtouchmove="onSwipeMove" bindtouchend="onSwipeEnd" bindtouchcancel="onSwipeEnd">
       <view class="chat-inner">
         <!-- 历史消息分片：只渲染最近一批，更早的按页向前补（见 chat.js 的 onLoadEarlier） -->
         <view wx:if="{{hasEarlier}}" class="load-earlier" bindtap="onLoadEarlier">查看更早的 {{earlierCount}} 条</view>
@@ -135,22 +138,40 @@
   <!-- 输入栏：页面自绘的一条胶囊，左端模式键（语音 / 键盘），右端是发送键。
        手势起点标记用 bind 而不是 catch：catch 会让子元素的点击全部失效，
        这里改成「起点在输入栏」的信号，由 onSwipeStart 判断后锁掉抽屉手势 -->
-  <view class="sender-wrap" style="padding-bottom: {{senderPadBottom}}px; bottom: {{keyboardOffset}}px;" bindtouchstart="onSenderTouchStart">
-    <!-- 预输入文字框：点一下语音键后弹出，边说边出字，再点一下直接发给 agent。
+  <view class="sender-wrap" style="padding-bottom: {{senderPadBottom}}px; bottom: {{keyboardOffset}}px;" bindtouchstart="onSenderTouchStart" bindtouchend="onSenderTouchEnd" bindtouchcancel="onSenderTouchEnd">
+    <!-- 同传面板：点一下语音键后弹出，边说边出原文与译文，再点一下把原文发给 agent。
+         静音自动停录后面板不消失，转成「已停录」待发送态。
          绝对定位（bottom:100%），不参与布局，不会挤压对话区 -->
-    <view wx:if="{{recording}}" class="voice-panel">
+    <view wx:if="{{recording || voiceHolding}}" class="voice-panel">
       <view class="voice-panel-hd">
-        <view class="voice-wave">
+        <view wx:if="{{recording}}" class="voice-wave">
           <view class="voice-wave-bar"></view>
           <view class="voice-wave-bar"></view>
           <view class="voice-wave-bar"></view>
         </view>
-        <text class="voice-panel-tip">实时转写</text>
-        <!-- 误点了想收回：立刻丢弃这次识别，不发出 -->
+        <view wx:else class="voice-hold-dot"></view>
+        <text class="voice-panel-tip">{{recording ? '实时同传' : '已停录'}}</text>
+        <!-- 方向：切了以后识别语言、译文与播报音色一起换 -->
+        <view class="voice-panel-lang" catchtap="onVoiceSwapDir" aria-label="切换同传方向">{{voiceLangLabel}}</view>
+        <!-- 播报开关：默认开，公共场合可一键静音 -->
+        <view
+          class="voice-panel-speak {{voiceSpeak ? 'voice-panel-speak--on' : ''}}"
+          catchtap="onVoiceToggleSpeak"
+          aria-label="切换译文播报"
+        >
+          <base-icon type="AudioOutline" style="font-size:var(--icon-xs);" />
+        </view>
+        <!-- 误点了想收回：立刻丢弃这次识别与译文，不发出 -->
         <view class="voice-panel-cancel" catchtap="onVoiceCancel">取消</view>
       </view>
       <view class="voice-panel-text {{voiceText ? '' : 'voice-panel-text--empty'}}">
         {{voiceText || '请说话…'}}
+      </view>
+      <!-- 译文：逐段补齐；失败时给一句能解释「为什么慢」的提示（多半是接口限流） -->
+      <view wx:if="{{voiceDst || voiceTranslating || voiceDstFailed}}" class="voice-panel-dst">
+        <text wx:if="{{voiceDst}}">{{voiceDst}}</text>
+        <text wx:if="{{voiceTranslating}}" class="voice-panel-dst-wait">{{voiceDst ? ' …' : '翻译中…'}}</text>
+        <text wx:elif="{{voiceDstFailed && !voiceDst}}" class="voice-panel-dst-fail">翻译暂不可用，可能已触发接口限流</text>
       </view>
     </view>
     <view class="sender-bar">
@@ -177,14 +198,15 @@
       <!-- 发送键：键盘态不填充、不画外圈，靠墨色图标表达主次（无输入内容、等待回复时都不切色）。
            语音态只保留图标——胶囊里没有文字可发，这个键的语义变成
            「收尾并发出」，未在聆听时用弱色表示暂不可用（见 chat.js 的 onSend） -->
-      <view class="bar-send {{voiceMode ? 'bar-send--plain' : ''}} {{recording ? 'bar-send--live' : ''}}" aria-label="发送" bindtap="onSend">
+      <view class="bar-send {{voiceMode ? 'bar-send--plain' : ''}} {{recording || voiceHolding ? 'bar-send--live' : ''}}" aria-label="发送" bindtap="onSend">
         <view wx:if="{{sending}}" class="bar-send-stop"></view>
         <base-icon wx:else type="SendOutline" style="font-size:var(--icon-base);" />
       </view>
     </view>
   </view>
   <!-- 侧边抽屉：自研 base-popup left 模式。
-       点遮罩 / 左滑都能关；收起动画结束（leaved）后才跳转，避免动画被新页面掐断 -->
+       点抽屉外的遮罩关闭（滑动只负责开），收起动画结束（leaved）后才跳转，
+       避免动画被新页面掐断 -->
   <base-popup visible="{{drawerOpen}}" mode="left" bind:mask="onDrawerMask" bind:leaved="onDrawerLeaved">
     <!-- 抽屉竖向分三层：头部与导航固定，历史对话自己滚，新对话钉在底部。
          底部内边距与聊天输入栏同源（padBottom = 安全区），

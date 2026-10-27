@@ -38,10 +38,36 @@ function scheduleReset() {
     const p = pending;
     current = null;
     pending = null;
+    clearSilence(s);
     // 取消过的不通知（页面已复位）；排队中的会话也要给个失败回调，否则视图停在录音态
     if (s && !s.aborted) s.onError('识别超时');
     if (p) p.handlers.onError('识别超时');
   }, STALE_RESET_MS);
+}
+
+/* ===== 静音自动收尾 =====
+   只在调用方显式传 silenceMs 时启用：语音输入需要「说完就出终稿」，
+   其它调用方不传就保持原行为，不能被悄悄改掉。
+   插件没有静音检测参数，只能在中间结果停更时自己判停。 */
+function clearSilence(session) {
+  if (session && session.silenceTimer) {
+    clearTimeout(session.silenceTimer);
+    session.silenceTimer = 0;
+  }
+}
+
+function armSilence(session) {
+  if (!session || !session.silenceMs) return;
+  clearSilence(session);
+  // 首次开口前给更长的宽限：刚点下按钮时用户往往还在组织语言，
+  // 按静音时长直接判停会把人「还没开口就掐掉」
+  const wait = session.heard ? session.silenceMs : Math.max(4000, session.silenceMs * 3);
+  session.silenceTimer = setTimeout(() => {
+    session.silenceTimer = 0;
+    if (current !== session || session.aborted) return;
+    safeStop();
+    scheduleReset();
+  }, wait);
 }
 
 // 上一条收尾后再启动排队的会话：插件同一时间只允许一次识别任务
@@ -63,13 +89,20 @@ function ensureManager() {
   manager.onRecognize = (res) => {
     const s = current;
     if (!s || s.aborted) return;
-    s.onPartial(String((res && res.result) || ''));
+    const text = String((res && res.result) || '');
+    // 空串不算开口：插件启动瞬间会先回一帧空结果，按它起算会把静音判停提前
+    if (text) {
+      s.heard = true;
+      armSilence(s);
+    }
+    s.onPartial(text);
   };
 
   manager.onStop = (res) => {
     clearReset();
     const s = current;
     current = null;
+    clearSilence(s);
     // 取消过的不再回终稿：调用方已经复位视图，迟到的文本会串进下一次输入
     if (s && !s.aborted) {
       s.onFinal({
@@ -84,6 +117,7 @@ function ensureManager() {
     clearReset();
     const s = current;
     current = null;
+    clearSilence(s);
     if (s && !s.aborted) s.onError((res && (res.msg || res.errMsg)) || '识别失败');
     flushPending();
   };
@@ -92,19 +126,26 @@ function ensureManager() {
 }
 
 function startNow(handlers, options) {
+  const opts = options || {};
   const session = {
     onPartial: handlers.onPartial || noop,
     onFinal: handlers.onFinal || noop,
     onError: handlers.onError || noop,
     aborted: false,
+    // 静音判停（0 = 关闭）
+    silenceMs: Math.max(0, Number(opts.silenceMs) || 0),
+    heard: false,
+    silenceTimer: 0,
     startedAt: Date.now()
   };
   current = session;
   try {
     // duration 上限 60000，到点插件自动停并回调 onStop，与手动松手同一条收尾链路
-    manager.start({ duration: options.duration || 60000, lang: options.lang || 'zh_CN' });
+    manager.start({ duration: opts.duration || 60000, lang: opts.lang || 'zh_CN' });
+    armSilence(session);
   } catch (e) {
     current = null;
+    clearSilence(session);
     session.onError('语音识别不可用');
   }
 }
@@ -124,6 +165,7 @@ export function startRecognize(handlers, options) {
   // 上一条还在收尾（取消、刚松手）：排队等它的 onStop，否则旧终稿会串到新一次录音里
   if (current) {
     current.aborted = true;
+    clearSilence(current);
     pending = { handlers: h, options: o };
     safeStop();
     scheduleReset();
@@ -135,6 +177,8 @@ export function startRecognize(handlers, options) {
 // 松手：停止录音，等插件回调 onStop 给终稿
 export function stopRecognize() {
   if (!current || current.aborted) return;
+  // 手动 stop 优先：清掉静音计时，免得它再补一次 stop
+  clearSilence(current);
   safeStop();
   scheduleReset();
 }
@@ -143,6 +187,7 @@ export function stopRecognize() {
 export function abortRecognize() {
   if (!current) return;
   current.aborted = true;
+  clearSilence(current);
   safeStop();
   scheduleReset();
 }
