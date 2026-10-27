@@ -309,21 +309,39 @@ class Store:
         )
         self.conn.commit()
 
-    def prune_outside_universe(self, apply: bool = False) -> dict:
+    def prune_outside_universe(self, apply: bool = False, grace_days: int = 0) -> dict:
         """清理热门池之外的个股语料。
 
         只删「全部股票代码都不在池内」的文档：市场级快讯、政策、概念知识卡片
         的 stock_codes 为空，属于公共语料，不该被股票池裁剪波及。
+
+        grace_days > 0 时，最近 N 天进过池子的代码也算池内。rank 300 附近每天进出很频繁，
+        一掉出就删会把它的历史语料连根拔掉——再回到池子里也只能按水位重采近期，
+        旧窗口永远补不回来。宽限期让这种抖动不产生删写循环。
         """
-        rows = self.conn.execute(
+        params: dict = {}
+        grace = ""
+        if grace_days > 0:
+            grace = """
+                    UNION
+                    SELECT code::text FROM ashare_universe_history
+                     WHERE trade_date >= CURRENT_DATE - %(grace)s::int
             """
+            params["grace"] = int(grace_days)
+        rows = self.conn.execute(
+            f"""
             SELECT a.doc_id FROM ashare_documents a
-            WHERE a.stock_codes <> '{}'::text[]
+            WHERE a.stock_codes <> '{{}}'::text[]
               AND NOT (a.stock_codes && (
                     -- code 是 VARCHAR(6)，数组重叠要求两侧同类型
-                    SELECT COALESCE(array_agg(code::text), '{}'::text[]) FROM ashare_universe
+                    SELECT COALESCE(array_agg(DISTINCT c), '{{}}'::text[])
+                    FROM (
+                        SELECT code::text AS c FROM ashare_universe
+                        {grace}
+                    ) t
               ))
-            """
+            """,
+            params or None,
         ).fetchall()
         ids = [row["doc_id"] for row in rows]
         if not ids or not apply:

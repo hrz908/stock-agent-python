@@ -239,16 +239,17 @@ ssl_certificate_key /etc/nginx/ssl/stock-agent.key;
 cd /opt/stock-agent/deploy
 docker compose -f compose/prod.yml --profile ashare run --rm ashare \
   python -m ingest.ashare.cli init-db
-# 2.1) 主数据表：008 清单/行业/概念，009 财务指标宽表（P1，可后置），010 profile 视图
+# 2.1) 主数据表：008 清单/行业/概念，009 财务指标宽表，010 profile 视图，014 估值日表
 docker compose -f compose/prod.yml --profile ashare run --rm ashare \
   python -m ingest.ashare.cli init-db --file 008_stock_master.sql \
-    --file 009_stock_finance_indicator.sql --file 010_stock_profile_any_source.sql
+    --file 009_stock_finance_indicator.sql --file 010_stock_profile_any_source.sql \
+    --file 014_stock_data_tables.sql
 # 3) 首次灌主数据：先清单，再行业/概念（东财可用时约 4~5 分钟；退新浪兜底时约 3 分钟）
 docker compose -f compose/prod.yml --profile ashare run --rm ashare \
   python -m ingest.ashare.cli sync-master --only basic
 docker compose -f compose/prod.yml --profile ashare run --rm ashare \
   python -m ingest.ashare.cli sync-master
-# 4) 刷一次采集范围（成交额 Top 500）并做一次增量
+# 4) 刷一次采集范围（成交额 Top 300）并做一次增量
 sudo bash scripts/ashare-sync.sh universe
 sudo bash scripts/ashare-sync.sh daily
 # 5) 验证
@@ -258,7 +259,7 @@ docker compose -f compose/prod.yml --profile ashare run --rm -T ashare \
 
 ### 10.1 采集范围：成交额 Top N 股票池
 
-默认只采成交额前 500 只（`ASHARE_UNIVERSE_TOP_N` 可调），池子每天收盘后整体刷新并留一份
+默认只采成交额前 300 只（`ASHARE_UNIVERSE_TOP_N` 可调），池子每天收盘后整体刷新并留一份
 `ashare_universe_history` 快照：
 
 ```bash
@@ -270,12 +271,36 @@ sudo docker exec stock-agent-postgres psql -U postgres -d stock_agent \
 `collect --universe` / `backfill --universe` 都以这张表为范围；池子为空时命令直接报错，
 不会悄悄退化成「全市场」。
 
+口径统一：向量语料与业务表（财务指标/估值）都取同一个池子——`sync-finance` / `sync-valuation`
+不传 `--codes` 就是当前池子，不要各自维护一份名单。`stock_basic` / `stock_industry` /
+`stock_concept` 是「全市场身份表」，服务 `symbol_search` 与同业对比，**不随 Top N 收窄**。
+
+回填断点的 scope 里带池子大小与分片号（如 `universe300#1-2`）：换了 N 重跑、或某片跳过别的片
+已完成的窗口，都会各自留痕，不会因为旧断点静默漏采。
+
+### 10.1.1 切换范围（N）
+
+```bash
+sudo bash scripts/ashare-sync.sh rescale     # 读 ASHARE_UNIVERSE_TOP_N
+```
+
+顺序在脚本里写死：刷新池子 → 统计（不删）→ 删除 → 清旧 scope 断点。不能手工把这些步骤拆开跑：
+`prune --outside-universe` 的判定集就是 `ashare_universe` 的**当前内容**，池子没刷新之前跑
+等于空转（`matched: 0`），而且会让人误以为已经清干净。
+
+稳态由 cron 每周六跑 `pool-prune`，带 14 天宽限（`ASHARE_POOL_PRUNE_GRACE_DAYS`）：池子按成交额
+整体替换，rank 300 附近每天进出很频繁，一掉出就删会把它的历史语料连根拔掉——再回池子只能按水位
+重采近期，旧窗口永远补不回来。宽限期用 `ashare_universe_history` 判定「最近 N 天进过池」。
+
 ### 10.2 每日收盘入库（推荐，替代常驻 daemon）
 
 ```bash
-sudo bash scripts/ashare-sync.sh install-cron   # 每周一至周五 15:10
+sudo bash scripts/ashare-sync.sh install-cron   # 语料 15:10 / 业务表 15:40（周一至周五）、池外清理 周六 09:20
 tail -f /var/log/stock-agent-ashare.log
 ```
+
+采集镜像在 `ashare` profile 下，`compose up` 不会构建它；`deploy` / `update` 现在会自动补一次
+`build ashare`（失败只告警，不挡主服务上线）。
 
 常驻 `daemon` 仍保留，但它按 5~30 分钟空转、反复打源站，3GB 机器上不划算；
 每日一次 `--rm` 容器跑完即退，内存不常驻。
@@ -290,9 +315,12 @@ sudo bash scripts/ashare-sync.sh backfill --source cninfo --universe \
   --since 2025-10-28 --until 2026-10-28 --window-days 31 --shard 2/2 &
 ```
 
-容量参考（实测）：单块向量含 HNSW 索引与全文索引约 22KB。500 只股票一年定期报告约
-35~40 万块 ≈ 8GB，正好是这台 40G 机器（剩 23G，另有 7 天备份）能长期扛住的上限；
-五年全量约 40GB，放不下。
+容量参考（实测）：单块向量含 HNSW 索引与全文索引约 22KB。300 只股票一年定期报告约
+33 万块 ≈ 7.5GB（500 只约 55 万块 ≈ 12.5GB），这台 40G 机器（剩 23G，另有 7 天备份）扛
+300 只比较从容；五年全量约 40GB，放不下。
+
+池子按成交额整体替换，rank 300 附近每天进出频繁，被踢出的股票语料就停在当天且不会报错。
+长尾标的不要靠调大 N，用 `--codes` 按需补采。
 
 ### 10.4 保留窗口
 
@@ -306,6 +334,36 @@ sudo bash scripts/ashare-sync.sh backfill --source cninfo --universe \
 主数据的日常维护：`--only basic` 每天一次（改名/退市/ST），行业与概念每周一次。
 没灌数据时 `/api/v1/stocks/profile` 会返回 404、搜索的本地兜底不生效（正常搜索不受影响，
 仍走腾讯源）。验收 SQL 见业务表文档 §10。
+
+### 10.5 数据类业务表（数值问答走这里）
+
+数值问题（营收/净利/ROE/PE/PB/市值）不走向量检索：从 450 字的文本块里抽数字既不准也慢。
+两类数据落业务表，由 `scripts/ashare-sync.sh data`（cron 15:40）每日写入，范围与向量语料同一池子：
+
+| 表 | 内容 | 来源 |
+|---|---|---|
+| `stock_finance_indicator`（009） | 报告期 EPS/ROE/毛利率/营收/净利/同比，带 `announce_date` 做 as-of | 东财业绩报表 `stock_yjbb_em`，一次调用覆盖全市场一期 |
+| `stock_valuation_daily`（014） | 每日 PE(静/TTM)/PB/PS/股息率/总市值/流通市值 | 东财 `stock_value_em`，逐股但一次返回整段历史 |
+
+`stock_data_sync_state` 记两套同步的水位与最近成功时间。agent 侧不是「库里有数据就用」，
+而是看「最近一次同步成功是否在 48 小时内」（`FINANCE_SYNC_MAX_AGE_HOURS`），过期就整条回落
+实时接口，避免同步一挂就长期答旧数；`FINANCE_SOURCE=live` 可一键回滚到全实时。
+
+```bash
+# 首次灌数：财务指标 5 年 + 估值回补 250 个交易日
+sudo bash scripts/ashare-sync.sh data
+sudo docker compose -f compose/prod.yml --profile ashare run --rm -T ashare \
+  python -m ingest.ashare.cli sync-valuation --days 250
+
+# 验收
+sudo docker exec stock-agent-postgres psql -U postgres -d stock_agent -c \
+  "SELECT count(*), min(report_date), max(report_date) FROM stock_finance_indicator"
+sudo docker exec stock-agent-postgres psql -U postgres -d stock_agent -c \
+  "SELECT dataset, watermark, last_ok_at, rows_written, error FROM stock_data_sync_state"
+```
+
+未落表的部分：`get_financial_report`（财报速览卡）要利润表/现金流量表的完整科目（营业成本、
+利润总额、经营现金流净额），目前仍走实时接口；要收进来得再加一张三表科目表。
 
 注意：`ashare` 与文件 ingest 共用 `chunks` 表，维度由 `.env` 的 `EMBED_DIM` 决定
 （当前 1536），与 agent 的 `ONLINE_EMBED_MODEL/EMBED_DIM` 必须一致；换模型要同时重嵌两边。

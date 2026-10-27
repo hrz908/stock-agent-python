@@ -124,8 +124,11 @@ REPORT_OVERLAP_HOURS = _int("ASHARE_REPORT_OVERLAP_HOURS", 72)
 LATEST_OVERLAP_HOURS = _int("ASHARE_LATEST_OVERLAP_HOURS", 6)
 
 # ---- 热门池与回填 ----
-# 只采成交额前 N 只；每天收盘后由 scripts/ashare-daily.sh 刷新
-UNIVERSE_TOP_N = _int("ASHARE_UNIVERSE_TOP_N", 500)
+# 只采成交额前 N 只；每天收盘后由 scripts/ashare-sync.sh 刷新。
+# 取 300 而不是 500：成本随 N 线性（300 只一年约 33 万块 / 7.5GB，500 只要 55 万块 / 12.5GB），
+# 而成交额分布长尾，300→500 只多覆盖几个百分点，却多出 200 只每天进出池子的边缘股
+# （池子整体替换，被踢出的股票语料就停在当天，且不报错）。长尾靠按需 --codes 补采更划算。
+UNIVERSE_TOP_N = _int("ASHARE_UNIVERSE_TOP_N", 300)
 # 收盘增量任务默认采哪些源（个股新闻 em-news 需显式给代码，默认不在内）
 DAILY_SOURCES = os.getenv("ASHARE_DAILY_SOURCES", "cninfo,em-report,cls,ths,em-global")
 # 回填窗口天数：按单窗口查询，避免「一次五年」撞上各源的分页上限
@@ -134,6 +137,14 @@ BACKFILL_WINDOW_DAYS = _int("ASHARE_BACKFILL_WINDOW_DAYS", 31)
 BACKFILL_YEARS = _int("ASHARE_BACKFILL_YEARS", 1)
 # 保留窗口：每日任务跑完会删掉早于 N 天的语料；0=不删
 RETENTION_DAYS = _int("ASHARE_RETENTION_DAYS", 365)
+
+# ---- 数据类业务表（迁移 009 / 014）----
+# 财务指标保留年限：报告期维度，5 年 = 20 期 × 池内 300 只 ≈ 6000 行，成本可忽略，
+# 却能回答「ROE 三年趋势 / 营收连续几季加速」这类问题。向量语料仍只留一年，
+# 两者不必对齐：结构化行的存储代价和文本块不是一个量级。
+FINANCE_YEARS = _int("ASHARE_FINANCE_YEARS", 5)
+# 每日估值回看的交易日数：日更 5 天够覆盖停牌与漏跑；补历史用 sync-valuation --days 250
+VALUATION_DAYS = _int("ASHARE_VALUATION_DAYS", 5)
 
 # ---- 守护进程 ----
 DAEMON_INTERVALS = {

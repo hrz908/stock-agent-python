@@ -3,8 +3,11 @@
 #
 # 用法：
 #   sudo bash scripts/ashare-sync.sh daily            # 收盘后跑一次（cron 调的就是它）
-#   sudo bash scripts/ashare-sync.sh install-cron     # 装每周一至周五 15:10 的定时任务
+#   sudo bash scripts/ashare-sync.sh data             # 财务指标/估值落业务表（cron 15:40）
+#   sudo bash scripts/ashare-sync.sh install-cron     # 装定时任务（语料 15:10、业务表 15:40）
 #   sudo bash scripts/ashare-sync.sh universe         # 只刷新成交额 Top N 股票池
+#   sudo bash scripts/ashare-sync.sh rescale          # 换范围：刷池子 → 清池外语料 → 清旧断点（顺序固定）
+#   sudo bash scripts/ashare-sync.sh pool-prune       # 每周六清池外语料（带宽限，cron 调）
 #   sudo bash scripts/ashare-sync.sh backfill --source cninfo --universe --shard 1/3
 #
 # 为什么是「一次性容器 + cron」而不是常驻 daemon：
@@ -67,7 +70,32 @@ ashare_cli() {
 }
 
 cmd_universe() {
-    ashare_cli sync-universe --top "${ASHARE_UNIVERSE_TOP_N:-500}"
+    ashare_cli sync-universe --top "${ASHARE_UNIVERSE_TOP_N:-300}"
+}
+
+# 切换采集范围（Top N）。顺序写死，避免手工拼命令时把 prune 跑在刷新池子之前：
+# prune --outside-universe 的判定集就是 ashare_universe 的当前内容，池子没刷之前跑等于空转（matched=0）。
+cmd_rescale() {
+    take_lock rescale
+    warn "切换采集范围到 Top${ASHARE_UNIVERSE_TOP_N:-300} ..."
+    cmd_universe
+    log "池外个股语料统计（不删）..."
+    ashare_cli prune --outside-universe
+    log "执行删除..."
+    ashare_cli prune --outside-universe --yes
+    log "清理旧口径的回填断点（scope=universe）..."
+    ashare_cli forget-backfill --scope universe
+    log "完成：回填请用新 scope（universe${ASHARE_UNIVERSE_TOP_N:-300}#i-n）重起"
+}
+
+# 稳态维护：每周清一次池外语料。带宽限，rank 边界股反复进出不会被连根删掉
+# （删掉等于把它的历史语料清零，再回池子也只能按水位重采近期）。
+cmd_pool_prune() {
+    take_lock pool-prune
+    log "清理池外语料（宽限 ${ASHARE_POOL_PRUNE_GRACE_DAYS:-14} 天）..."
+    ashare_cli prune --outside-universe --yes \
+        --grace-days "${ASHARE_POOL_PRUNE_GRACE_DAYS:-14}"
+    log "完成"
 }
 
 cmd_daily() {
@@ -87,6 +115,18 @@ cmd_daily() {
         log "清理 ${retention} 天之前的语料..."
         ashare_cli prune --older-than "$retention" --yes
     fi
+    log "完成"
+}
+
+# 数据类（数值）落业务表：财务指标 + 每日估值。
+# 与向量语料同一池子（--codes 留空=当前热门池），这样「问数字」和「问文字」覆盖的是同一批股票。
+# 财务指标按报告期取（一次调用覆盖全市场一期），估值逐股但只写最近几天。
+cmd_data() {
+    take_lock data
+    log "同步报告期财务指标（最近 ${ASHARE_FINANCE_YEARS:-5} 年）..."
+    ashare_cli sync-finance --years "${ASHARE_FINANCE_YEARS:-5}"
+    log "同步每日估值（每股 ${ASHARE_VALUATION_DAYS:-5} 个交易日）..."
+    ashare_cli sync-valuation --days "${ASHARE_VALUATION_DAYS:-5}"
     log "完成"
 }
 
@@ -114,6 +154,16 @@ cmd_install_cron() {
     require_root install-cron
     local hour=${ASHARE_CRON_HOUR:-15}
     local minute=${ASHARE_CRON_MINUTE:-10}
+    # 业务表同步错开半小时：两个任务都在打外部源（巨潮/东财），同时起会互相拖慢
+    local data_hour=$hour
+    local data_min=$((minute + 30))
+    if [ "$data_min" -ge 60 ]; then
+        data_min=$((data_min - 60))
+        data_hour=$((data_hour + 1))
+    fi
+    # 池外清理放周六：当天没有行情，宽限期判定不受池子刷新影响
+    local prune_hour=${ASHARE_POOL_PRUNE_HOUR:-9}
+    local prune_min=${ASHARE_POOL_PRUNE_MINUTE:-20}
     # cron 里不能再依赖调用者的 CWD：用脚本自身的绝对路径
     local self
     self=$(readlink -f "$0")
@@ -122,9 +172,13 @@ cmd_install_cron() {
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 $minute $hour * * 1-5 root bash $self daily >> /var/log/stock-agent-ashare.log 2>&1
+# 数据类落业务表（财务指标 + 每日估值），数值问答从这里取数
+$data_min $data_hour * * 1-5 root bash $self data >> /var/log/stock-agent-ashare.log 2>&1
+# 每周清一次池外语料（带宽限，池子每天整体替换，不做这步「范围=Top N」会慢慢失真）
+$prune_min $prune_hour * * 6 root bash $self pool-prune >> /var/log/stock-agent-ashare.log 2>&1
 EOF
     chmod 644 "$CRON_FILE"
-    log "已安装：$CRON_FILE（每周一至周五 ${hour}:${minute}）→ $self"
+    log "已安装：$CRON_FILE（语料 ${hour}:${minute}、业务表 ${data_hour}:${data_min} 周一至周五；池外清理 ${prune_hour}:${prune_min} 周六）→ $self"
     log "日志：/var/log/stock-agent-ashare.log"
 }
 
@@ -133,10 +187,13 @@ main() {
     [ $# -gt 0 ] && shift || true
     case "$cmd" in
         daily)        require_root daily; cmd_daily ;;
+        data)         require_root data; cmd_data ;;
         universe)     require_root universe; take_lock universe; cmd_universe ;;
+        rescale)      require_root rescale; cmd_rescale ;;
+        pool-prune)   require_root pool-prune; cmd_pool_prune ;;
         backfill)     require_root backfill; cmd_backfill "$@" ;;
         install-cron) cmd_install_cron ;;
-        *)            die "用法：$0 {daily|universe|backfill|install-cron} [参数...]" ;;
+        *)            die "用法：$0 {daily|data|universe|rescale|pool-prune|backfill|install-cron} [参数...]" ;;
     esac
 }
 

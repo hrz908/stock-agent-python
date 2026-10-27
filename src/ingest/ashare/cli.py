@@ -19,6 +19,7 @@ from datetime import time as dt_time
 from pathlib import Path
 
 from ingest.ashare import config
+from ingest.ashare.data_sync import ensure_data_schema, sync_finance, sync_valuation
 from ingest.ashare.embedder import Embedder
 from ingest.ashare.master import ensure_master_schema, sync_master
 from ingest.ashare.pipeline import Pipeline
@@ -153,7 +154,7 @@ def _collect_codes(store, args) -> list[str] | None:
         return explicit
     pool = top_codes(store)
     if not pool:
-        raise SystemExit("热门池为空：先执行 sync-universe --top 500")
+        raise SystemExit(f"热门池为空：先执行 sync-universe --top {config.UNIVERSE_TOP_N}")
     if explicit:
         keep = set(pool)
         return [c for c in explicit if c in keep]
@@ -225,6 +226,7 @@ def cmd_backfill(args) -> int:
         store.close()
         raise SystemExit("回填必须限定股票范围：--universe 或 --codes")
 
+    shard_tag = ""
     if args.shard:
         try:
             index, total = (int(x) for x in args.shard.split("/"))
@@ -235,6 +237,7 @@ def cmd_backfill(args) -> int:
             store.close()
             raise SystemExit("--shard 的 i 必须在 1..n 之间")
         codes = codes[index - 1::total]
+        shard_tag = f"#{index}-{total}"
         logger.info("分片 %d/%d：本片 %d 只", index, total, len(codes))
 
     until = (parse_date_arg(args.until) or now_cn()).date()
@@ -243,9 +246,12 @@ def cmd_backfill(args) -> int:
         store.close()
         raise SystemExit(f"起始日 {since} 晚于结束日 {until}")
 
-    # 断点按采集范围隔离：热门池固定记为 universe，显式代码用代码集合的短哈希
-    scope = "universe" if args.universe else "codes:" + hashlib.sha1(
+    # 断点按采集范围隔离：热门池把池子大小和分片号一起编进 scope。
+    # 只记 "universe" 会让两种情形误跳过已完成窗口：换了 N 重跑（300 ↔ 500），
+    # 以及多片并行时某片跳过另一片标 done 的窗口（它自己分配的代码将永远缺失，且不报错）。
+    scope = f"universe{config.UNIVERSE_TOP_N}" if args.universe else "codes:" + hashlib.sha1(
         ",".join(sorted(codes)).encode("utf-8")).hexdigest()[:12]
+    scope += shard_tag
 
     pipeline = Pipeline(store, Embedder(), force=args.force)
     summary: list[dict] = []
@@ -287,7 +293,8 @@ def cmd_prune(args) -> int:
     """清理语料：两个维度可单用可叠加（默认只统计，--yes 才真删）。
 
     --older-than N：删早于 N 天的，用来把库固定在「最近 N 年」；
-    --outside-universe：删热门池之外个股的语料，用来把范围固定在 Top N。
+    --outside-universe：删热门池之外个股的语料，用来把范围固定在 Top N；
+    --grace-days N：池外判定给 N 天宽限（最近 N 天进过池的代码不删），防止边界股抖动。
     """
     store = _open_store()
     result: dict = {}
@@ -295,12 +302,32 @@ def cmd_prune(args) -> int:
         if args.older_than:
             result["older_than"] = store.prune_older_than(args.older_than, apply=args.yes)
         if args.outside_universe or not args.older_than:
-            result["outside_universe"] = store.prune_outside_universe(apply=args.yes)
+            result["outside_universe"] = store.prune_outside_universe(
+                apply=args.yes, grace_days=args.grace_days)
     finally:
         store.close()
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if not args.yes and any(item["matched"] for item in result.values()):
         print("加 --yes 才会真正删除（含 chunks 级联）")
+    return 0
+
+
+def cmd_forget_backfill(args) -> int:
+    """删除指定 scope 的回填断点。
+
+    换池子大小时 scope 会从 universe 变成 universe300#i-n，旧断点虽然永远不会再命中，
+    但排查「这个窗口为什么被跳过」时会造成误导。只删断点，不动已入库的语料。
+    """
+    store = _open_store(need_schema=False)
+    try:
+        cur = store.conn.execute(
+            "DELETE FROM ashare_backfill_progress WHERE scope = %s", (args.scope,)
+        )
+        store.conn.commit()
+        deleted = cur.rowcount or 0
+    finally:
+        store.close()
+    print(f"已删除 scope={args.scope} 的回填断点 {deleted} 行（已入库语料不受影响）")
     return 0
 
 
@@ -452,6 +479,45 @@ def cmd_daemon(args) -> int:
     return 0
 
 
+def _data_codes(store, args) -> list[str]:
+    """业务表的采集范围与向量语料同一口径：默认当前热门池，也可显式给代码。"""
+    explicit = split_csv(args.codes) if getattr(args, "codes", None) else None
+    if explicit:
+        return explicit
+    pool = top_codes(store)
+    if not pool:
+        raise SystemExit(f"热门池为空：先执行 sync-universe --top {config.UNIVERSE_TOP_N}")
+    return pool
+
+
+def cmd_sync_finance(args) -> int:
+    """把报告期财务指标写进业务表（stock_finance_indicator）。"""
+    store = _open_store(need_schema=False)
+    try:
+        ensure_data_schema(store)
+        codes = _data_codes(store, args)
+        logger.info("同步财务指标：%d 只，最近 %d 年", len(codes), args.years)
+        stats = sync_finance(store, codes, years=args.years)
+    finally:
+        store.close()
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_sync_valuation(args) -> int:
+    """把每日估值写进业务表（stock_valuation_daily）。"""
+    store = _open_store(need_schema=False)
+    try:
+        ensure_data_schema(store)
+        codes = _data_codes(store, args)
+        logger.info("同步估值：%d 只，每股 %d 个交易日", len(codes), args.days)
+        stats = sync_valuation(store, codes, days=args.days)
+    finally:
+        store.close()
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return 0
+
+
 # ---------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ashare", description="A股文本语料向量化入库")
@@ -471,6 +537,18 @@ def build_parser() -> argparse.ArgumentParser:
     master.add_argument("--concept-limit", type=int, default=0,
                         help="只同步前 N 个概念板块（0=全部，全量约 4~5 分钟）")
     master.set_defaults(func=cmd_sync_master)
+
+    fin = sub.add_parser("sync-finance", help="同步报告期财务指标到业务表（迁移 009）")
+    fin.add_argument("--codes", help="逗号分隔代码；留空=当前热门池（与向量语料同一口径）")
+    fin.add_argument("--years", type=int, default=config.FINANCE_YEARS,
+                     help=f"覆盖最近 N 年报告期（默认 {config.FINANCE_YEARS}）")
+    fin.set_defaults(func=cmd_sync_finance)
+
+    val = sub.add_parser("sync-valuation", help="同步每日估值到业务表（迁移 014）")
+    val.add_argument("--codes", help="逗号分隔代码；留空=当前热门池")
+    val.add_argument("--days", type=int, default=config.VALUATION_DAYS,
+                     help=f"每只回看交易日数（默认 {config.VALUATION_DAYS}，补历史用 250）")
+    val.set_defaults(func=cmd_sync_valuation)
 
     collect = sub.add_parser("collect", help="采集并向量化入库")
     collect.add_argument("--source", default="all", help=f"逗号分隔，可选 {','.join(source_names())} 或 all")
@@ -514,8 +592,15 @@ def build_parser() -> argparse.ArgumentParser:
                        help="删除发布时间早于 N 天前的语料（保留无发布时间的公共语料）")
     prune.add_argument("--outside-universe", action="store_true",
                        help="删除热门池之外个股的语料；单独给 --older-than 时不执行")
+    prune.add_argument("--grace-days", type=int, default=0, metavar="DAYS",
+                       help="池外判定给 N 天宽限：最近 N 天进过池的代码不删（防边界股抖动）")
     prune.add_argument("--yes", action="store_true", help="确认删除")
     prune.set_defaults(func=cmd_prune)
+
+    forget = sub.add_parser("forget-backfill", help="删除指定 scope 的回填断点（不动已入库语料）")
+    forget.add_argument("--scope", default="universe",
+                        help="要删除的 scope，默认 universe（换池子大小前的旧口径）")
+    forget.set_defaults(func=cmd_forget_backfill)
 
     reembed = sub.add_parser("reembed", help="按当前模型重嵌陈旧文档")
     reembed.add_argument("--limit", type=int)
