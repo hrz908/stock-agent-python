@@ -5,8 +5,7 @@
     "pages/alerts/alerts",
     "pages/settings/settings",
     "pages/kline/kline",
-    "pages/privacy/privacy",
-    "pages/test/index"
+    "pages/privacy/privacy"
   ],
   "window": {
     "navigationStyle": "custom",

@@ -1,13 +1,13 @@
 # ==========================================================
 # 溜来（stock-agent）· Git 忽略规则
 #
-# 技术栈：微信小程序（原生 + TDesign）/ Go（gin + gorm）/ Python（agent、ingest）/ Docker Compose
+# 技术栈：微信小程序（原生 + TDesign）/ Python（FastAPI 网关 + LangGraph agent + ingest）/ Docker Compose
 # 原则：只忽略「生成物」与「本机私有配置」；源码、SQL 迁移、依赖清单一律入库
 # ==========================================================
 
 # ===== 一、环境变量 / 密钥 =====
 # 本地环境变量：含真实密钥，且每台机器不同，不入库。
-# 本地 .env 由服务自身兜底加载（Go: internal/config/loadDotEnv；agent: 启动时注入进程环境），缺失不算错误
+# 本地 .env 由 server/config.py 兜底加载（真实环境变量优先、文件缺失不算错误）
 .env
 .env.*
 !.env.example
@@ -27,24 +27,16 @@ stock-agent-miniapp/project.private.config.json
 # 误生成在仓库根的 project.config.json：真正的那份在 stock-agent-miniapp/ 下且已入库
 /project.config.json
 
-# ===== 三、Go 后端（server/）=====
-# 编译产物
-server/stock-agent-server
-server/stock-agent-server.exe
-server/*.exe
-# 运行时上传目录（头像等用户数据，随运行生成，不入库）
+# ===== 三、后端运行时产物 =====
+# 头像等用户数据，随运行生成，不入库（仓库根与 server/ 两处历史位置都兜住）
+/uploads/
 server/uploads/
 # 临时目录与冒烟产物（混进向量库会污染 RAG 检索）
 server/tmp/
 server/tmp_smoke/
-# 测试与覆盖率产物
-*.test
-server/coverage.out
-server/coverage.txt
-server/coverage.html
 
-# ===== 四、Python（agent/、ingest/）=====
-# 字节码：ingest/__pycache__ 下有一批 .pyc 是早期误入库的，已用 git rm --cached 摘掉
+# ===== 四、Python =====
+# 字节码
 __pycache__/
 *.py[cod]
 *.pyo
@@ -63,7 +55,10 @@ dist/
 build/
 # ingest 的本地文档监听目录（放待入库的原始文档，是数据不是源码）
 ingest/data/
-# agent 联调产物：tests/test_e2e.py 每次运行生成（原始事件流 + 可读报告，含真实回答与卡片载荷）
+# 联调与评测产物：测试每次运行生成（原始事件流 + 可读报告，含真实回答与卡片载荷）
+tests/benchmark/runs/
+tests/**/agent_out_*.txt
+tests/**/e2e_report.md
 agent/agent_out_*.txt
 agent/e2e_report.md
 
@@ -76,6 +71,7 @@ logs/
 *~
 # 设计稿截图（Ardot 导出的临时产物，不属于源码）
 .ardot-shots/
+.screenshots/
 # Playwright CLI 产物（快照/截图/视频，一次性调试产物）
 # 注：浏览器自动化统一走 agent-browser，这里只是防止误用 playwright-cli 时污染仓库
 .playwright-cli/
