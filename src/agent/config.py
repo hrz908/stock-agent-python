@@ -11,6 +11,14 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 DB_RO_POOL_MAX = int(os.getenv("DB_RO_POOL_MAX", "4"))
 # 建池超时：库不可用时快速失败，交给工具层降级，不拖住整轮对话
 DB_RO_TIMEOUT = float(os.getenv("DB_RO_TIMEOUT", "5"))
+
+# ===== 数值类取数：业务表优先，实时接口兜底 =====
+# auto=业务表新鲜且命中就返回，缺失/过期回落实时接口；db=只读业务表（排障用）；
+# live=只打实时接口（一键回滚开关，改完不用重新发版）
+FINANCE_SOURCE = os.getenv("FINANCE_SOURCE", "auto").strip().lower()
+# 「新鲜」的判据是同步任务最近一次成功距今的小时数，而不是最新报告期距今的天数：
+# 报告期本身有披露滞后（Q3 到 10 月底才发完、年报到次年 4 月），按日期差会周期性误判。
+FINANCE_SYNC_MAX_AGE_HOURS = int(os.getenv("FINANCE_SYNC_MAX_AGE_HOURS", "48"))
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")

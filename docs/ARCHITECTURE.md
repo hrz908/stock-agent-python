@@ -20,7 +20,8 @@ LangGraph 主图 (src/agent)  ── 与本进程同生共死
    ├─ 工具层 tools/：行情/搜索/主数据(同业)/财务/资金流/龙虎榜/资讯/历史K线/研报
    │    （@tool **直调 gateway 的业务函数**，不再 HTTP 回调 + 服务 token）
    └─ 检索 rag/retriever：pgvector 向量 + 全文 RRF 融合 → 交叉编码器重排
-        → sufficiency_check：重排分阈值 + LLM 判读两级（不足则 escalate 到 stock 子图）
+        → sufficiency_check：覆盖闸（点名标的无语料 → 固定话术说明范围）
+          + 重排分阈值 + 实体一致性 + LLM 判读（不足则 escalate 到 stock 子图）
         │
         ▼
 PostgreSQL(pgvector) + Redis  ← src/ingest 写入文档向量；网关与 agent 共用连接
@@ -56,7 +57,7 @@ PostgreSQL(pgvector) + Redis  ← src/ingest 写入文档向量；网关与 agen
 ### `src/agent/`（LangGraph）
 
 - `core/`：`graph.py`（主图）、`state.py`、`llm.py`、`events.py`（问答事件流）、`checkpointer.py`/`sessions.py`（DAL）、`template.py`（提示词渲染）、`tasktracker.py`
-- `rag/`：`retriever.py`（向量 + 全文 RRF）、`reranker.py`、`entity.py`
+- `rag/`：`retriever.py`（向量 + 全文 RRF）、`reranker.py`、`entity.py`、`coverage.py`（语料覆盖判定）
 - `nodes/` `subgraphs/` `tools/`：LangGraph 节点、子图、`@tool` 取数工具
 - `prompts/`：`*.xml` 提示词模板
 - `storage/`：`read.py`（主数据只读池，会话级 `read_only`）、`app.py`（应用表读写池）、`pool.py`（共用惰性池骨架）

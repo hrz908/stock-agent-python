@@ -1,17 +1,25 @@
 r"""RAG 混合检索子图（RAG 漏斗）。
 
 流程: hybrid_retrieve -> sufficiency_check --(命中)--> generate_with_citations -> END
-                                         \--(不足)--> escalate(概念->chat，其余->stock_agent) -> END
+                                         |--(不足)--> escalate(概念->chat，其余->stock_agent) -> END
+                                         \--(点名标的无语料)--> answer_not_covered -> END
 
-sufficiency_check 三级判定：阈值闸（重排分 < RERANK_THRESHOLD 或有效片段 < 2 即未命中；
-重排关闭时回退余弦相似度 < RAG_THRESHOLD）；
-高分短路（最高重排分 >= RAG_JUDGE_SKIP_SCORE 直接判命中，省一次小模型判读）；
-其余过阈值样本交小模型判读「能否回答」（prompts/rag_judge.xml），避免主题相似但答非所问
-（问实时股价却检索到投教文章）。未命中时概念问题置 intent=chat（通用知识直接回答），
-其余置 intent=stock_agent，由主图重路由。
+sufficiency_check 判定顺序：
+1) 覆盖闸（最前）：问题点名的标的在语料库里一条文档都没有 -> 固定话术说明采集范围，
+   既不生成也不取数。这一步必须排在阈值闸之前：池外标的的检索结果本来就是一堆别家的
+   高分片段，靠分数判不出来，只有查库能确定「它在不在范围内」。
+2) 阈值闸（重排分 < RERANK_THRESHOLD 或有效片段 < 2 即未命中；重排关闭时回退
+   余弦相似度 < RAG_THRESHOLD）；
+3) 实体一致性（点名 A 却只命中带代码的别家片段 -> 未命中，别把别家数据说成用户的标的）；
+4) 高分短路（最高重排分 >= RAG_JUDGE_SKIP_SCORE 直接判命中，省一次小模型判读）；
+5) 其余过阈值样本交小模型判读「能否回答」（prompts/rag_judge.xml），避免主题相似但答非所问
+   （问实时股价却检索到投教文章）。
+未命中时概念问题置 intent=chat（通用知识直接回答），其余置 intent=stock_agent，由主图重路由。
+
 generate_with_citations: 用 prompts/rag.xml 生成带 [n] 引用的回答，并发 sources 事件
 （{"docs":[{title, chunk_id, score}]}，与前端和 Go 事件协议一致）。
 """
+import asyncio
 import logging
 import time
 from datetime import datetime
@@ -33,7 +41,8 @@ from agent.core.llm import get_llm, get_small_llm
 from agent.core.sanitize import StreamCleaner, dedupe_answer_text
 from agent.core.state import AgentState, recent_turns
 from agent.core.template import render
-from agent.rag.entity import entity_codes
+from agent.rag import coverage
+from agent.rag.entity import entity_codes, entity_mentions
 from agent.rag.retriever import build_retriever
 from agent.subgraphs import emit
 
@@ -50,6 +59,63 @@ def _get_retriever():
     return _retriever
 
 
+# 有实时工具能取到的资料类型：池外标的问这些时不该回「没覆盖」。
+# 研报/新闻各有对应工具（get_research_reports / get_stock_news），财报、行情、资金
+# 已在 _fallback._DATA_KEYWORDS 里覆盖，这里只补它漏掉的词。
+_TOOL_SERVABLE = ("研报", "研究报告", "新闻", "资讯")
+
+_NOT_COVERED_TEXT = {
+    # 不在池内：说清范围，别让用户以为资料丢了
+    "out_of_scope": (
+        "关于 {subject}：{unit}不在当前的文本语料范围内（覆盖成交额前 300 只）。"
+        "库里没有它的年报、公告或研报原文，我不凭印象下结论。\n\n"
+        "能实时取到的是行情、估值、财务指标、研报列表和新闻，这些可以直接问；"
+        "也可以换一只标的。"
+    ),
+    # 在池内但还没采到：回填期间这是常态，说「稍等」比说「不在范围」准确
+    "pending": (
+        "关于 {subject}：{unit}的文本资料还没入库（历史语料正在补齐）。"
+        "现在只有实时数据，年报、公告正文要等采集跑到这里。\n\n"
+        "期间可以问行情、估值、财务指标、研报列表和新闻。"
+    ),
+}
+
+# 固定话术按打字机节奏发，前端呈现自然的流式效果（与 refuse 节点一致）
+_CHUNK = 16
+_CHUNK_INTERVAL = 0.02
+
+
+def _wants_tool_data(state: dict) -> bool:
+    """问题能用取数工具答（行情/财报/研报/新闻）时，不能拦成「没覆盖」。"""
+    from agent.subgraphs.stock._fallback import _needs_data_fetch
+
+    text = (state.get("query") or "") + " " + (state.get("rewritten") or "")
+    return any(k in text for k in _TOOL_SERVABLE) or _needs_data_fetch(state)
+
+
+async def answer_not_covered(state: dict) -> dict:
+    """点名标的没有语料：固定话术说明采集范围，不生成、不调工具、不出引用。
+
+    固定文案而非让模型组织：这类回答的价值在于"准确说明边界"，
+    交给模型反而会补一句「不过据我了解…」，把边界又糊掉。
+    """
+    t0 = time.monotonic()
+    codes = state.get("corpus_miss") or []
+    subject = "、".join(codes) or "该标的"
+    unit = "这只标的" if len(codes) <= 1 else "这些标的"
+    reason = state.get("corpus_miss_reason") or "out_of_scope"
+    text = _NOT_COVERED_TEXT.get(reason, _NOT_COVERED_TEXT["out_of_scope"]).format(
+        subject=subject, unit=unit)
+    for i in range(0, len(text), _CHUNK):
+        emit("token", {"delta": text[i:i + _CHUNK]})
+        await asyncio.sleep(_CHUNK_INTERVAL)
+    return {
+        "messages": [AIMessage(content=text)],
+        "citations": [],
+        "timings": {"not_covered_ms": int((time.monotonic() - t0) * 1000)},
+    }
+
+
 async def hybrid_retrieve(state: dict) -> dict:
     t0 = time.monotonic()
     query = state.get("rewritten") or state.get("query", "") or ""
@@ -64,7 +130,8 @@ async def hybrid_retrieve(state: dict) -> dict:
             query, prefer_codes=codes, timings=timings)
     except Exception as e:  # noqa: BLE001 - 检索失败按“不足”处理，交给 escalate
         timings["retrieve_ms"] = int((time.monotonic() - t0) * 1000)
-        return {"retrieved": [], "error": f"retrieve_failed: {e}", "timings": timings}
+        return {"retrieved": [], "corpus_miss": [], "corpus_miss_reason": "",
+                "error": f"retrieve_failed: {e}", "timings": timings}
     timings["retrieve_ms"] = int((time.monotonic() - t0) * 1000)
     retrieved = [{
         "content": d.page_content,
@@ -78,7 +145,10 @@ async def hybrid_retrieve(state: dict) -> dict:
         # 命中闸的实体一致性校验用（文件类文档为空列表）
         "stock_codes": d.metadata.get("stock_codes") or [],
     } for d in docs]
-    return {"retrieved": retrieved, "timings": timings}
+    # corpus_miss 每轮必须显式清空：state 随 checkpointer 跨轮保留，不清的话
+    # 上一轮「这只票没覆盖」会一直命中下去，后面换了标的也还是那句固定话术
+    return {"retrieved": retrieved, "corpus_miss": [], "corpus_miss_reason": "",
+            "timings": timings}
 
 
 class _Judge(BaseModel):
@@ -132,8 +202,11 @@ async def _judge_can_answer(query: str, retrieved: list) -> bool:
 async def sufficiency_check(state: dict) -> dict:
     """判断检索是否充分，不足则置 intent=stock_agent 让主图重路由。
 
-    两级判定：阈值闸（便宜）——最高分低于阈值或有效片段 < 2 即未命中；
-    LLM 判读（准）——过阈值的片段交小模型判「能否回答」，判读异常按命中处理、不阻断链路。
+    四级判定，顺序有讲究：
+    1) 覆盖闸（最便宜且最确定）——点名标的在语料库里没有任何文档时直接说明范围；
+    2) 阈值闸——最高分低于阈值或有效片段 < 2 即未命中；
+    3) 实体一致性——点名 A 却只命中带代码的别家片段，按未命中处理；
+    4) LLM 判读——过阈值的片段交小模型判「能否回答」，判读异常按命中处理、不阻断链路。
     分数优先用 rerank_score（交叉编码器，绝对可分），重排关闭时回退 similarity
     （余弦在向量空间里有很高的地板值，只能做粗筛，不能做精确判定）。
     """
@@ -143,6 +216,28 @@ async def sufficiency_check(state: dict) -> dict:
     # 未命中时的降级目标：概念/投教问题不需要取数，交给 chat 用通用知识直接回答；
     # 其余问题按原设计升级到取数 agent
     miss_intent = "chat" if is_concept_question(query) else "stock_agent"
+    # 实体识别提前到最前面：覆盖闸要用，后面的实体一致性校验复用同一份结果
+    # （entity_mentions 按问句缓存，retriever 里刚查过同一条问句，这里是命中缓存）
+    mentions = await entity_mentions(query)
+    codes = set(mentions)
+    # 覆盖闸：点名标的在库里一条文档都没有 -> 说明现状，而不是升级取数让模型自由发挥。
+    # 必须排在阈值闸之前——池外标的的候选本来就是一堆别家公司的高分片段，靠分数判不出来；
+    # 而且能省掉后面那次小模型判读。要取数的问句（行情/财报/研报/新闻）另有实时工具，不拦。
+    if codes and not _wants_tool_data(state):
+        try:
+            info = await coverage.detail(mentions)
+        except Exception as exc:  # noqa: BLE001 - 判定失败不能拖垮命中闸
+            logger.warning("覆盖判定失败，跳过该闸：%s", exc)
+            info = {}
+        # info 为空 = 判定不可用（库抖动/表未建），fail-open 交回常规检索
+        if info and not any(has_docs for has_docs, _ in info.values()):
+            reason = "pending" if any(pool for _, pool in info.values()) else "out_of_scope"
+            logger.info("点名标的无语料（%s），按未覆盖回答：%s", reason, mentions)
+            return {
+                "corpus_miss": mentions,
+                "corpus_miss_reason": reason,
+                "timings": {"sufficiency_ms": int((time.monotonic() - t0) * 1000)},
+            }
     has_rerank = any(r.get("rerank_score") is not None for r in retrieved)
     if has_rerank:
         top_score = max((r.get("rerank_score") or 0.0 for r in retrieved), default=0.0)
@@ -158,7 +253,6 @@ async def sufficiency_check(state: dict) -> dict:
     # 实体一致性：问题点名了某只股票（代码/全称），但所有带代码的片段都属于别家公司，
     # 说明检索只是「主题相似」——交给判读或直接作答都会把别家数据说成用户的标的，
     # 直接按未命中处理，升级取数。文件类/快讯类片段没有代码，不参与该判定。
-    codes = await entity_codes(query)
     if codes:
         coded = [r for r in retrieved if r.get("stock_codes")]
         if coded and not any(set(r.get("stock_codes") or []) & codes for r in coded):
@@ -189,7 +283,10 @@ async def sufficiency_check(state: dict) -> dict:
     return {"intent": miss_intent, "timings": timings}
 
 
-def route_after_check(state: dict) -> Literal["escalate", "generate"]:
+def route_after_check(state: dict) -> Literal["escalate", "generate", "not_covered"]:
+    # 点名标的无语料：sufficiency_check 只写 corpus_miss、不改 intent，单独走固定话术
+    if state.get("corpus_miss"):
+        return "not_covered"
     # 未命中时 sufficiency_check 会把 intent 改成 stock_agent（取数）或 chat（概念通用回答）
     return "generate" if state.get("intent") == "stock" else "escalate"
 
@@ -282,14 +379,17 @@ def build_rag_subgraph():
     g.add_node("sufficiency_check", sufficiency_check)
     g.add_node("escalate", escalate)
     g.add_node("generate", generate_with_citations)
+    g.add_node("not_covered", answer_not_covered)
 
     g.add_edge(START, "hybrid_retrieve")
     g.add_edge("hybrid_retrieve", "sufficiency_check")
     g.add_conditional_edges("sufficiency_check", route_after_check, {
         "escalate": "escalate",
         "generate": "generate",
+        "not_covered": "not_covered",
     })
     g.add_edge("escalate", END)
     g.add_edge("generate", END)
+    g.add_edge("not_covered", END)
     # 无 interrupt、无跨调用记忆：不单独落 checkpoint，省一次全量 state 写库
     return g.compile(checkpointer=False)

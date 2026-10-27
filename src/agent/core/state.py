@@ -38,6 +38,11 @@ class AgentState(TypedDict, total=False):
     tool_results: Annotated[list, operator.add]
     # RAG 检索片段
     retrieved: list
+    # 问题点名的标的在语料库里完全没有文档（代码列表）：非空时 rag 子图直接出固定话术，
+    # 不生成、不取数。与 intent 分开存，避免污染路由语义
+    corpus_miss: list
+    # 未覆盖的原因：out_of_scope（不在热门池）| pending（在池但还没采到），决定话术
+    corpus_miss_reason: str
     # 结构化卡片事件（quote_card 等）
     cards: list
     # 引用来源
@@ -64,6 +69,8 @@ def initial_state(user_id: str, thread_id: str, query: str) -> AgentState:
         entities={},
         tool_results=[],
         retrieved=[],
+        corpus_miss=[],
+        corpus_miss_reason="",
         cards=[],
         citations=[],
         error=None,

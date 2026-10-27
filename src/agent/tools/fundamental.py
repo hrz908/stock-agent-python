@@ -1,9 +1,17 @@
-"""财务基本面工具（数据源：akshare 东财/新浪）。
+"""财务基本面工具（业务表优先，akshare 兜底）。
 
-- get_valuation:           东财 stock_value_em（个股估值历史，PE/PB/PS/市值）
-- get_financial_indicator: 新浪 stock_financial_analysis_indicator（报告期财务指标）
+- get_valuation:           stock_valuation_daily（每日估值快照）→ 东财 stock_value_em 兜底
+- get_financial_indicator: stock_finance_indicator（报告期指标）→ 新浪指标接口兜底
 - get_financial_report:    新浪三大报表（利润表 + 现金流量表）+ 指标接口最新一期，
-                           并发组装财报速览卡载荷
+                           并发组装财报速览卡载荷（科目未落表，仍走实时接口）
+
+为什么优先业务表：这些数值每轮问答都要用，实时接口单次 1~3s 且会被限流，而库里是同一份数据、
+毫秒级返回。业务表由 ingest 侧 `sync-finance` / `sync-valuation` 定时写入，写入范围与向量语料
+同一池子（成交额 Top300）——数值问答不该走向量检索。
+
+降级判据不是「库里有数据就行」，而是同步任务最近一次成功是否在 FINANCE_SYNC_MAX_AGE_HOURS 内：
+超过就整条走实时接口，避免同步一挂就长期答旧数。库里有、但这个报告期没有（问一年前）同样回落。
+`FINANCE_SOURCE=live` 可一键回滚到全实时。
 
 akshare 是同步 pandas 库：全部经 tools.market.run_ds 丢线程池执行，出口统一过 num()/text() 归一
 （DataFrame 的 numpy 标量/NaN 无法直接进 JSON）。
@@ -14,6 +22,7 @@ from datetime import datetime, timedelta
 
 from langchain_core.tools import tool
 
+from agent.config import FINANCE_SOURCE, FINANCE_SYNC_MAX_AGE_HOURS
 from agent.tools import call_tool_safe
 from agent.tools.market import digits, num, run_ds, text, wan
 
@@ -39,7 +48,53 @@ def _sina_stock(code: str) -> str:
     return f"{prefix}{d}"
 
 
+def _ts_code(code: str) -> str:
+    """600519 -> 600519.SH（前端卡片与 LLM 上下文的展示口径）。"""
+    d = digits(code)
+    suffix = "SH" if d.startswith("6") else ("BJ" if d.startswith(("4", "8")) else "SZ")
+    return f"{d}.{suffix}"
+
+
+async def _sync_fresh(dataset: str) -> bool:
+    """业务表的同步任务是否还在正常跑；任何异常都当作「不新鲜」回落实时接口。"""
+    from agent.repo import finance as repo_finance
+
+    return await repo_finance.sync_ok(dataset, FINANCE_SYNC_MAX_AGE_HOURS)
+
+
 async def _fetch_valuation(code: str, days: int) -> list:
+    """先查业务表；表未就绪 / 该股不在池内 / 同步过期时走实时接口。"""
+    if FINANCE_SOURCE != "live" and await _sync_fresh("valuation"):
+        from agent.repo import finance as repo_finance
+
+        limit = max(1, min(int(days), _MAX_VALUATION_ROWS))
+        rows = _valuation_rows(code, await repo_finance.valuation(digits(code), limit))
+        # auto 模式下库里没有就回落（池外个股、刚上市的）；db 模式按原样返回空
+        if rows or FINANCE_SOURCE == "db":
+            return rows
+    if FINANCE_SOURCE == "db":
+        return []
+    return await _fetch_valuation_live(code, days)
+
+
+def _valuation_rows(code: str, rows: list) -> list:
+    """业务表行 -> 估值工具契约字段（金额由元换算成万元）。"""
+    ts = _ts_code(code)
+    return [{
+        "ts_code": ts,
+        "trade_date": r["trade_date"].strftime("%Y%m%d"),
+        "close": num(r["close_yuan"]),
+        "pe": num(r["pe_static"]),
+        "pe_ttm": num(r["pe_ttm"]),
+        "pb": num(r["pb"]),
+        "ps_ttm": num(r["ps_ttm"]),
+        "dv_ttm": num(r["dv_ttm_pct"]),
+        "total_mv": wan(r["total_mv_yuan"]),
+        "circ_mv": wan(r["circ_mv_yuan"]),
+    } for r in rows]
+
+
+async def _fetch_valuation_live(code: str, days: int) -> list:
     """东财个股估值历史，按日期倒序，最多 _MAX_VALUATION_ROWS 行。"""
     import akshare as ak
 
@@ -94,7 +149,43 @@ async def get_valuation(code: str, trade_date: str = "", days: int = 30) -> dict
     return await call_tool_safe(_do)
 
 
+def _same_period(left: str, right: str) -> bool:
+    """报告期比较：'2024-12-31' 与 '20241231' 视为同一期。"""
+    a, b = (left or "").replace("-", ""), (right or "").replace("-", "")
+    return bool(a) and a == b
+
+
 async def _fetch_fin_indicator(code: str, period: str, limit: int) -> list:
+    """先查业务表；表未就绪 / 同步过期 / 该期不在库里时走实时接口。"""
+    if FINANCE_SOURCE != "live" and await _sync_fresh("finance"):
+        from agent.repo import finance as repo_finance
+
+        rows = _indicator_rows(code, await repo_finance.indicators(digits(code), period, limit))
+        if rows or FINANCE_SOURCE == "db":
+            return rows
+    if FINANCE_SOURCE == "db":
+        return []
+    return await _fetch_fin_indicator_live(code, period, limit)
+
+
+def _indicator_rows(code: str, rows: list) -> list:
+    """业务表行 -> 指标工具契约字段（与新浪接口同名字段，前端无需改动）。"""
+    ts = digits(code)
+    return [{
+        "ts_code": ts,
+        "end_date": r["report_date"].isoformat(),
+        "eps": num(r["eps_yuan"]),
+        "bps": num(r["bps_yuan"]),
+        "roe": num(r["roe_pct"]),
+        "grossprofit_margin": num(r["gross_margin_pct"]),
+        "netprofit_margin": num(r["net_margin_pct"]),
+        "debt_to_assets": num(r["debt_asset_pct"]),
+        "or_yoy": num(r["revenue_yoy_pct"]),
+        "netprofit_yoy": num(r["netprofit_yoy_pct"]),
+    } for r in rows]
+
+
+async def _fetch_fin_indicator_live(code: str, period: str, limit: int) -> list:
     """新浪报告期财务指标，按报告期倒序，最多 limit 行。"""
     import akshare as ak
 
@@ -120,7 +211,7 @@ async def _fetch_fin_indicator(code: str, period: str, limit: int) -> list:
             "netprofit_yoy": num(r.get("净利润增长率(%)")),
         })
     if period:
-        rows = [r for r in rows if r["end_date"] == period]
+        rows = [r for r in rows if _same_period(r["end_date"], period)]
     # 新浪不保证顺序：显式按报告期倒序后再截断
     rows.sort(key=lambda r: r["end_date"], reverse=True)
     return rows[:max(1, min(int(limit), _MAX_FIN_ROWS))]
