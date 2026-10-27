@@ -143,8 +143,12 @@ async def session_messages(user_id: str, session_id: str) -> list:
     只保留 human / ai 纯文本：ToolMessage（JSON 载荷）与带 tool_calls 的 AIMessage
     对前端没有意义、还会破坏消息配对。结构化卡片不持久化（checkpoint 只有文本），
     恢复的会话以文本气泡呈现。
+
+    读出口再筛一遍重复内容：早于去重逻辑落库的历史回答里可能有重复段落，
+    以及同一条回答被重复写入（重复生成 / 重试）——恢复会话时不该原样再演一遍。
     """
     from agent.core.checkpointer import get_checkpointer
+    from agent.core.sanitize import dedupe_answer_text
 
     cp = await get_checkpointer()
     tn = await cp.aget_tuple(
@@ -154,13 +158,20 @@ async def session_messages(user_id: str, session_id: str) -> list:
         return []
     values = tn.checkpoint.get("channel_values", {}) or {}
     out = []
+    last_ai = ""
     for m in values.get("messages", []) or []:
         content = getattr(m, "content", "")
         if not isinstance(content, str) or not content.strip():
             continue
         if isinstance(m, HumanMessage):
             out.append({"role": "user", "content": content})
+            last_ai = ""
         elif isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
+            content = dedupe_answer_text(content)
+            key = re.sub(r"\s+", "", content)
+            if key and key == last_ai:
+                continue
+            last_ai = key
             out.append({"role": "assistant", "content": content})
     return out
 

@@ -78,12 +78,15 @@ async def guardrail(state: dict) -> dict:
     query = state.get("query", "") or ""
     trimmed = _trim_history(state.get("messages") or [])
     timings = {"guardrail_ms": int((time.monotonic() - t0) * 1000)}
+    # cards 记录「本轮已发出的卡片类型」，用于同一轮重复合成时防止重复发卡；
+    # 必须逐轮清零，否则上一轮发过的类型会把本轮同类卡片压掉
     if _REGEX.search(query):
         return {
             "error": "guardrail_blocked",
             "intent": "clarify",
             "confidence": 0.0,
             "tool_results": Overwrite([]),
+            "cards": [],
             "messages": Overwrite(trimmed),
             # timings 走 merge reducer；每轮必须 Overwrite 重置，否则上一轮的
             # tool_call_ms 等会跨用户轮次累加，第二轮耗时看起来像 20s+。
@@ -92,6 +95,7 @@ async def guardrail(state: dict) -> dict:
     return {
         "error": None,
         "tool_results": Overwrite([]),
+        "cards": [],
         "messages": Overwrite(trimmed),
         "timings": Overwrite(timings),
     }

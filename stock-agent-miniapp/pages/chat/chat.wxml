@@ -29,7 +29,7 @@
               <!-- 行情卡片：金融卡组件（components/finance/quote-card），
                    数据字段在 chat.js 的 quoteCard() 里映射；
                    点卡进卡片画廊（pages/test，静态八卡样式页）。
-                   一轮最多一张卡，且排在正文之前（时序见 chat.js 的 _placeCard） -->
+                   一轮最多一张卡，且排在正文之后（时序见 chat.js 的 _placeCard） -->
               <finance-quote-card wx:if="{{msg.card === 'quote'}}" card-class="msg-card" bindtap="onQuoteCardTap" data-code="{{msg.quote.code}}" data-name="{{msg.quote.name}}" name="{{msg.quote.name}}" code="{{msg.quote.code}}" status="{{msg.quote.status}}" price="{{msg.quote.price}}" change="{{msg.quote.change}}" change-pct="{{msg.quote.changePct}}" open="{{msg.quote.open}}" high="{{msg.quote.high}}" low="{{msg.quote.low}}" amount="{{msg.quote.amount}}" turnover-rate="{{msg.quote.turnoverRate}}" total-cap="{{msg.quote.totalCap}}" points="{{msg.quote.points}}" tags="{{msg.quote.tags}}" note="{{msg.quote.note}}" />
               <!-- K 线卡片：金融卡组件（components/finance/kline-card） -->
               <finance-kline-card wx:elif="{{msg.card === 'kline'}}" card-class="msg-card" name="{{msg.klineName}}" code="{{msg.klineCode}}" subtitle="{{msg.klineSub}}" klines="{{msg.kline}}" ma="{{msg.klineMa}}" period-pct="{{msg.klinePct}}" amplitude="{{msg.klineAmplitude}}" volume-ratio="{{msg.klineVolumeRatio}}" support="{{msg.klineSupport}}" resistance="{{msg.klineResistance}}" note="{{msg.klineNote}}" />

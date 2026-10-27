@@ -316,4 +316,32 @@ function createMarkdownStream() {
   };
 }
 
-export { parseMarkdown, createMarkdownStream };
+// 段落去重的最小长度：短句重复是正常的（分点标签、过渡句），只清理成段内容
+const DUP_PARAGRAPH_MIN_CHARS = 30;
+
+// 正文去重：模型偶发把同一段结论写两遍（同轮工具数据重复时更常见）。
+// 只做确定性去重——按空行分段、抹掉空白后完全相同的段落只留第一段；
+// 含代码围栏时整段跳过，避免把代码里的空行切坏。
+// 与后端 agent/core/sanitize.py 的 dedupe_answer_text 保持同一口径。
+function dedupeParagraphs(text) {
+  const src = String(text == null ? '' : text);
+  if (!src || src.indexOf('```') !== -1) return src;
+  const parts = src.split(/\n{2,}/);
+  const seen = Object.create(null);
+  const kept = [];
+  let dropped = false;
+  for (let i = 0; i < parts.length; i++) {
+    const key = parts[i].replace(/\s+/g, '');
+    if (key.length >= DUP_PARAGRAPH_MIN_CHARS) {
+      if (seen[key]) {
+        dropped = true;
+        continue;
+      }
+      seen[key] = true;
+    }
+    kept.push(parts[i]);
+  }
+  return dropped ? kept.join('\n\n') : src;
+}
+
+export { parseMarkdown, createMarkdownStream, dedupeParagraphs };

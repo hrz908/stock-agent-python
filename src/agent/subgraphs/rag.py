@@ -30,7 +30,7 @@ from agent.config import (
 )
 from agent.core.keywords import is_concept_question
 from agent.core.llm import get_llm, get_small_llm
-from agent.core.sanitize import StreamCleaner
+from agent.core.sanitize import StreamCleaner, dedupe_answer_text
 from agent.core.state import AgentState, recent_turns
 from agent.core.template import render
 from agent.rag.entity import entity_codes
@@ -261,7 +261,7 @@ async def generate_with_citations(state: dict) -> dict:
     for p in parts[1:]:
         ai = ai + p
     if ai is not None:
-        patch = {"content": "".join(sent)}
+        patch = {"content": dedupe_answer_text("".join(sent))}
         if last_usage:
             patch["usage_metadata"] = last_usage
         ai = ai.model_copy(update=patch)

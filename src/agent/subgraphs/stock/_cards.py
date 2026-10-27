@@ -1,10 +1,15 @@
 """卡片事件发射：从工具结果折出候选卡、按问题意图排序、只发一张卡。
 
 职责边界：只管"把 tool_results 折成 payload 并发出去"；不管 synthesize 的文本生成，
-不管 fallback 兜底文案。synthesize 节点调用 _emit_structured(state, tool_results)。
+不管 fallback 兜底文案。synthesize 节点在正文之后调用 _emit_structured(state, tool_results)。
+
+去重口径：同轮同一工具被重复调用（ReAct 多轮里很常见）只保留最后一次成功结果；
+同类卡片只发一份；卡片内的行（事件 / K 线）也按业务键去重。
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 
@@ -77,8 +82,8 @@ _CARD_KEYWORDS = {
                      "哪家", "相比", "vs"),
     "valuation_card": ("估值", "市盈率", "市净率", "市销率", "股息", "分位", "贵不贵", "便宜"),
     "fundflow_card": ("资金", "主力", "流入", "流出", "龙虎榜", "席位", "超大单", "大单", "北向"),
-    "report_card": ("财报", "业绩", "营收", "营业收入", "净利润", "毛利", "现金流",
-                    "报告期", "季报", "年报", "中报"),
+    "report_card": ("财报", "业绩", "营收", "营业收入", "净利润", "净利", "毛利", "现金流",
+                    "报告期", "季报", "年报", "中报", "财务", "盈利能力", "赚钱"),
     "research_card": ("研报", "机构", "评级", "目标价", "券商", "观点"),
     "event_card": ("新闻", "动态", "消息", "公告", "事件", "资讯", "利好", "利空"),
     "quote_card": ("行情", "价格", "股价", "现价", "什么价", "多少钱", "涨跌", "涨幅", "跌幅",
@@ -158,10 +163,17 @@ def _event_type(title: str) -> str:
 
 def _event_card_payload(news_rows: list):
     events = []
+    seen: set[str] = set()
     for row in news_rows:
         title = str(row.get("title") or "").strip()
         if not title:
             continue
+        # 资讯源常把同一条消息挂在不同频道下重复返回；前端 wx:key 用的就是 title，
+        # 不去重会渲染出两条一模一样的记录（且触发 key 冲突告警）
+        key = re.sub(r"\s+", "", title).lower()
+        if key in seen:
+            continue
+        seen.add(key)
         when = str(row.get("datetime") or "")
         desc = _event_desc(row.get("content"))
         etype = _event_type(title)
@@ -184,16 +196,21 @@ def _event_card_payload(news_rows: list):
 
 
 def _kline_rows(data: list) -> list:
-    rows = [r for r in _rows_of(data) if r.get("trade_date")]
-    rows.sort(key=lambda r: str(r.get("trade_date", "")))
+    # 多数据源拼接时同一交易日可能出现两行；按日期去重（保留最后一行）再排序，
+    # 否则蜡烛图会出现两根同一天的 K 线
+    by_date: dict[str, dict] = {}
+    for row in _rows_of(data):
+        date = row.get("trade_date")
+        if date:
+            by_date[str(date)] = row
     return [{
-        "date": r.get("trade_date"),
-        "open": r.get("open"),
-        "high": r.get("high"),
-        "low": r.get("low"),
-        "close": r.get("close"),
-        "volume": r.get("vol"),
-    } for r in rows]
+        "date": by_date[date].get("trade_date"),
+        "open": by_date[date].get("open"),
+        "high": by_date[date].get("high"),
+        "low": by_date[date].get("low"),
+        "close": by_date[date].get("close"),
+        "volume": by_date[date].get("vol"),
+    } for date in sorted(by_date)]
 
 
 def _rows_of(data):
@@ -227,8 +244,73 @@ def _fundflow_card_payload(row: dict, extra: dict | None = None) -> dict:
 
 # ==================== 候选收集 + 发射 ====================
 
+def _fingerprint(value) -> str:
+    """稳定指纹：同一份数据无论键序如何都得到同一串。"""
+    try:
+        raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    except Exception:  # noqa: BLE001 - 极端不可序列化对象退回 str
+        raw = str(value)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _result_key(item: dict) -> str:
+    """一条工具结果的去重键。
+
+    新记录（带 args）按「工具 + 入参」：同一工具同一入参重复调用只该留一份；
+    老记录没有 args（旧 checkpoint）退回按返回数据 / 错误文本指纹。
+    """
+    tool = str(item.get("tool") or "")
+    result = item.get("result") or {}
+    args = item.get("args")
+    if isinstance(args, dict):
+        return f"{tool}|args|{_fingerprint(args)}"
+    payload = result.get("data") if result.get("ok") else result.get("error")
+    return f"{tool}|payload|{_fingerprint(payload)}"
+
+
+def _dedupe_tool_results(tool_results: list) -> list:
+    """同一轮里重复出现的工具结果只保留最后一次成功的那条。
+
+    tool_results 走 operator.add 跨「工具轮次」累加：模型在 ReAct 循环里重复调同一个
+    工具（换个参数字序、或先查后补）时，同一份数据会在 state 里出现两次。它同时污染
+    两处——提示词里同样的数字出现两遍（模型就写两遍）、卡片候选里同类卡出现两张。
+    """
+    items = list(tool_results or [])
+    chosen: dict[str, int] = {}
+    keep: set[int] = set()
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            keep.add(idx)  # 非标准结构不参与去重，原样保留
+            continue
+        key = _result_key(item)
+        prev = chosen.get(key)
+        if prev is None:
+            chosen[key] = idx
+            continue
+        prev_ok = bool((items[prev].get("result") or {}).get("ok"))
+        cur_ok = bool((item.get("result") or {}).get("ok"))
+        # 新的成功结果覆盖旧的失败（重试成功），失败不覆盖已成功的数据
+        if cur_ok or not prev_ok:
+            chosen[key] = idx
+    keep |= set(chosen.values())
+    if len(keep) == len(items):
+        return items
+    return [items[i] for i in sorted(keep)]
+
+
+def _dedupe_candidates(candidates: list) -> list:
+    """同类卡片只留一份：位置沿用首次出现，payload 取最后一次（数据最新）。"""
+    merged: dict[str, object] = {}
+    for card_type, payload in candidates:
+        merged[card_type] = payload
+    if len(merged) == len(candidates):
+        return candidates
+    return list(merged.items())
+
+
 def _card_candidates(tool_results: list, state: dict | None = None) -> list:
     """把本轮工具结果折成候选卡列表 [(card_type, payload)]，保持工具调用顺序。"""
+    tool_results = _dedupe_tool_results(tool_results)
     lhb = _lhb_payload(tool_results)
     quote = _quote_payload(tool_results)
     out = []
@@ -291,30 +373,43 @@ def _card_candidates(tool_results: list, state: dict | None = None) -> list:
     return out
 
 
-def _emit_structured(state: dict, tool_results: list) -> None:
-    """按「用户问的是什么」发一张卡（不进入 token 流）。"""
-    candidates = _card_candidates(tool_results, state)
+def _emit_structured(state: dict, tool_results: list) -> list[str]:
+    """按「用户问的是什么」发一张卡（不进入 token 流），返回本轮实际发出的卡片类型。
+
+    一次回复只发一张；state["cards"] 里已记录的类型直接跳过——合成节点被重复执行
+    （重试 / 双路触达）时不会把同一张卡再发一遍。
+    """
+    emitted = set(state.get("cards") or [])
+    candidates = _dedupe_candidates(_card_candidates(tool_results, state))
     if not candidates:
-        return
+        return []
     ranked = _rank_cards(state, candidates)
     if _is_kline_question(state):
         for card_type, payload in ranked:
+            if card_type in emitted:
+                continue
             if card_type == "kline_table" and validate_table(card_type, payload):
                 emit_table(card_type, payload)
-                return
+                return [card_type]
         logger.info("kline question without kline table, suppress cards: %s",
                     [c[0] for c in candidates])
-        return
+        return []
     for card_type, payload in ranked:
+        if card_type in emitted:
+            continue
         if card_type in _TABLE_CARDS:
             if validate_table(card_type, payload):
                 emit_table(card_type, payload)
-                return
+                return [card_type]
         elif validate_card(card_type, payload):
             emit_card(card_type, payload)
-            return
+            return [card_type]
         logger.warning("card %s payload failed validation, try next: %s",
                        card_type, str(payload)[:200])
+    return []
 
 
-__all__ = ["_emit_structured", "DATA_TOOLS"]
+__all__ = [
+    "_emit_structured", "_card_candidates", "_dedupe_tool_results",
+    "_dedupe_candidates", "DATA_TOOLS",
+]

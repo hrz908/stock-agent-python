@@ -35,6 +35,35 @@ _TAGS = _SKIP_BLOCKS | _UNWRAP_TAGS
 # 标签里允许出现的字符很少；超过这个长度还没闭合，就当普通文本（如「a < b」）
 _MAX_TAG_CHARS = 48
 
+# 段落去重的最小长度：短句（「走势：」「- 结论」这类标签）重复出现是正常的，
+# 只有成段的完整内容重复才视为冗余
+_DUP_PARAGRAPH_MIN_CHARS = 30
+
+
+def dedupe_answer_text(text: str) -> str:
+    """丢弃正文里完全重复的段落，只保留第一次出现的那段。
+
+    模型偶发把同一段结论写两遍：同轮工具数据重复（同一工具被调多次）时尤其常见。
+    这里只做确定性去重——按空行切段、抹掉空白后完全相等且长度达标的段落才丢，
+    不做语义近似判断，也不碰代码块（含 ``` 时整段原样返回）。
+    返回值与入参在「没有重复」时逐字相同，调用方可以安全地无条件使用。
+    """
+    if not text or "```" in text:
+        return text
+    parts = re.split(r"\n{2,}", text)
+    seen: set[str] = set()
+    kept: list[str] = []
+    for part in parts:
+        key = re.sub(r"\s+", "", part)
+        if len(key) >= _DUP_PARAGRAPH_MIN_CHARS:
+            if key in seen:
+                continue
+            seen.add(key)
+        kept.append(part)
+    if len(kept) == len(parts):
+        return text
+    return "\n\n".join(kept)
+
 
 class StreamCleaner:
     """把 token 增量喂进来，返回该下发给前端的文本。"""

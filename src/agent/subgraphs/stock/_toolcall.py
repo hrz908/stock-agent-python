@@ -23,11 +23,11 @@ from agent.config import (
     TOOL_ROUND_BUDGET,
 )
 from agent.core.llm import estimate_tokens, get_llm, is_context_overflow, message_chars
-from agent.core.sanitize import StreamCleaner
+from agent.core.sanitize import StreamCleaner, dedupe_answer_text
 from agent.core.state import AgentState, recent_turns
 from agent.core.template import load_template, render
 from agent.subgraphs import emit
-from agent.subgraphs.stock._cards import _emit_structured
+from agent.subgraphs.stock._cards import _dedupe_tool_results, _emit_structured
 from agent.subgraphs.stock._fallback import (
     OVERFLOW_REPLY,
     _all_failures_graceful_empty,
@@ -403,6 +403,9 @@ async def tool_execute(state: dict) -> dict:
 
     outcomes = await _run_with_budget(ai.tool_calls, _run)
 
+    # 入参随结果一起落 state：synthesize 按「工具 + 入参」去重同轮重复调用，
+    # 失败结果也只能靠入参区分（错误文本相同但标的不同的两次失败不该合并）
+    args_by_id = {tc["id"]: tc.get("args") or {} for tc in ai.tool_calls}
     tool_messages = []
     tool_results = []
     for tc_id, name, result in outcomes:
@@ -411,7 +414,11 @@ async def tool_execute(state: dict) -> dict:
             tool_call_id=tc_id,
             name=name,
         ))
-        tool_results.append({"tool": name, "result": result})
+        tool_results.append({
+            "tool": name,
+            "args": args_by_id.get(tc_id) or {},
+            "result": result,
+        })
 
     # 知识库工具补 sources 事件
     kb_docs: list[dict] = []
@@ -445,9 +452,20 @@ async def tool_execute(state: dict) -> dict:
     }
 
 
+def _safe_emit_structured(state: dict, tool_results: list) -> list[str]:
+    """发卡失败只记日志：卡片在正文之后发，这里抛异常会连累已经吐给用户的正文。"""
+    try:
+        return _emit_structured(state, tool_results)
+    except Exception:  # noqa: BLE001 - 卡片是辅助，绝不能把整轮回答搞失败
+        logger.warning("emit structured cards failed", exc_info=True)
+        return []
+
+
 async def synthesize(state: dict) -> dict:
     t0 = time.monotonic()
-    tool_results = state.get("tool_results", []) or []
+    # 同一工具被重复调用会留下多份一样的数据：喂给模型它就把同一段写两遍，
+    # 折卡片时也会多出同类候选。进合成前先去重（保留最后一次成功结果）。
+    tool_results = _dedupe_tool_results(state.get("tool_results", []) or [])
     fallback = _no_data_fallback(state, tool_results)
     if fallback:
         emit("token", {"delta": fallback})
@@ -471,8 +489,8 @@ async def synthesize(state: dict) -> dict:
     prompt = render("stock.xml", now=now, query=query, tool_results=tr_text,
                     examples=load_template("stock_examples.xml"))
 
-    _emit_structured(state, tool_results)
-
+    # 卡片不能再在正文之前发：产品要求「正文在前、卡片收尾」，因此挪到流式结束后
+    # （见下方 _emit_structured 调用），前端也按追加到回复末尾的方式落位。
     messages = [SystemMessage(content=prompt)]
     messages.extend(_recent_history(state))
     messages.append(HumanMessage(content=state.get("query", "") or query))
@@ -506,24 +524,31 @@ async def synthesize(state: dict) -> dict:
             raise
         logger.warning("synthesize context overflow, fallback to safe reply", exc_info=True)
         emit("token", {"delta": OVERFLOW_REPLY})
+        # 兜底文案之后照样把卡片发出来：数据是好的，只是模型没消化完
+        cards = _safe_emit_structured(state, tool_results)
         return {
             "messages": [AIMessage(content=OVERFLOW_REPLY)],
+            "cards": cards,
             "timings": {
                 "synth_ttft_ms": ttft_ms if ttft_ms is not None else 0,
                 "synth_ms": int((time.monotonic() - t0) * 1000),
             },
         }
+    # 卡片放在正文之后（回复的最后）：正文先逐字出完，再把结构化卡片补在末尾。
+    # 这样用户先读到结论，卡片作为补充证据跟在下面，不会一上来就占满屏幕。
+    cards = _safe_emit_structured(state, tool_results)
     ai = parts[0] if parts else None
     for p in parts[1:]:
         ai = ai + p
     if ai is not None:
-        patch = {"content": "".join(sent)}
+        patch = {"content": dedupe_answer_text("".join(sent))}
         if last_usage:
             patch["usage_metadata"] = last_usage
         ai = ai.model_copy(update=patch)
     total_ms = int((time.monotonic() - t0) * 1000)
     return {
         "messages": [ai if ai is not None else AIMessage(content="")],
+        "cards": cards,
         "timings": {
             "synth_ttft_ms": ttft_ms if ttft_ms is not None else total_ms,
             "synth_ms": total_ms,

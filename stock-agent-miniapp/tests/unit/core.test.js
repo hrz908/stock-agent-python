@@ -186,6 +186,26 @@ test('markdown 流式：代码块内部的空行不算段落边界', () => {
   assert.strictEqual(done.tail[0].tag, 'p');
 });
 
+test('markdown 去重：整段重复只留一段，短句与代码块不动', () => {
+  const para = '贵州茅台站上 5 日均线，短期走势偏强，量能温和放大，需留意上方压力位。';
+  const text = para + '\n\n估值处于近三年中枢附近，单看倍数容易误判。\n\n' + para;
+  const out = md.dedupeParagraphs(text);
+  assert.strictEqual(out.split(para).length - 1, 1, '重复段落只保留一次');
+  assert.ok(out.indexOf('估值处于近三年中枢附近') !== -1, '非重复段落原样保留');
+
+  // 短句重复是正常的（分点标签、「结论：」这类），不做处理
+  const short = '结论：\n\n结论：';
+  assert.strictEqual(md.dedupeParagraphs(short), short);
+
+  // 含代码围栏时整段跳过，避免把代码里的空行切坏
+  const code = '```\na = 1\n\n' + para + '\n```\n\n' + para;
+  assert.strictEqual(md.dedupeParagraphs(code), code);
+
+  // 无重复时逐字返回
+  const plain = '第一段内容。\n\n第二段内容。';
+  assert.strictEqual(md.dedupeParagraphs(plain), plain);
+});
+
 /* ===================== services/agent 分帧 ===================== */
 const agent = loadModule(path.join(ROOT, 'services', 'agent.js'), {
   '../config': { apiBase: 'https://x', agentSsePath: '/api/v1/agent/stream' },

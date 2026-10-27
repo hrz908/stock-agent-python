@@ -19,7 +19,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
 import agent.repo.stock as repo_stock  # noqa: E402
 import agent.tools.compare as compare  # noqa: E402
 from agent.repo.stock import industry_peers  # noqa: E402
-from agent.subgraphs.stock import _DATA_TOOLS, _TOOL_LABELS, _infer_tool_by_args  # noqa: E402
+from agent.subgraphs.stock._state import _TOOL_LABELS  # noqa: E402
+from agent.subgraphs.stock._state import DATA_TOOLS as _DATA_TOOLS  # noqa: E402
+from agent.subgraphs.stock._toolcall import _infer_tool_by_args  # noqa: E402
 from agent.tools import get_tools  # noqa: E402
 from agent.tools.compare import _auto_peers, _split_peers, get_peer_compare  # noqa: E402
 from agent.tools.peers import get_industry_peers  # noqa: E402

@@ -16,6 +16,8 @@
   P12 正文不追加免责声明
   P17 回答版式规范（分段 / 标点 / 不用加粗）
   P18 闲聊分支不再把问句当回答（提示词结构 + 流式标签净化）+ 行情问句不被概念词误判
+2026-10-27 新增：
+  P20 回复去重（重复段落 / 重复工具结果 / 同类卡片）与卡片改到正文之后
 
 用法：python tests/regression/test_regression.py
 """
@@ -32,19 +34,33 @@ from agent.core.llm import count_message_tokens, is_context_overflow
 from agent.core.sanitize import StreamCleaner
 from agent.nodes.refuse import _REFUSE_TEXT, refuse
 from agent.subgraphs.cards import validate_card, validate_table
-from agent.subgraphs.stock import (
-    _DATA_ABBR_RE,
-    _OVERFLOW_REPLY,
-    _TOOL_LABELS,
-    _asked_for_data,
-    _call_rounds,
+
+# stock 子图已按职责拆分（_cards / _fallback / _state / _toolcall），
+# 这里按真实归属导入；stock_mod 指向节点所在的 _toolcall 模块（测试要打补丁）。
+from agent.subgraphs.stock import _cards as stock_cards
+from agent.subgraphs.stock import _state as stock_state
+from agent.subgraphs.stock import _toolcall as stock_mod
+from agent.subgraphs.stock._cards import (
+    _card_candidates,
+    _dedupe_tool_results,
     _event_desc,
+)
+from agent.subgraphs.stock._fallback import (
+    _DATA_ABBR_RE,
+    _asked_for_data,
     _failure_reason,
-    _fit_context,
     _got_data,
     _is_concept_question,
     _needs_data_fetch,
     _no_data_fallback,
+)
+from agent.subgraphs.stock._fallback import (
+    OVERFLOW_REPLY as _OVERFLOW_REPLY,
+)
+from agent.subgraphs.stock._state import _TOOL_LABELS
+from agent.subgraphs.stock._toolcall import (
+    _call_rounds,
+    _fit_context,
     _normalize_tool_call,
     _parse_text_tool_call,
     _pending_nudge,
@@ -284,8 +300,6 @@ def test_graph_wiring_and_retry():
     print("\n[P3] 子图接线：重试路由可用（防 KeyError）")
     import asyncio
 
-    from agent.subgraphs import stock as stock_mod
-
     class _FakeLLM:
         """永远不调工具的假模型：逼出「模型没调工具」这条分支。"""
 
@@ -302,12 +316,16 @@ def test_graph_wiring_and_retry():
     fake = _FakeLLM()
     orig = stock_mod.get_llm
     orig_plan = stock_mod._fast_plan
+    orig_tool_bound = stock_mod._tool_bound_llm
 
     async def _no_plan(state):
         # 本用例只验证「模型没调工具 -> 有界重试」的接线，不能被确定性规划接管
         return None
 
+    # 决策轮用的是 _state 里懒绑定的模型（拆分后不再共享 _toolcall.get_llm），
+    # 两个入口都指到假模型，否则会去打真实 LLM
     stock_mod.get_llm = lambda **kw: fake
+    stock_mod._tool_bound_llm = lambda: fake
     stock_mod._fast_plan = _no_plan
     try:
         g = stock_mod.build_stock_subgraph()
@@ -328,6 +346,7 @@ def test_graph_wiring_and_retry():
     finally:
         stock_mod.get_llm = orig
         stock_mod._fast_plan = orig_plan
+        stock_mod._tool_bound_llm = orig_tool_bound
 
 
 def test_tool_short_circuit():
@@ -340,7 +359,7 @@ def test_tool_short_circuit():
     search = {"tool_results": _tool_results("symbol_search", True, data=[{"code": "600519"}])}
     check("只搜到代码 -> 继续 tool_call", route_after_execute(search) == "tool_call",
           str(route_after_execute(search)))
-    fail = {"tool_results": _tool_results("get_quote", False, "timeout")}
+    fail = {"tool_results": _tool_results("get_quote", False, "connection reset")}
     check("瞬时失败 -> 允许再决策", route_after_execute(fail) == "tool_call",
           str(route_after_execute(fail)))
     check("空结果 -> 继续 tool_call", route_after_execute({"tool_results": []}) == "tool_call")
@@ -361,8 +380,6 @@ def test_graph_short_circuit_after_tool_success():
     import asyncio
 
     from langchain_core.messages import AIMessageChunk
-
-    from agent.subgraphs import stock as stock_mod
 
     class _FakeTool:
         name = "get_quote"
@@ -394,12 +411,12 @@ def test_graph_short_circuit_after_tool_success():
     tool_llm = _FakeToolLLM()
     orig_tool_bound = stock_mod._tool_bound_llm
     orig_get_llm = stock_mod.get_llm
-    orig_tools = stock_mod._TOOLS
-    orig_bound = stock_mod._bound_llm
+    orig_tools = stock_state._TOOLS
+    orig_bound = stock_state._bound_llm
     stock_mod._tool_bound_llm = lambda: tool_llm
     stock_mod.get_llm = lambda **kw: _FakeStreamLLM()
-    stock_mod._TOOLS = [_FakeTool()]
-    stock_mod._bound_llm = None
+    stock_state._TOOLS = [_FakeTool()]
+    stock_state._bound_llm = None
     try:
         g = stock_mod.build_stock_subgraph()
         q = "查询贵州茅台（SH600519）的最新行情"
@@ -436,8 +453,8 @@ def test_graph_short_circuit_after_tool_success():
     finally:
         stock_mod._tool_bound_llm = orig_tool_bound
         stock_mod.get_llm = orig_get_llm
-        stock_mod._TOOLS = orig_tools
-        stock_mod._bound_llm = orig_bound
+        stock_state._TOOLS = orig_tools
+        stock_state._bound_llm = orig_bound
 
 
 def test_stage_timings_and_ttft():
@@ -592,12 +609,11 @@ def test_card_validation():
 # ===== P11：卡片选择（2026-10-26）=====
 def test_card_selection():
     print("\n[P11] 一次回复只发一张卡，K 线话题发 K 线卡")
-    from agent.subgraphs import stock as stock_mod
 
     emitted = []
-    orig_card, orig_table = stock_mod.emit_card, stock_mod.emit_table
-    stock_mod.emit_card = lambda t, p: emitted.append(t)
-    stock_mod.emit_table = lambda t, p: emitted.append(t)
+    orig_card, orig_table = stock_cards.emit_card, stock_cards.emit_table
+    stock_cards.emit_card = lambda t, p: emitted.append(t)
+    stock_cards.emit_table = lambda t, p: emitted.append(t)
 
     quote = ("get_quote", {"code": "SH600519", "name": "贵州茅台",
                            "price": 1500.0, "change_percent": 1.2})
@@ -618,7 +634,7 @@ def test_card_selection():
     def run(query, tools):
         emitted.clear()
         tr = [{"tool": t, "result": {"ok": True, "data": d}} for t, d in tools]
-        stock_mod._emit_structured({"query": query, "rewritten": ""}, tr)
+        stock_cards._emit_structured({"query": query, "rewritten": ""}, tr)
         return list(emitted)
 
     try:
@@ -636,6 +652,12 @@ def test_card_selection():
                                     [quote, flow]) == ["fundflow_card"])
         check("财报问句只发财报卡", run("看一下茅台最新的财报主要指标",
                                   [quote, report]) == ["report_card"])
+        # 2026-10-27 实测漏判：口语说「财务表现 / 赚钱能力」不提「财报」，
+        # 词表没覆盖就按工具顺序落到估值卡上去了
+        check("财务表现问句只发财报卡", run("茅台最近财务表现如何",
+                                    [valuation, report]) == ["report_card"])
+        check("赚钱能力问句只发财报卡", run("茅台这几年的赚钱能力怎么样",
+                                     [valuation, report]) == ["report_card"])
         check("行情问句只发行情卡", run("贵州茅台现在什么价", [quote, news]) == ["quote_card"])
         check("新闻问句只发事件卡", run("茅台最近有什么新闻动态",
                                   [quote, news]) == ["event_card"])
@@ -652,7 +674,7 @@ def test_card_selection():
               run("茅台估值高不高",
                   [("get_valuation", [{"ts_code": "600519.SH"}]), quote]) == ["quote_card"])
     finally:
-        stock_mod.emit_card, stock_mod.emit_table = orig_card, orig_table
+        stock_cards.emit_card, stock_cards.emit_table = orig_card, orig_table
 
 
 def test_kline_card_title_carries_symbol():
@@ -661,17 +683,16 @@ def test_kline_card_title_carries_symbol():
     标题缺名会一直停在兜底的「K 线走势」，看不出是哪只票。
     """
     print("\n[P11b] K 线卡标题带标的名")
-    from agent.subgraphs import stock as stock_mod
 
     rows = [{"trade_date": "2026-10-23", "open": 1, "high": 2,
              "low": 0.5, "close": 1.5, "vol": 100}]
     tr = [{"tool": "get_history_daily", "result": {"ok": True, "data": rows}}]
 
-    with_symbol = stock_mod._card_candidates(tr, {"entities": {"symbol": "金安国纪"}})
+    with_symbol = stock_cards._card_candidates(tr, {"entities": {"symbol": "金安国纪"}})
     check("没查行情也能带标的名",
           bool(with_symbol) and with_symbol[0][1].get("name") == "金安国纪")
 
-    without = stock_mod._card_candidates(tr, {})
+    without = stock_cards._card_candidates(tr, {})
     check("取不到标的时不硬编名字", bool(without) and "name" not in without[0][1])
 
 
@@ -858,7 +879,6 @@ def test_direct_tools():
     print("\n[P7] 进程内工具集（无 MCP 通道）")
     import asyncio
 
-    from agent.subgraphs import stock as stock_mod
     from agent.tools import get_tools
 
     # 不写死数量：新增取数工具不该每次都改这条断言
@@ -866,16 +886,16 @@ def test_direct_tools():
     check("工具标签表齐全", all(n in _TOOL_LABELS for n in names), str(names))
     check("知识库检索工具可构造", search_knowledge_base.name == "search_knowledge_base")
 
-    stock_mod._TOOLS = None
-    asyncio.run(stock_mod._ensure_tools())
-    names2 = [t.name for t in stock_mod._tools()]
+    stock_state._TOOLS = None
+    asyncio.run(stock_state._ensure_tools())
+    names2 = [t.name for t in stock_state._tools()]
     check("子图工具集含知识库检索", "search_knowledge_base" in names2, str(names2))
 
 
 # ===== P8：benchmark 调优（2026-10-24）新增行为的回归 =====
 def test_rewrite_into_toolcall():
     print("\n[P8] 指代消解结果贯通 tool_call（多轮第二轮必须能取数）")
-    from agent.subgraphs.stock import _apply_rewrite
+    from agent.subgraphs.stock._toolcall import _apply_rewrite
 
     q = "它的市盈率是多少？"
     rewritten = "贵州茅台的市盈率是多少？"
@@ -923,7 +943,7 @@ def test_vague_reference_guard():
 
 def test_graceful_empty_fallback():
     print("\n[P8] 兜底文案区分「客观无数据」与「取数失败」")
-    from agent.subgraphs.stock import _all_failures_graceful_empty, _no_data_fallback
+    from agent.subgraphs.stock._fallback import _all_failures_graceful_empty
 
     # 未上榜：客观结论，不应套「请稍后重试」
     tr_lhb = _tool_results("get_top_list", False, "近期未上榜或暂无龙虎榜数据")
@@ -1278,8 +1298,6 @@ def test_kb_sources_event():
 
     from langchain_core.messages import AIMessage, HumanMessage
 
-    from agent.subgraphs import stock as stock_mod
-
     class _FakeTool:
         name = "search_knowledge_base"
 
@@ -1292,8 +1310,8 @@ def test_kb_sources_event():
             ]}
 
     captured = []
-    orig_tools, orig_emit = stock_mod._TOOLS, stock_mod.emit
-    stock_mod._TOOLS = [_FakeTool()]
+    orig_tools, orig_emit = stock_state._TOOLS, stock_mod.emit
+    stock_state._TOOLS = [_FakeTool()]
     stock_mod.emit = lambda ev, data: captured.append((ev, data))
     try:
         ai = AIMessage(content="", tool_calls=[{
@@ -1302,7 +1320,7 @@ def test_kb_sources_event():
         state = {"messages": [HumanMessage(content="q"), ai], "tool_results": [], "timings": {}}
         out = asyncio.run(stock_mod.tool_execute(state))
     finally:
-        stock_mod._TOOLS, stock_mod.emit = orig_tools, orig_emit
+        stock_state._TOOLS, stock_mod.emit = orig_tools, orig_emit
 
     src = [data for ev, data in captured if ev == "sources"]
     check("知识库结果发出 sources", len(src) == 1, str(captured))
@@ -1448,6 +1466,118 @@ def test_fast_plan_and_chat_shortcut():
         entity._stock_names = orig
 
 
+# ===== P20：回复去重与卡片时序（2026-10-27）=====
+def test_reply_dedup_and_card_order():
+    print("\n[P20] 重复内容/重复卡片去重，卡片改到正文之后")
+    from agent.core.sanitize import dedupe_answer_text
+    from agent.core.state import recent_turns
+
+    # 1. 正文：完全重复的段落只留一段
+    para = "贵州茅台站上 5 日均线，短期走势偏强，量能温和放大，需留意上方压力位。"
+    text = para + "\n\n估值处于近三年中枢附近，单看倍数容易误判。\n\n" + para
+    out = dedupe_answer_text(text)
+    check("重复段落只留一段", out.count("站上 5 日均线") == 1, out)
+    check("非重复段落原样保留", "估值处于近三年中枢附近" in out, out)
+    check("无重复时逐字不变", dedupe_answer_text("只有一段话。") == "只有一段话。")
+    check("短句重复不误删", dedupe_answer_text("结论：\n\n结论：") == "结论：\n\n结论：")
+
+    # 2. 工具结果：同一工具 + 同一入参重复调用只留最后一次成功结果
+    args = {"code": "SH600519"}
+    tr = [
+        {"tool": "get_quote", "args": args,
+         "result": {"ok": True, "data": {"code": "SH600519", "price": 1}}},
+        {"tool": "get_quote", "args": args,
+         "result": {"ok": False, "error": "timeout"}},
+        {"tool": "get_quote", "args": args,
+         "result": {"ok": True, "data": {"code": "SH600519", "price": 2}}},
+    ]
+    deduped = _dedupe_tool_results(tr)
+    check("重复工具结果折叠成一条", len(deduped) == 1, str(deduped))
+    check("保留最后一次成功结果", deduped[0]["result"]["data"]["price"] == 2, str(deduped))
+
+    # 后面的失败不能把已经取到的数据冲掉
+    tr_fail_last = [tr[0], tr[1]]
+    deduped2 = _dedupe_tool_results(tr_fail_last)
+    check("失败不覆盖已成功的数据",
+          len(deduped2) == 1 and deduped2[0]["result"].get("ok"), str(deduped2))
+
+    # 不同入参（不同标的）不能被误合并
+    other = {"tool": "get_quote", "args": {"code": "SZ000001"},
+             "result": {"ok": True, "data": {"code": "SZ000001", "price": 9}}}
+    check("不同入参不合并", len(_dedupe_tool_results([tr[0], other])) == 2)
+
+    # 3. 同类卡片只留一份候选（重复调用同一工具也是）
+    quote = {"tool": "get_quote",
+             "result": {"ok": True,
+                        "data": {"code": "SH600519", "name": "贵州茅台", "price": 1500.0}}}
+    cands = _card_candidates([quote, dict(quote)], {})
+    check("同类候选只留一份", len(cands) == 1 and cands[0][0] == "quote_card", str(cands))
+
+    emitted = []
+    orig_card, orig_table = stock_cards.emit_card, stock_cards.emit_table
+    stock_cards.emit_card = lambda t, p: emitted.append(t)
+    stock_cards.emit_table = lambda t, p: emitted.append(t)
+    try:
+        got = stock_cards._emit_structured({"query": "茅台现在什么价"}, [quote, dict(quote)])
+        check("一次回复只发一张卡", got == ["quote_card"] and emitted == ["quote_card"],
+              f"{got} / {emitted}")
+        again = stock_cards._emit_structured(
+            {"query": "茅台现在什么价", "cards": ["quote_card"]}, [quote])
+        check("同一轮重复合成不重复发卡", again == [] and emitted == ["quote_card"],
+              f"{again} / {emitted}")
+    finally:
+        stock_cards.emit_card, stock_cards.emit_table = orig_card, orig_table
+
+    # 4. 事件卡：同一条资讯被多频道重复返回时只渲染一条
+    news = [
+        {"title": "茅台回购公告", "datetime": "2026-10-23 10:00"},
+        {"title": " 茅台回购公告 ", "datetime": "2026-10-23 11:00"},
+    ]
+    payload = stock_cards._event_card_payload(news)
+    check("事件卡按标题去重", payload and len(payload["events"]) == 1, str(payload))
+
+    # 5. 历史：重复出现的同一段回答只喂给模型一次
+    dupe = "这是一段足够长的历史回答，重复出现时会让模型跟着复述一遍同样的内容。"
+    hist = recent_turns({"messages": [
+        HumanMessage(content="q1"),
+        AIMessage(content=dupe),
+        AIMessage(content=dupe),
+        HumanMessage(content="q2"),
+    ]}, 6)
+    check("历史重复回答只保留一条",
+          sum(1 for m in hist if isinstance(m, AIMessage)) == 1, str(hist))
+
+    # 6. 时序：token 先全部下发，卡片最后才发
+    import asyncio
+
+    from langchain_core.messages import AIMessageChunk
+
+    class _FakeStreamLLM:
+        async def astream(self, msgs):
+            yield AIMessageChunk(content="第一段正文，先说结论。\n\n")
+            yield AIMessageChunk(content="第二段正文，补充依据。")
+
+    order = []
+    orig_emit_fn, orig_stream_llm = stock_mod.emit, stock_mod.get_llm
+    orig_ecard, orig_etable = stock_cards.emit_card, stock_cards.emit_table
+    stock_mod.get_llm = lambda **kw: _FakeStreamLLM()
+    stock_mod.emit = lambda ev, data: order.append(ev)
+    stock_cards.emit_card = lambda t, p: order.append("card")
+    stock_cards.emit_table = lambda t, p: order.append("table")
+    try:
+        out3 = asyncio.run(stock_mod.synthesize({
+            "query": "茅台现在什么价",
+            "tool_results": [quote],
+        }))
+    finally:
+        stock_mod.emit, stock_mod.get_llm = orig_emit_fn, orig_stream_llm
+        stock_cards.emit_card, stock_cards.emit_table = orig_ecard, orig_etable
+    check("卡片排在正文之后（最后一帧）",
+          order and order[-1] == "card" and order.count("token") >= 1, str(order))
+    check("synthesize 回报已发卡片类型", out3.get("cards") == ["quote_card"],
+          str(out3.get("cards")))
+
+
 def main():
     print("=" * 62)
     print("AI 对话故障回归测试")
@@ -1491,6 +1621,7 @@ def main():
     test_stream_cleaner_strips_prompt_leak()
     test_event_card_desc_clean()
     test_fast_plan_and_chat_shortcut()
+    test_reply_dedup_and_card_order()
     print("\n" + "=" * 62)
     if _FAILED:
         print(f"FAILED: {len(_FAILED)} 项 -> {_FAILED}")

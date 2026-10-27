@@ -14,7 +14,7 @@ import {
   sessionMessages,
   deleteSession
 } from '../../services/sessions';
-import { createMarkdownStream } from '../../utils/markdown';
+import { createMarkdownStream, dedupeParagraphs } from '../../utils/markdown';
 import { fontScalePatch } from '../../utils/font-scale';
 // 消息与卡片映射：纯函数模块，字段口径与 components/finance/* 的 props 一一对应
 import {
@@ -127,8 +127,9 @@ const KEYBOARD_GAP_RPX = 16;
 // 这里只负责把 SSE 事件转成 message 塞进列表，不再写字段映射。
 
 // ===== 卡片 =====
-// 一次回复最多出一张卡（后端按问题意图只挑一张），排在正文之前：
-// 后端在正文开始生成前就下发，收到即落位（见 _placeCard），正文随后在卡下方逐字长出。
+// 一次回复最多出一张卡（后端按问题意图只挑一张），排在正文之后：
+// 后端在正文流式结束后才下发，收到即追加到回复末尾（见 _placeCard），
+// 同类卡片一轮只落一张（见 _queueCard）。
 
 // ===== 语音输入 =====
 // 点一下开始聆听、再点一下把识别结果直接发给 agent（不是「按住说话」）
@@ -329,8 +330,8 @@ Page({
     this._streamClosing = false;
     // 本轮是否已经开始出正文：正文一出现，加载块就让位（加载文案不再刷）
     this._roundTextStarted = false;
-    // 本轮是否已落过卡：一轮最多一张，收到即落位
-    this._cardPlaced = false;
+    // 本轮已落位的卡片类型：同类卡片只生成一份（重复事件直接丢掉）
+    this._cardTypes = {};
 
     // 抽屉内容避让状态栏：statusBarHeight 下方再留 28px（原 44，按需求整体上移一点）。
     // 抽屉在左侧、胶囊菜单在右上，横向不重叠，故减小留白不会撞上菜单按钮
@@ -392,7 +393,7 @@ Page({
     });
 
     // 结构化卡片：八类（事件契约见 agent 的 _emit_structured 与 server/README.md）。
-    // 后端一次回复只发一张，且发在正文之前，收到即落位（见 _queueCard）
+    // 后端一次回复只发一张，且在正文之后，收到即追加到回复末尾（见 _queueCard）
     on('card', (data) => {
       if (!data || !data.payload) return;
       let msg = null;
@@ -622,32 +623,38 @@ Page({
     this.setData({ ['messages[' + idx + '].sources']: this._roundSources });
   },
 
-  // ===== 卡片落位：收到即插到正文之前 =====
+  // ===== 卡片落位：收到即追加到回复末尾 =====
 
-  // 一轮只留一张：真有多张也只用第一张，与后端「一次回复最多一张」的产品规则对齐
+  // 同类卡片一轮只留一张：后端已按问题意图只挑一张，这里是客户端兜底——
+  // 同一类卡重复到达（重连重放 / 双路触达）时不能再渲染第二张
   _queueCard(msg) {
-    if (this._cardPlaced) return;
-    this._cardPlaced = true;
+    const type = (msg && msg.card) || '';
+    if (type && this._cardTypes[type]) return;
+    if (type) this._cardTypes[type] = true;
     this._placeCard(msg);
   },
 
-  // 落位在正文之前。正常时序下正文还没开始，直接追加（正文随后新建在它之后）；
-  // 卡片迟到时插到那条正文消息之前，流式下标后移一格，否则逐字更新会写到卡上。
-  // 落位后跟一次底：卡片有 200px 级高度，不跟随会把它自己和下方的加载块
-  // 一起顶出视口（实测表现就是「发送后什么都没有，加载气泡不显示」）
+  // 落位在回复末尾。后端在正文流式结束后才下发卡片，正常时序下正文气泡已经在列表里，
+  // 直接追加到它后面即可；正文为空（只有卡）时同样追加在最后。
+  // 追加而不是整表回传：整份 messages 会连带历史消息（含已解析的 blocks）重传一遍。
+  // 不跟底：与正文流式同一口径（回复期间视口保持不动），卡片是补充证据，
+  // 用户读完正文自然向下就能看到，不该在收尾时把视口拽走。
   _placeCard(msg) {
-    const messages = this.data.messages;
-    const idx = this._streamIndex;
-    if (idx < 0) {
-      this.setData({ ['messages[' + messages.length + ']']: msg });
-      this.scrollToBottom();
-      return;
-    }
-    const next = messages.slice();
-    next.splice(idx, 0, msg);
-    this._streamIndex = idx + 1;
-    this.setData({ messages: next });
-    this.scrollToBottom();
+    this.setData({ ['messages[' + this.data.messages.length + ']']: msg });
+  },
+
+  // 收尾前清理重复段落：已经逐字打出来的内容撤不回，只能在整轮结束前把
+  // 「完全重复的段落」从视图里删掉（只删后出现的那段，不重写其余文字）。
+  // 与后端 dedupe_answer_text 同一口径，判定不出来的近似重复不动。
+  _dedupeStreamText() {
+    if (this._streamIndex < 0) return;
+    const deduped = dedupeParagraphs(this._streamText);
+    if (deduped === this._streamText) return;
+    this._streamText = deduped;
+    this._streamShown = deduped.length;
+    // 解析器重建：下一帧（_snapStreamEnd 的 force 渲染）要按新全文整体重算 blocks
+    this._mdStream = createMarkdownStream();
+    this._mdTailLen = -1;
   },
 
   // 一轮真正结束：收尾流式消息，最后才解锁发送
@@ -657,6 +664,7 @@ Page({
     // 第一次收尾已把 sending 置 false，第二次直接返回，省一次 setData
     if (!this.data.sending) return;
     this._streamClosing = false;
+    this._dedupeStreamText();
     this._snapStreamEnd();
     this._finishStreaming();
     this._endLoad();
@@ -894,10 +902,10 @@ Page({
     if (!text || this.data.sending) return;
 
     // 上一轮先落定（正常情况下 _endTurn 已经收过尾，这里是兜底）：
-    // 剩余文字一次性铺完，卡片闸门复位
+    // 剩余文字一次性铺完，卡片类型闸门复位
     this._snapStreamEnd();
     this._finishStreaming();
-    this._cardPlaced = false;
+    this._cardTypes = {};
     // 引用来源按轮收集：sources 通常在正文之前到达（RAG 检索完先发引用）
     this._roundSources = [];
 

@@ -7,6 +7,7 @@ AgentState 贯穿主图与子图，约定：
 所有节点只写自己负责的字段，避免相互踩踏。
 """
 import operator
+import re
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -78,11 +79,15 @@ def recent_turns(state: dict, limit: int = 6, query: str = None) -> list:
     与带 tool_calls 的 AIMessage（残缺配对会让上游接口报错）；
     传入 query 时额外跳过内容等于当前问题的人类消息，避免调用方追加时重复。
     末尾的当前轮一并排除，保证上下文口径一致；stock / rag / chat 三个子图共用。
+
+    同一段历史回答重复出现在窗口里（重复生成 / 重复落库）时只保留最后一条：
+    喂给模型会直接诱发「把上一轮说过的话再复述一遍」。
     """
     msgs = list(state.get("messages", []))
     body = msgs[:-1] if msgs else []  # 排除末尾当前轮
     q = (query or "").strip()
     out = []
+    seen_ai: set[str] = set()
     for m in body[-(limit + 1):]:
         if isinstance(m, ToolMessage):
             continue
@@ -94,5 +99,12 @@ def recent_turns(state: dict, limit: int = 6, query: str = None) -> list:
             and (m.content if isinstance(m.content, str) else str(m.content or "")).strip() == q
         ):
             continue
+        if isinstance(m, AIMessage):
+            content = m.content if isinstance(m.content, str) else str(m.content or "")
+            key = re.sub(r"\s+", "", content)
+            if key:
+                if key in seen_ai:
+                    continue
+                seen_ai.add(key)
         out.append(m)
     return out[-limit:]

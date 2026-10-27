@@ -35,8 +35,17 @@ Component({
   },
   methods: {
     mapEvents() {
+      // 同一标题只渲染一条：资讯源常把同一条消息挂在不同频道下重复返回，
+      // 后端已按标题去重，这里再兜一层（wx:key="title" 撞 key 会直接渲染重影）
+      const seen = Object.create(null);
       const rows = (this.data.events || [])
         .filter((e) => e && e.title)
+        .filter((e) => {
+          const key = String(e.title).replace(/\s+/g, '');
+          if (seen[key]) return false;
+          seen[key] = true;
+          return true;
+        })
         .map((e) => ({
           type: e.type || '',
           date: e.date || '',

@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.config import ANSWER_ENABLE_THINKING
 from agent.core.llm import get_llm
-from agent.core.sanitize import StreamCleaner
+from agent.core.sanitize import StreamCleaner, dedupe_answer_text
 from agent.core.state import AgentState, recent_turns
 from agent.core.template import render
 from agent.subgraphs import emit
@@ -62,7 +62,7 @@ async def llm_stream(state: dict) -> dict:
         ai = ai + p
     # 落库/AIMessage 里也只留净化后的正文：否则下一轮历史又把这堆标签喂回模型
     if ai is not None:
-        patch = {"content": "".join(sent)}
+        patch = {"content": dedupe_answer_text("".join(sent))}
         if last_usage:
             patch["usage_metadata"] = last_usage
         ai = ai.model_copy(update=patch)
