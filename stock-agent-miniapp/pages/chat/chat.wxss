@@ -1025,14 +1025,6 @@
   border-radius: var(--radius-sm);
 }
 
-/* 当前会话：同样吃抽屉底色，靠左侧黑竖条 + 600 字重标出选中
-   （不加白底、不加描边、不加投影——抽屉里所有元素都不再抬高） */
-.history-item--active {
-  background: var(--bg-disabled);
-  border-left: 4rpx solid var(--text-primary);
-  padding-left: var(--space-sm);
-}
-
 .history-item-main {
   flex: 1;
   min-width: 0;
@@ -1046,6 +1038,7 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* 当前会话：只靠 600 字重区分（不加底色差、不加竖条、不加描边） */
 .history-item--active .history-item-title {
   color: var(--text-primary);
   font-weight: 600;
