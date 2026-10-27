@@ -24,3 +24,7 @@ export function quote(code) {
 export function kline(code, period, limit = 60) {
   return get(`${API}/stock/kline`, { code, period, limit });
 }
+
+// 注意：后端另有 GET /api/v1/stocks/profile（板块 / 行业 / 概念 / 上市退市），
+// 但它只服务 agent 工具层（回答里引用公司属性），小程序当前没有展示位。
+// 将来加「公司简介」时在这里补 profile(code)，不要另起一套请求。

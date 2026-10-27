@@ -86,6 +86,18 @@ function trendColorOf(a) {
   return 'var(--up)';
 }
 
+// 现价与目标价的差距：只有价格类条件有意义（涨幅/倍量比的是无量纲阈值）。
+// 后端没给现价（停牌 / 行情源抖动）时返回空串，卡片不显示这一行
+function gapTextOf(a) {
+  const cur = parseFloat(a.currentPrice);
+  const target = parseFloat(a.threshold);
+  if (!isFinite(cur) || !isFinite(target) || cur <= 0 || target <= 0) return '';
+  if (a.conditionType !== 'priceUp' && a.conditionType !== 'priceDown') return '';
+  const gap = ((target - cur) / cur) * 100;
+  if (Math.abs(gap) < 0.01) return '已到目标价';
+  return `距目标 ${gap > 0 ? '+' : ''}${gap.toFixed(2)}%`;
+}
+
 // 接口返回的提醒 -> 卡片渲染结构，各段文案在这里算好，WXML 直接取。
 // 触发状态标签与触发时间已按需求移除，不再派生 triggerText/time 字段
 function decorate(a) {
@@ -94,6 +106,8 @@ function decorate(a) {
     condText: text.condText,
     freqText: text.freqText,
     priceText: priceTextOf(a),
+    currentText: a.currentPrice ? `现价 ¥${a.currentPrice}` : '',
+    gapText: gapTextOf(a),
     trendIcon: trendIconOf(a),
     trendColor: trendColorOf(a)
   });

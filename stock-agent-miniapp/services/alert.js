@@ -65,6 +65,9 @@ function toViewItem(item) {
     volumeBase: item.volume_base || 0,
     checkFrequency: item.check_frequency || 'realtime',
     enabled: !!item.enabled,
+    // 后端按当前行情顺带算好的现价与涨跌幅；无行情时是 null，页面据此隐藏
+    currentPrice: item.current_price == null ? '' : String(item.current_price),
+    changePercent: item.change_percent == null ? '' : String(item.change_percent),
     // 有没有触发过，页面据此显示「已触发 / 未触发」和时间文案
     lastTriggeredAt: item.last_triggered_at || '',
     createdAt: item.created_at || ''

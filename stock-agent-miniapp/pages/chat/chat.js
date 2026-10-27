@@ -314,6 +314,8 @@ Page({
     // 尾段块数变化（或段落定型）时视图层要整段重写 blocks，否则只 patch 尾部下标
     this._mdStream = null;
     this._mdTailLen = 0;
+    // 本轮 RAG 引用来源（标题去重后挂在 assistant 气泡底部）
+    this._roundSources = [];
     // 历史消息分片：池子里是尚未渲染的更早消息
     this._historyPool = [];
     this._typeTimer = 0;
@@ -439,11 +441,25 @@ Page({
       this._refreshLoad();
     });
 
+    // 知识库引用来源：后端检索完立刻发（早于正文），挂在 assistant 气泡底部。
+    // 只取标题并去重——chunk_id / score 是内部定位信息，对用户没有意义
+    on('sources', (data) => {
+      const docs = (data && data.docs) || [];
+      const titles = [];
+      for (let i = 0; i < docs.length; i++) {
+        const t = docs[i] && docs[i].title ? String(docs[i].title).trim() : '';
+        if (t && titles.indexOf(t) < 0) titles.push(t);
+      }
+      if (!titles.length) return;
+      this._roundSources = titles.slice(0, 5);
+      this._applySources();
+    });
+
     // 错误：不再逐字往外吐，已收到的正文一次性显示完再收尾；
     // 已经暂存的卡仍然放出来（数据是好的），别让用户白等一轮。
-    // 两种载荷都要认：agent 直出的 error 是 {message}，网关补发的 error 是 {code,msg}
+    // 载荷统一为 {code, message}；data.msg 是旧版网关字段，留一版兜底
     on('error', (data) => {
-      this._failSend((data && (data.msg || data.message)) || '服务异常');
+      this._failSend((data && (data.message || data.msg)) || '服务异常');
     });
 
     // 本轮回答结束：先记下「该收尾了」，等逐字打完再真正结束（_endTurn）。
@@ -494,7 +510,9 @@ Page({
             status: 'streaming',
             content: [{ type: 'markdown', data: '' }],
             // 流式消息同样带 blocks：每帧只补正在写的那一段，版式随文字一起长
-            blocks: []
+            blocks: [],
+            // sources 早于首个 token 到达，建消息时一次性落位（见 on('sources')）
+            sources: this._roundSources.slice()
           }
         });
         // 正文气泡刚建出来：把它顶进视口（之后逐字增长不再跟随，见本文件顶部说明）
@@ -589,7 +607,19 @@ Page({
     if (idx < 0) return;
     const patch = {};
     patch['messages[' + idx + '].status'] = 'complete';
+    // 来源可能晚于最后一段正文到达，收尾时再补一次，免得只有正文没有出处
+    if (this._roundSources.length) {
+      patch['messages[' + idx + '].sources'] = this._roundSources;
+    }
     this.setData(patch);
+  },
+
+  // 把已收集的引用来源挂到当前流式气泡。正文还没开始（_streamIndex < 0）时不动：
+  // 那条消息建出来时会带上 this._roundSources（见 _appendToken）
+  _applySources() {
+    const idx = this._streamIndex;
+    if (idx < 0 || !this._roundSources.length) return;
+    this.setData({ ['messages[' + idx + '].sources']: this._roundSources });
   },
 
   // ===== 卡片落位：收到即插到正文之前 =====
@@ -623,6 +653,9 @@ Page({
   // 一轮真正结束：收尾流式消息，最后才解锁发送
   // （解锁早了会把新一轮 token 续进这条旧气泡）
   _endTurn() {
+    // 幂等：error 与 done 会先后到达（agent 出错后仍会补一帧 done），
+    // 第一次收尾已把 sending 置 false，第二次直接返回，省一次 setData
+    if (!this.data.sending) return;
     this._streamClosing = false;
     this._snapStreamEnd();
     this._finishStreaming();
@@ -850,7 +883,7 @@ Page({
     const q = ds.q || '';
     if (!q) return;
     // 点击上报只服务热度池，失败不影响发问，不等它的结果
-    if (ds.code) reportQuickAskClick(ds.code, ds.id || '').catch(() => {});
+    if (ds.code) reportQuickAskClick(ds.code).catch(() => {});
     this.sendText(q);
   },
 
@@ -865,6 +898,8 @@ Page({
     this._snapStreamEnd();
     this._finishStreaming();
     this._cardPlaced = false;
+    // 引用来源按轮收集：sources 通常在正文之前到达（RAG 检索完先发引用）
+    this._roundSources = [];
 
     this._roundTextStarted = false;
     // 追加用路径写法：整表回传会把历史消息（含已解析的 blocks）重传一遍，

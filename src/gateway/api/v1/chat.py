@@ -50,6 +50,10 @@ AgentLimiterDep = Annotated[
 STREAM_BODY_LIMIT = 64 << 10
 MAX_QUERY_RUNES = 2000
 
+# 等待上游事件时的心跳间隔：小程序/代理在长时间静默后会判定断连，
+# 而工具取数 + 模型组织语言期间可能几十秒没有任何 token（TTFT 提示只发一次）。
+HEARTBEAT_SECONDS = 15.0
+
 
 def _run_semaphore() -> asyncio.Semaphore:
     return runtime().service("run_semaphore")
@@ -103,18 +107,23 @@ async def _sse_stream(
                     # 必须复用同一个 next_task：重复 create_task(iterator.__anext__())
                     # 会抛 RuntimeError: anext(): asynchronous generator is already running
                     # （评测实测：首个事件超过 ttft_timeout=8s 时整轮失败）。
-                    timeout = min(ttft_timeout, remaining) if first else remaining
+                    # 首帧之后按 HEARTBEAT_SECONDS 轮转：超时只发 ping，占用同一套等待逻辑
+                    timeout = min(ttft_timeout if first else HEARTBEAT_SECONDS, remaining)
                     if next_task is None:
                         next_task = asyncio.create_task(iterator.__anext__())
                     done, _ = await asyncio.wait({next_task}, timeout=timeout)
 
                     if not done:
-                        # 定时器只触发一次：收到首个事件后 first 变 False
                         if first:
+                            # 定时器只触发一次：收到首个事件后 first 变 False
                             yield _frame(
                                 "status", {"stage": "thinking", "label": "正在思考…"}
                             )
                             first = False
+                        else:
+                            # 已有事件但还没结束：发心跳帧，避免客户端/代理把静默判成断连
+                            # （前端 services/agent.js 的 ping 分支直接忽略，不触发渲染）
+                            yield _frame("ping", {"t": int(loop.time() - deadline + run_timeout)})
                         continue
 
                     task, next_task = next_task, None
@@ -135,15 +144,16 @@ async def _sse_stream(
             except TimeoutError:
                 logger.info("agent run timeout: thread=%s", thread_id)
                 yield _frame(
-                    "error", {"code": "agent_error", "msg": "对话超时，请稍后重试"}
+                    "error", {"code": "agent_timeout", "message": "对话超时，请稍后重试"}
                 )
             except asyncio.CancelledError:
                 # 客户端断开：向上抛出，让上层取消上游生成器
                 raise
-            except Exception as exc:
+            except Exception:
                 logger.exception("agent stream failed: thread=%s", thread_id)
+                # 异常文本只进日志：类名/字段名对用户无意义（错误帧统一 {code, message}）
                 yield _frame(
-                    "error", {"code": "agent_error", "msg": f"{type(exc).__name__}: {exc}"}
+                    "error", {"code": "agent_error", "message": "回答生成失败，请稍后重试"}
                 )
             finally:
                 # 先收掉可能还挂着的 __anext__（否则 aclose 会撞上「生成器正在运行」）

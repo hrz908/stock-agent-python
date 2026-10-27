@@ -7,6 +7,9 @@
     "pages/kline/kline",
     "pages/privacy/privacy"
   ],
+  "networkTimeout": {
+    "request": 180000
+  },
   "window": {
     "navigationStyle": "custom",
     "backgroundColor": "#F2EDE6",
@@ -16,7 +19,7 @@
   },
   "plugins": {
     "WechatSI": {
-      "version": "0.3.5",
+      "version": "0.3.10",
       "provider": "wx069ba97219f66d99"
     }
   },

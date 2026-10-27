@@ -1006,3 +1006,32 @@
   font-size: var(--font-sm);
   color: var(--ink-3);
 }
+
+/* ===== 知识库引用来源 =====
+   挂在 assistant 气泡底部：一行标题 + 若干条标题文本。
+   用 --ink-3 弱化，避免和正文抢注意力；分隔线用 --hairline（1rpx） */
+.msg-sources {
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: var(--hairline);
+}
+
+.msg-sources-title {
+  display: block;
+  font-size: var(--font-xs);
+  line-height: var(--lh-sm);
+  letter-spacing: var(--ls-xs);
+  color: var(--ink-3);
+}
+
+.msg-sources-list {
+  margin-top: 4rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-sources-item {
+  font-size: var(--font-xs);
+  line-height: var(--lh-base);
+  color: var(--ink-2);
+}

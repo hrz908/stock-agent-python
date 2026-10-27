@@ -217,6 +217,21 @@ agent 也在这里接入——用**同进程函数调用**，不再走 HTTP。
 > `symbol_list`（股票搜索候选）自 2026-10-26 起**不再下发**：它只是搜代码的中间结果，
 > 前端也没有对应卡片。契约校验（`cards.py`）里仍保留，方便将来复用。
 
+非卡片事件（同样是 `event: <type>\ndata: <json>\n\n`）：
+
+| event | 载荷 | 说明 |
+|---|---|---|
+| `token` | `{delta}` | 正文增量，前端按帧累积后逐字揭示 |
+| `status` | `{stage, label}` | 首事件超过 `agent.ttft_timeout`（默认 8s）时发一次 |
+| `ping` | `{t}` | 心跳：首事件之后每 15s 一帧，前端静默忽略、不渲染 |
+| `tool_start` / `tool_end` | `{tool, label}` / `{tool, ok, ms}` | 只驱动加载区文案，不进正文 |
+| `sources` | `{docs: [{title, chunk_id, score}]}` | 知识库引用，正文之前下发；前端去重后取前 5 条标题挂气泡底部 |
+| `error` | `{code, message}` | 统一形状（`agent_error` / `agent_timeout`）；异常详情只进服务端日志 |
+| `done` | `{thread_id, usage}` | 收尾帧，前端据此解锁发送 |
+
+> `error` 的 `code` 目前有 `agent_error`（生成失败）与 `agent_timeout`（超过
+> `agent.run_timeout`，默认 120s）。前端只展示 `message`，`code` 供埋点区分。
+
 说明：
 
 1. **一次回复最多只发一张卡**（2026-10-26 起）。候选由 `_card_candidates` 收集，

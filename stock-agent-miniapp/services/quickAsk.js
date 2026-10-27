@@ -10,10 +10,8 @@ export function list(count = 4, sessionId = '') {
   return get(`${API}/quick-asks`, { count, session_id: sessionId });
 }
 
-// 点击上报：这是热度池里「站内行为」信号的来源，失败不影响发问，调用方不要等结果
-export function click(stockCode, id) {
-  return post(`${API}/quick-asks/click`, {
-    stock_code: stockCode,
-    quick_ask_id: id
-  });
+// 点击上报：这是热度池里「站内行为」信号的来源，失败不影响发问，调用方不要等结果。
+// 只上报股票代码：热度分是按标的聚合的，提问 id 后端不消费（多一个无主字段只会误导）
+export function click(stockCode) {
+  return post(`${API}/quick-asks/click`, { stock_code: stockCode });
 }

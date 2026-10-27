@@ -83,6 +83,14 @@
                   <text wx:if="{{streamStalled}}" class="md-caret-text">{{streamStallText}}</text>
                 </view>
               </block>
+              <!-- 知识库引用来源：仅标题（chunk_id/score 对用户无意义），
+                   由 chat.js 的 on('sources') 收集，最多 5 条 -->
+              <view wx:if="{{msg.sources && msg.sources.length}}" class="msg-sources">
+                <text class="msg-sources-title">参考来源</text>
+                <view class="msg-sources-list">
+                  <text wx:for="{{msg.sources}}" wx:for-item="src" wx:key="*this" class="msg-sources-item">· {{src}}</text>
+                </view>
+              </view>
             </view>
           </view>
         </block>
@@ -91,7 +99,7 @@
              走与打字完全相同的链路（见 chat.js onQuickAsk） -->
         <view wx:if="{{!messages.length && !sending}}" class="quick-asks">
           <view class="quick-asks-title">你可以这样问</view>
-          <view class="quick-ask" wx:for="{{quickAsks}}" wx:for-item="q" wx:key="id" data-q="{{q.query}}" data-id="{{q.id}}" data-code="{{q.stock_code}}" bindtap="onQuickAsk">
+          <view class="quick-ask" wx:for="{{quickAsks}}" wx:for-item="q" wx:key="id" data-q="{{q.query}}" data-code="{{q.stock_code}}" bindtap="onQuickAsk">
             <text wx:if="{{q.tag}}" class="quick-ask-tag">{{q.tag}}</text>
             <text class="quick-ask-text">{{q.display}}</text>
             <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink);" />

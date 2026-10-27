@@ -46,6 +46,12 @@
             <text class="alert-card-cond">{{item.condText}}</text>
             <text class="alert-card-freq">{{item.freqText}}</text>
           </view>
+
+          <!-- 现价与距目标的差距（后端按当前行情算好；没有行情时整行不显示） -->
+          <view wx:if="{{item.currentText}}" class="alert-card-quote">
+            <text class="alert-card-current num">{{item.currentText}}</text>
+            <text wx:if="{{item.gapText}}" class="alert-card-gap">{{item.gapText}}</text>
+          </view>
         </view>
       </view>
 

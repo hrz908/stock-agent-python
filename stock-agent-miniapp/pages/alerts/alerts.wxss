@@ -367,3 +367,21 @@
   font-size: var(--font-sm);
   color: var(--ink-3);
 }
+
+/* 现价与距目标差距：次要信息，用 --ink-3 弱化，与条件行同档字号 */
+.alert-card-quote {
+  margin-top: var(--space-xs);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.alert-card-current {
+  font-size: var(--font-xs);
+  color: var(--ink-3);
+}
+
+.alert-card-gap {
+  font-size: var(--font-xs);
+  color: var(--ink-3);
+}

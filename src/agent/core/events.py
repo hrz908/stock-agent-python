@@ -130,11 +130,16 @@ async def stream_events(
                             tool_calls = (tool_calls or 0) + len(added)
 
     except Exception as e:  # noqa: BLE001 - 任何异常都转成 error 事件，不让流崩掉
+        # 详情只进服务端日志：异常文本会带出内部类名/字段名（如 KeyError: 'net_mf_amount'），
+        # 对用户既看不懂也泄露实现细节
         logger.exception("event_generator failed")
         error_code = type(e).__name__
         if first_event_ms is None:
             first_event_ms = int((time.monotonic() - t0) * 1000)
-        yield {"event": "error", "data": {"message": f"{type(e).__name__}: {e}"}}
+        yield {
+            "event": "error",
+            "data": {"code": "agent_error", "message": "回答生成失败，请稍后重试"},
+        }
 
     finally:
         total_ms = int((time.monotonic() - t0) * 1000)

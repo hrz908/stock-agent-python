@@ -1,12 +1,15 @@
 // Agent SSE 服务：管理与后端的 AI 对话流式连接，页面只调这里，不直接碰 wx.request。
 //
-// 协议（与 server/internal/agent/sse_agent.go 约定）：
+// 协议（与 src/gateway/api/v1/chat.py 约定）：
 //   上行：POST { query, session_id }，Header Bearer 鉴权
 //   下行：text/event-stream，每帧 event: <type>\ndata: <json>\n\n，
 //         type ∈ token / card / table / status / tool_start / tool_end / sources / error / ping / done
 //
-// 端到端真流式：网关把 ndjson 逐行转 SSE 并逐帧 Flush，小程序用 wx.request(enableChunked)
+// 端到端真流式：网关直接消费 agent 的事件生成器并逐帧 Flush，小程序用 wx.request(enableChunked)
 // 增量收包、增量 UTF-8 解码、即时派发，不做攒批。SSE 为「每问一请求」，无持久连接，connect() 是兼容 no-op。
+//
+// 超时：必须 ≥ 后端 agent.run_timeout（默认 120s），否则长回答会被客户端先掐断
+//（表现为「连接异常」，而服务端还在生成）。
 
 import { apiBase, agentSsePath } from '../config';
 import { getToken, ensureLogin } from '../utils/request';
@@ -81,6 +84,8 @@ class AgentSSE {
       },
       enableChunked: true,
       responseType: 'arraybuffer',
+      // 与后端 run_timeout 对齐（默认 120s）；不设会走微信默认 60s，长回答被腰斩
+      timeout: 180000,
       data: { query: round.query, session_id: round.session },
       success: (res) => {
         this.task = null;
@@ -93,18 +98,21 @@ class AgentSSE {
             // 重登期间用户可能已切会话 / 发了新问题，这条流不该再被拉起来
             if (gen !== this._gen) return;
             if (!nt) {
-              this._emit('error', { code: 'SSE_NO_STREAM', msg: '登录已失效，请重试' });
+              this._emit('error', { code: 'SSE_NO_STREAM', message: '登录已失效，请重试' });
               return;
             }
             this._open(nt);
           });
           return;
         }
-        // 非 SSE 响应（如鉴权失败 / 网关错误的 JSON）或异常状态码：没有事件流
+        // 已经逐块解析过、状态码也正常：content-type 可能压根没回调（老基础库），
+        // 以「实际收到分块」为准，别在这里误报「服务响应异常」
+        if (this._chunkSeen && !(code && code >= 400)) return;
+        // 非 SSE 响应（限流 / 参数错误 / 鉴权失败都是 JSON 信封）：没有事件流
         if (!this._isSSE || (code && code >= 400)) {
           this._emit('error', {
             code: 'SSE_NO_STREAM',
-            msg: code === 401 ? '登录已失效，请重试' : '服务响应异常'
+            message: this._errorMessage(res, code)
           });
           return;
         }
@@ -124,27 +132,52 @@ class AgentSSE {
         this._emit('error', {
           __rid: rid == null ? undefined : rid,
           code: 'SSE_FAIL',
-          msg: '连接异常'
+          message: '连接异常'
         });
       }
     });
     this.task = task;
 
-    // 记录响应内容类型，用于 success 阶段判断是否真走了 SSE
-    task.onHeadersReceived((res) => {
-      const header = (res && res.header) || {};
-      const ct = header['Content-Type'] || header['content-type'] || '';
-      this._isSSE = ct.indexOf('text/event-stream') !== -1;
-    });
+    // 记录响应内容类型，用于 success 阶段判断是否真走了 SSE。
+    // 能力判断不能省：老基础库没有 onHeadersReceived，直接调用会在这里抛 TypeError
+    if (typeof task.onHeadersReceived === 'function') {
+      task.onHeadersReceived((res) => {
+        const header = (res && res.header) || {};
+        const ct = header['Content-Type'] || header['content-type'] || '';
+        this._isSSE = ct.indexOf('text/event-stream') !== -1;
+      });
+    }
 
-    // 增量收包：ArrayBuffer -> 增量 UTF-8 解码 -> 累积 -> 切帧派发
-    task.onChunkReceived((res) => {
-      this._chunkSeen = true;
-      const data = res.data;
-      const text = typeof data === 'string' ? data : this._decodeChunk(new Uint8Array(data));
-      this._buffer += text;
-      this._drain();
-    });
+    // 增量收包：ArrayBuffer -> 增量 UTF-8 解码 -> 累积 -> 切帧派发。
+    // 同样做能力判断：不支持分块时整段响应会在 success 里给，由那里的兜底解析接管
+    if (typeof task.onChunkReceived === 'function') {
+      task.onChunkReceived((res) => {
+        this._chunkSeen = true;
+        const data = res.data;
+        const text =
+          typeof data === 'string' ? data : this._decodeChunk(new Uint8Array(data));
+        this._buffer += text;
+        this._drain();
+      });
+    }
+  }
+
+  // 非 SSE 响应的用户文案：网关在写流之前就拒绝时会回标准 JSON 信封，
+  // 里面才是「今日提问次数已用完」「提问过长」这类真实原因，
+  // 直接吞掉会让用户以为服务挂了
+  _errorMessage(res, code) {
+    if (code === 401) return '登录已失效，请重试';
+    try {
+      const raw = res && res.data;
+      const text =
+        typeof raw === 'string' ? raw : this._decodeChunk(new Uint8Array(raw || []));
+      const body = JSON.parse(text || '{}');
+      if (body && typeof body.message === 'string' && body.message) return body.message;
+    } catch (e) {
+      // 非 JSON（502 页面等）走下面的兜底文案
+    }
+    if (code === 429) return '请求过于频繁，请稍后再试';
+    return '服务响应异常';
   }
 
   // 增量 UTF-8 解码：新字节拼到残留字节后尽量多解出完整字符，
