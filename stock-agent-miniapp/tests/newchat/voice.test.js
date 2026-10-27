@@ -37,6 +37,21 @@ test('手动点停：终稿直接发出，面板收起', () => {
   assert.strictEqual(page.data.voiceText, '');
 });
 
+test('中间结果：第一段立刻上屏，后续按 150ms 合批', async () => {
+  const { page, calls } = setup();
+  page.startRecord();
+  const handlers = calls.startRecognize[0].handlers;
+
+  handlers.onPartial('贵州茅台');
+  assert.strictEqual(page.data.voiceText, '贵州茅台', '第一段要立刻显示，不等节流');
+
+  handlers.onPartial('贵州茅台今天');
+  assert.strictEqual(page.data.voiceText, '贵州茅台', '节流窗口内不再触发 setData');
+
+  await new Promise((r) => setTimeout(r, 200));
+  assert.strictEqual(page.data.voiceText, '贵州茅台今天', '合批结束后落到最新一段');
+});
+
 test('长句中间结果：面板只显示最新一截（以刚说的话为准）', () => {
   const { page } = setup();
   page.startRecord();

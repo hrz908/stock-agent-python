@@ -12,6 +12,19 @@ const PLUGIN_ID = 'WechatSI';
 const STALE_RESET_MS = 6000;
 const STALE_RESET_QUICK_MS = 2500;
 
+// 开发版打点：确认「插件到底有没有回中间结果」。
+// 微信同声传译在开发者工具里常常只在 stop 时给一次结果，真机才会流式回调；
+// 出问题时先看这两行，能立刻区分是插件没回、还是页面没渲染。线上不打。
+const DEV_ENV = (function () {
+  try {
+    if (typeof wx === 'undefined' || !wx.getAccountInfoSync) return false;
+    const info = wx.getAccountInfoSync();
+    return !!(info && info.miniProgram && info.miniProgram.envVersion === 'develop');
+  } catch (e) {
+    return false;
+  }
+})();
+
 let manager = null;
 let current = null; // 正在进行的识别会话
 let pending = null; // 上一条还没收尾时排队的新会话
@@ -97,6 +110,10 @@ function ensureManager() {
     // 空串不算开口：插件启动瞬间会先回一帧空结果，按它起算会把静音判停提前
     if (text) {
       s.heard = true;
+      s.partials += 1;
+      if (DEV_ENV && s.partials === 1) {
+        console.log('[asr] 首个中间结果 +' + (Date.now() - s.startedAt) + 'ms');
+      }
       armSilence(s);
     }
     s.onPartial(text);
@@ -107,6 +124,9 @@ function ensureManager() {
     const s = current;
     current = null;
     clearSilence(s);
+    if (DEV_ENV && s && !s.aborted) {
+      console.log('[asr] 收尾 +' + (Date.now() - s.startedAt) + 'ms，中间结果 ' + s.partials + ' 次');
+    }
     // 取消过的不再回终稿：调用方已经复位视图，迟到的文本会串进下一次输入
     if (s && !s.aborted) {
       s.onFinal({
@@ -139,6 +159,7 @@ function startNow(handlers, options) {
     // 静音判停（0 = 关闭）
     silenceMs: Math.max(0, Number(opts.silenceMs) || 0),
     heard: false,
+    partials: 0,
     silenceTimer: 0,
     startedAt: Date.now()
   };
@@ -155,7 +176,7 @@ function startNow(handlers, options) {
 }
 
 // 开始识别：handlers = { onPartial(text), onFinal({text, duration}), onError(msg) }
-export function startRecognize(handlers, options) {
+function startRecognize(handlers, options) {
   const h = handlers || {};
   const o = options || {};
   try {
@@ -179,7 +200,7 @@ export function startRecognize(handlers, options) {
 }
 
 // 松手：停止录音，等插件回调 onStop 给终稿
-export function stopRecognize() {
+function stopRecognize() {
   if (!current || current.aborted) return;
   // 手动 stop 优先：清掉静音计时，免得它再补一次 stop
   clearSilence(current);
@@ -187,8 +208,8 @@ export function stopRecognize() {
   scheduleReset();
 }
 
-// 取消（上滑放弃）：丢弃本次结果，不等终稿
-export function abortRecognize() {
+// 取消（面板上的取消 / 页面隐藏）：丢弃本次结果，不等终稿
+function abortRecognize() {
   if (!current) return;
   current.aborted = true;
   clearSilence(current);
@@ -198,7 +219,7 @@ export function abortRecognize() {
 
 // 预热：requirePlugin + getRecordRecognitionManager 首次调用有初始化开销，
 // 页面上把这一步挪到「切到语音态」时做，别占按下麦克风的那一下
-export function warmupRecognize() {
+function warmupRecognize() {
   try {
     ensureManager();
     return true;
@@ -206,3 +227,5 @@ export function warmupRecognize() {
     return false;
   }
 }
+
+export { startRecognize, stopRecognize, abortRecognize, warmupRecognize };

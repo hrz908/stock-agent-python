@@ -8,8 +8,8 @@ import { fontScalePatch } from '../../utils/font-scale';
 Page({
   data: {
     // 与小程序后台《用户隐私保护指引》的版本号保持一致
-    version: '2026-10-26',
-    contact: ''
+    version: '2026/10/28',
+    contact: 'z6478189288@qq.com'
   },
 
   onShow() {

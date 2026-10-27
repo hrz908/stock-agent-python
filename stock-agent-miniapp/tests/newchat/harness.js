@@ -131,6 +131,8 @@ function createChatPage(opts) {
     reLaunch: [],
     showModal: [],
     toast: [],
+    // startRecognize 的入参：用例拿它主动喂中间结果 / 终稿，验证流式渲染
+    startRecognize: [],
     createSession: [],
     sessionMessages: [],
     listSessions: [],
@@ -159,9 +161,11 @@ function createChatPage(opts) {
 
   const modules = {
     '../../services/agent': { default: agent },
-    // 语音识别的替身：本套用例不触发录音，只保证模块导入时能取到这些动作
+    // 语音识别的替身：记下 handlers，用例可主动喂中间结果 / 终稿
     '../../services/asr': {
-      startRecognize: noop,
+      startRecognize: (handlers, options) => {
+        calls.startRecognize.push({ handlers: handlers, options: options });
+      },
       stopRecognize: noop,
       abortRecognize: noop,
       warmupRecognize: noop

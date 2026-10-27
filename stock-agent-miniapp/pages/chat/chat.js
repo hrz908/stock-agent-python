@@ -181,7 +181,7 @@ const STREAM_STALL_MS = 1200;
 // 没有「重连」档：SSE 是每问一个请求，失败即整轮失败，不存在后台重连状态
 const LOAD_COPY = {
   think: { text: '正在理解你的问题' },
-  search: { text: '正在查找行情与资料' },
+  search: { text: '正在查找资料' },
   read: { text: '正在整理查到的资料' },
   long: { text: '正在核对数据并组织回答', hint: '这次要查的资料比较多' },
   final: { text: '还在整理，内容比平时多', hint: '内容较长时会慢一些，请再稍等' }
