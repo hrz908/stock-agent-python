@@ -59,6 +59,7 @@ class Pipeline:
         codes=None,
         dry_run: bool = False,
         spool_path: Path | None = None,
+        advance_watermark: bool = True,
     ) -> RunStats:
         stats = RunStats(source=source.name)
         error: str | None = None
@@ -98,7 +99,10 @@ class Pipeline:
         finally:
             if self.store and not dry_run:
                 self.store.finish_run(run_id, stats, error)
-                self._advance_watermark(source, until, stats, error, dry_run)
+                # 历史回填按窗口倒着跑，若照常推水位会把日常增量拽回过去；
+                # 回填由 ashare_backfill_progress 自己记断点，不碰 ashare_sync_state
+                if advance_watermark:
+                    self._advance_watermark(source, until, stats, error, dry_run)
 
         logger.info(
             "源 %s 完成：抓到 %d，入库 %d，跳过 %d，失败 %d，chunk %d",

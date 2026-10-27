@@ -75,6 +75,13 @@ CNINFO_QPS = _float("ASHARE_CNINFO_QPS", 1.0)
 EASTMONEY_QPS = _float("ASHARE_EASTMONEY_QPS", 2.0)
 CNINFO_COLUMN = os.getenv("ASHARE_CNINFO_COLUMN", "szse")
 CNINFO_MAX_PAGES = _int("ASHARE_CNINFO_MAX_PAGES", 800)
+# 公告分类过滤（巨潮 category 参数，分号分隔）。留空=全部分类。
+# 五年回填必须开分类，否则要把全市场每周两万多条公告都翻一遍才筛出几百只股票。
+# 定期报告四类：年报 / 半年报 / 一季报 / 三季报
+CNINFO_PERIODIC_CATEGORIES = (
+    "category_ndbg_szsh;category_bndbg_szsh;category_yjdbg_szsh;category_sjdbg_szsh;"
+)
+CNINFO_CATEGORIES = os.getenv("ASHARE_CNINFO_CATEGORIES", "")
 # whitelist：只抓重要公告正文（回购/重组/业绩预告等）；all：全部；none：只入库标题
 ANNOUNCEMENT_PDF_MODE = os.getenv("ASHARE_ANNOUNCEMENT_PDF_MODE", "whitelist").lower()
 FETCH_REPORT_PDF = _bool("ASHARE_FETCH_REPORT_PDF", True)
@@ -115,6 +122,18 @@ WINDOW_OVERLAP_HOURS = _int("ASHARE_WINDOW_OVERLAP_HOURS", 2)
 # 研报发布日期可能被回填一两天，窗口给宽一些（量小，代价可控）
 REPORT_OVERLAP_HOURS = _int("ASHARE_REPORT_OVERLAP_HOURS", 72)
 LATEST_OVERLAP_HOURS = _int("ASHARE_LATEST_OVERLAP_HOURS", 6)
+
+# ---- 热门池与回填 ----
+# 只采成交额前 N 只；每天收盘后由 scripts/ashare-daily.sh 刷新
+UNIVERSE_TOP_N = _int("ASHARE_UNIVERSE_TOP_N", 500)
+# 收盘增量任务默认采哪些源（个股新闻 em-news 需显式给代码，默认不在内）
+DAILY_SOURCES = os.getenv("ASHARE_DAILY_SOURCES", "cninfo,em-report,cls,ths,em-global")
+# 回填窗口天数：按单窗口查询，避免「一次五年」撞上各源的分页上限
+BACKFILL_WINDOW_DAYS = _int("ASHARE_BACKFILL_WINDOW_DAYS", 31)
+# 首次回填默认覆盖的年限
+BACKFILL_YEARS = _int("ASHARE_BACKFILL_YEARS", 1)
+# 保留窗口：每日任务跑完会删掉早于 N 天的语料；0=不删
+RETENTION_DAYS = _int("ASHARE_RETENTION_DAYS", 365)
 
 # ---- 守护进程 ----
 DAEMON_INTERVALS = {

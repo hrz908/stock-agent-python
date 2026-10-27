@@ -248,11 +248,60 @@ docker compose -f compose/prod.yml --profile ashare run --rm ashare \
   python -m ingest.ashare.cli sync-master --only basic
 docker compose -f compose/prod.yml --profile ashare run --rm ashare \
   python -m ingest.ashare.cli sync-master
-# 4) 启动常驻采集
-docker compose -f compose/prod.yml --profile ashare up -d --build ashare
+# 4) 刷一次采集范围（成交额 Top 500）并做一次增量
+sudo bash scripts/ashare-sync.sh universe
+sudo bash scripts/ashare-sync.sh daily
 # 5) 验证
-docker compose -f compose/prod.yml exec ashare python -m ingest.ashare.cli stats
+docker compose -f compose/prod.yml --profile ashare run --rm -T ashare \
+  python -m ingest.ashare.cli stats
 ```
+
+### 10.1 采集范围：成交额 Top N 股票池
+
+默认只采成交额前 500 只（`ASHARE_UNIVERSE_TOP_N` 可调），池子每天收盘后整体刷新并留一份
+`ashare_universe_history` 快照：
+
+```bash
+sudo bash scripts/ashare-sync.sh universe
+sudo docker exec stock-agent-postgres psql -U postgres -d stock_agent \
+  -c "SELECT rank, code, name, round(amount/1e8,2) yi FROM ashare_universe ORDER BY rank LIMIT 10"
+```
+
+`collect --universe` / `backfill --universe` 都以这张表为范围；池子为空时命令直接报错，
+不会悄悄退化成「全市场」。
+
+### 10.2 每日收盘入库（推荐，替代常驻 daemon）
+
+```bash
+sudo bash scripts/ashare-sync.sh install-cron   # 每周一至周五 15:10
+tail -f /var/log/stock-agent-ashare.log
+```
+
+常驻 `daemon` 仍保留，但它按 5~30 分钟空转、反复打源站，3GB 机器上不划算；
+每日一次 `--rm` 容器跑完即退，内存不常驻。
+
+### 10.3 历史回填
+
+```bash
+# 断点记在 ashare_backfill_progress，重跑会跳过已完成窗口；--shard 拆片并行
+sudo bash scripts/ashare-sync.sh backfill --source cninfo --universe \
+  --since 2025-10-28 --until 2026-10-28 --window-days 31 --shard 1/2 &
+sudo bash scripts/ashare-sync.sh backfill --source cninfo --universe \
+  --since 2025-10-28 --until 2026-10-28 --window-days 31 --shard 2/2 &
+```
+
+容量参考（实测）：单块向量含 HNSW 索引与全文索引约 22KB。500 只股票一年定期报告约
+35~40 万块 ≈ 8GB，正好是这台 40G 机器（剩 23G，另有 7 天备份）能长期扛住的上限；
+五年全量约 40GB，放不下。
+
+### 10.4 保留窗口
+
+库固定在「最近一年」：每日任务跑完后会执行
+`prune --older-than ${ASHARE_RETENTION_DAYS:-365} --yes`，删掉更早的语料（`pub_time`
+为空的公共语料不受影响）。要改窗口改 `.env` 的 `ASHARE_RETENTION_DAYS`，设 0 关闭清理。
+
+巨潮的定期报告会拆成中文版/英文版/摘要多份，代码只保留中文正文：英文版实测一块年报
+就有 1398 个 chunk，是中文正文的三倍多。
 
 主数据的日常维护：`--only basic` 每天一次（改名/退市/ST），行业与概念每周一次。
 没灌数据时 `/api/v1/stocks/profile` 会返回 404、搜索的本地兜底不生效（正常搜索不受影响，

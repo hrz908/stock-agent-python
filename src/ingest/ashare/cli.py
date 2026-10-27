@@ -9,11 +9,13 @@
     python -m ingest.ashare.cli search "宁德时代 海外产能" --code 300750
 """
 import argparse
+import hashlib
 import json
 import logging
 import os
 import time
 from datetime import datetime, timedelta
+from datetime import time as dt_time
 from pathlib import Path
 
 from ingest.ashare import config
@@ -22,7 +24,9 @@ from ingest.ashare.master import ensure_master_schema, sync_master
 from ingest.ashare.pipeline import Pipeline
 from ingest.ashare.sources import build_source, source_names
 from ingest.ashare.store import Store
+from ingest.ashare.universe import ensure_universe_schema, sync_top_universe, top_codes
 from ingest.ashare.util import (
+    CN_TZ,
     now_cn,
     parse_date_arg,
     reconfigure_stdio,
@@ -142,13 +146,30 @@ def cmd_sync_master(args) -> int:
     return 0
 
 
+def _collect_codes(store, args) -> list[str] | None:
+    """--codes 显式指定；--universe 读当日热门池；两者同时给时取交集。"""
+    explicit = split_csv(args.codes) if getattr(args, "codes", None) else None
+    if not getattr(args, "universe", False):
+        return explicit
+    pool = top_codes(store)
+    if not pool:
+        raise SystemExit("热门池为空：先执行 sync-universe --top 500")
+    if explicit:
+        keep = set(pool)
+        return [c for c in explicit if c in keep]
+    return pool
+
+
 def cmd_collect(args) -> int:
-    store = None if args.dry_run else _open_store()
+    # dry-run 且不按池子采集时不必连库；--universe 要把池子读出来
+    store = _open_store() if (not args.dry_run or args.universe) else None
     embedder = None
     if not args.dry_run and not args.spool:
         embedder = Embedder()
     pipeline = Pipeline(store, embedder, force=args.force)
-    codes = split_csv(args.codes) if args.codes else None
+    codes = _collect_codes(store, args)
+    if args.universe:
+        logger.info("按热门池采集：%d 只", len(codes or []))
 
     results = []
     try:
@@ -168,6 +189,118 @@ def cmd_collect(args) -> int:
             store.close()
 
     print(json.dumps(results, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_sync_universe(args) -> int:
+    """刷新成交额 Top N 股票池（采集范围的唯一来源）。"""
+    store = _open_store()
+    try:
+        ensure_universe_schema(store)
+        stats = sync_top_universe(store, args.top)
+    finally:
+        store.close()
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _iter_windows(since, until, days: int):
+    start = since
+    while start <= until:
+        end = min(start + timedelta(days=days - 1), until)
+        yield start, end
+        start = end + timedelta(days=1)
+
+
+def cmd_backfill(args) -> int:
+    """按窗口回填历史语料（默认五年），断点记录在 ashare_backfill_progress。
+
+    不推 ashare_sync_state 水位：回填是按窗口从早到晚跑的，推水位会让日常增量
+    误以为「已经采到最新」，而实际上中间还有窗口没跑完。
+    """
+    store = _open_store()
+    sources = _resolve_sources(args.source)
+    codes = _collect_codes(store, args)
+    if not codes:
+        store.close()
+        raise SystemExit("回填必须限定股票范围：--universe 或 --codes")
+
+    if args.shard:
+        try:
+            index, total = (int(x) for x in args.shard.split("/"))
+        except ValueError as exc:
+            store.close()
+            raise SystemExit("--shard 格式应为 i/n，如 1/3") from exc
+        if not (1 <= index <= total):
+            store.close()
+            raise SystemExit("--shard 的 i 必须在 1..n 之间")
+        codes = codes[index - 1::total]
+        logger.info("分片 %d/%d：本片 %d 只", index, total, len(codes))
+
+    until = (parse_date_arg(args.until) or now_cn()).date()
+    since = (parse_date_arg(args.since) or (now_cn() - timedelta(days=365 * args.years))).date()
+    if since > until:
+        store.close()
+        raise SystemExit(f"起始日 {since} 晚于结束日 {until}")
+
+    # 断点按采集范围隔离：热门池固定记为 universe，显式代码用代码集合的短哈希
+    scope = "universe" if args.universe else "codes:" + hashlib.sha1(
+        ",".join(sorted(codes)).encode("utf-8")).hexdigest()[:12]
+
+    pipeline = Pipeline(store, Embedder(), force=args.force)
+    summary: list[dict] = []
+    try:
+        for name in sources:
+            source = build_source(name)
+            done = store.backfill_done(name, scope)
+            total_docs = total_chunks = skipped_windows = 0
+            for start, end in _iter_windows(since, until, args.window_days):
+                if start.isoformat() in done:
+                    skipped_windows += 1
+                    continue
+                logger.info("回填 %s：%s ~ %s（%d 只）", name, start, end, len(codes))
+                stats = pipeline.run_source(
+                    source,
+                    datetime.combine(start, dt_time(0, 0), tzinfo=CN_TZ),
+                    datetime.combine(end, dt_time(23, 59, 59), tzinfo=CN_TZ),
+                    limit=args.limit,
+                    codes=codes,
+                    advance_watermark=False,
+                )
+                # 源级中断（网络/封禁）也记成 failed：下次重跑该窗口，而不是静默跳过
+                status = "failed" if stats.failed and not stats.written else "done"
+                store.mark_backfill(name, scope, start, end, status=status,
+                                    docs=stats.written, chunks=stats.chunks)
+                total_docs += stats.written
+                total_chunks += stats.chunks
+            summary.append({
+                "source": name, "docs": total_docs, "chunks": total_chunks,
+                "windows_skipped": skipped_windows,
+            })
+    finally:
+        store.close()
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_prune(args) -> int:
+    """清理语料：两个维度可单用可叠加（默认只统计，--yes 才真删）。
+
+    --older-than N：删早于 N 天的，用来把库固定在「最近 N 年」；
+    --outside-universe：删热门池之外个股的语料，用来把范围固定在 Top N。
+    """
+    store = _open_store()
+    result: dict = {}
+    try:
+        if args.older_than:
+            result["older_than"] = store.prune_older_than(args.older_than, apply=args.yes)
+        if args.outside_universe or not args.older_than:
+            result["outside_universe"] = store.prune_outside_universe(apply=args.yes)
+    finally:
+        store.close()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if not args.yes and any(item["matched"] for item in result.values()):
+        print("加 --yes 才会真正删除（含 chunks 级联）")
     return 0
 
 
@@ -345,6 +478,8 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--until", help="结束日期 YYYY-MM-DD（默认当前）")
     collect.add_argument("--limit", type=int, help="本次最多处理多少条")
     collect.add_argument("--codes", help="只采集指定股票代码，逗号分隔")
+    collect.add_argument("--universe", action="store_true",
+                         help=f"按成交额 Top N 股票池采集（N 见 ASHARE_UNIVERSE_TOP_N，默认 {config.UNIVERSE_TOP_N}）")
     collect.add_argument("--force", action="store_true", help="忽略内容未变早退，强制重跑")
     collect.add_argument("--dry-run", action="store_true", help="只打印，不写库")
     collect.add_argument("--spool", help="只采集清洗，落 JSONL 目录（供离线侧 ingest-spool）")
@@ -355,6 +490,32 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--force", action="store_true")
     ingest.add_argument("--dry-run", action="store_true")
     ingest.set_defaults(func=cmd_ingest_spool)
+
+    uni = sub.add_parser("sync-universe", help="刷新成交额 Top N 股票池（采集范围）")
+    uni.add_argument("--top", type=int, default=config.UNIVERSE_TOP_N)
+    uni.set_defaults(func=cmd_sync_universe)
+
+    back = sub.add_parser("backfill", help="按窗口回填历史语料（默认五年），断点可续跑")
+    back.add_argument("--source", default="all", help="逗号分隔，默认 all（不含 em-news）")
+    back.add_argument("--years", type=int, default=config.BACKFILL_YEARS)
+    back.add_argument("--since", help="起始日 YYYY-MM-DD（默认 N 年前）")
+    back.add_argument("--until", help="结束日 YYYY-MM-DD（默认今天）")
+    back.add_argument("--window-days", type=int, default=config.BACKFILL_WINDOW_DAYS,
+                      help="单窗口天数，撞上源的翻页上限时调小")
+    back.add_argument("--universe", action="store_true", help="按热门股票池回填")
+    back.add_argument("--codes", help="显式指定代码（与 --universe 同时给时取交集）")
+    back.add_argument("--shard", help="分片，如 1/3：多容器并行回填时用")
+    back.add_argument("--limit", type=int, help="单窗口最多处理多少条")
+    back.add_argument("--force", action="store_true")
+    back.set_defaults(func=cmd_backfill)
+
+    prune = sub.add_parser("prune", help="按时间/范围清理语料（默认只统计）")
+    prune.add_argument("--older-than", type=int, metavar="DAYS",
+                       help="删除发布时间早于 N 天前的语料（保留无发布时间的公共语料）")
+    prune.add_argument("--outside-universe", action="store_true",
+                       help="删除热门池之外个股的语料；单独给 --older-than 时不执行")
+    prune.add_argument("--yes", action="store_true", help="确认删除")
+    prune.set_defaults(func=cmd_prune)
 
     reembed = sub.add_parser("reembed", help="按当前模型重嵌陈旧文档")
     reembed.add_argument("--limit", type=int)

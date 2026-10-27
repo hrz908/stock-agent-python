@@ -277,6 +277,88 @@ class Store:
         )
         self.conn.commit()
 
+    # ------------------------------------------------------------------ 回填断点
+    def backfill_done(self, source: str, scope: str) -> set[str]:
+        """已完成回填的窗口起始日（ISO 字符串），用于断点续跑。
+
+        scope 区分采集范围：用 2 只股票试跑过的窗口，不能让 500 只股票的回填误以为
+        已经采完（同一窗口不同范围的产出完全不同）。
+        """
+        rows = self.conn.execute(
+            "SELECT window_start FROM ashare_backfill_progress "
+            "WHERE source = %s AND scope = %s AND status = 'done'",
+            (source, scope),
+        ).fetchall()
+        self.conn.commit()
+        return {row["window_start"].isoformat() for row in rows}
+
+    def mark_backfill(self, source: str, scope: str, start, end, *, status: str,
+                      docs: int = 0, chunks: int = 0) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO ashare_backfill_progress
+                (source, scope, window_start, window_end, status, docs, chunks, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT (source, scope, window_start, window_end) DO UPDATE
+               SET status = EXCLUDED.status,
+                   docs = EXCLUDED.docs,
+                   chunks = EXCLUDED.chunks,
+                   updated_at = now()
+            """,
+            (source, scope, start, end, status, docs, chunks),
+        )
+        self.conn.commit()
+
+    def prune_outside_universe(self, apply: bool = False) -> dict:
+        """清理热门池之外的个股语料。
+
+        只删「全部股票代码都不在池内」的文档：市场级快讯、政策、概念知识卡片
+        的 stock_codes 为空，属于公共语料，不该被股票池裁剪波及。
+        """
+        rows = self.conn.execute(
+            """
+            SELECT a.doc_id FROM ashare_documents a
+            WHERE a.stock_codes <> '{}'::text[]
+              AND NOT (a.stock_codes && (
+                    -- code 是 VARCHAR(6)，数组重叠要求两侧同类型
+                    SELECT COALESCE(array_agg(code::text), '{}'::text[]) FROM ashare_universe
+              ))
+            """
+        ).fetchall()
+        ids = [row["doc_id"] for row in rows]
+        if not ids or not apply:
+            self.conn.commit()
+            return {"matched": len(ids), "deleted": 0, "applied": False}
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM documents WHERE id = ANY(%s::uuid[])", (ids,))
+            deleted = cur.rowcount or 0
+        self.conn.commit()
+        return {"matched": len(ids), "deleted": deleted, "applied": True}
+
+    def prune_older_than(self, days: int, apply: bool = False) -> dict:
+        """删除发布时间早于 N 天前的语料，把库固定在「最近 N 年」窗口内。
+
+        pub_time 为空的（概念知识卡片、部分快讯）不参与：它们没有时间语义，
+        按时间裁会把公共语料一起删光。
+        """
+        rows = self.conn.execute(
+            """
+            SELECT a.doc_id FROM ashare_documents a
+            WHERE a.pub_time IS NOT NULL
+              AND a.pub_time < now() - make_interval(days => %s)
+            """,
+            (days,),
+        ).fetchall()
+        ids = [row["doc_id"] for row in rows]
+        if not ids or not apply:
+            self.conn.commit()
+            return {"matched": len(ids), "deleted": 0, "applied": False, "days": days}
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM documents WHERE id = ANY(%s::uuid[])", (ids,))
+            deleted = cur.rowcount or 0
+        self.conn.commit()
+        return {"matched": len(ids), "deleted": deleted, "applied": True, "days": days}
+
     # ------------------------------------------------------------------ 统计/重嵌/检索
     def storage_report(self) -> dict[str, Any]:
         """表/索引实际占用 + 每块均值，用于判断要不要换 halfvec 或降维。"""

@@ -220,6 +220,12 @@ services:
       postgres:
         condition: service_healthy
         required: false
+    # 解析上百页年报时内存会冲高；给个上限，宁可被 cgroup 杀掉重跑单份文档，
+    # 也不要拖垮同一台机器上的 server/agent（3GB 机器上 OOM 会连 SSH 一起卡死）
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
     profiles:
       - ashare
 

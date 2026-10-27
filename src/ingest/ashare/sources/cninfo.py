@@ -21,6 +21,15 @@ QUERY_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 PDF_BASE = "https://static.cninfo.com.cn/"
 _CODE_RE = re.compile(r"^\d{6}$")
 
+# 定期报告在巨潮上会拆成中文版、英文版、摘要、更正版多份：
+# 「贵州茅台2024年年度报告(英文版)」实测 1398 个向量块，是中文正文的三倍多，
+# 对中文问答几乎没有增量价值，却要付三倍存储与 embedding 费用。只留中文正文。
+_REDUNDANT_PERIODIC = ("英文", "English", "(ENG", "摘要", "已取消")
+
+
+def _is_redundant_periodic(title: str) -> bool:
+    return any(key in title for key in _REDUNDANT_PERIODIC)
+
 
 class CninfoAnnouncement(BaseSource):
     name = "cninfo"
@@ -36,6 +45,8 @@ class CninfoAnnouncement(BaseSource):
             "X-Requested-With": "XMLHttpRequest",
         }
         self.default_backfill_days = config.BACKFILL_DAYS["cninfo"]
+        # 分类过滤能少翻一个数量级的公告：五年回填不筛分类，光列表就要翻 200 多万条
+        self.categories = config.CNINFO_CATEGORIES.strip()
 
     def _query(self, page: int, se_date: str) -> dict:
         data = {
@@ -47,7 +58,7 @@ class CninfoAnnouncement(BaseSource):
             "stock": "",
             "searchkey": "",
             "secid": "",
-            "category": "",
+            "category": self.categories,
             "trade": "",
             "seDate": se_date,
             "sortName": "",
@@ -116,6 +127,9 @@ class CninfoAnnouncement(BaseSource):
         pdf_url = (PDF_BASE + adjunct.lstrip("/")) if adjunct else ""
 
         source_type = clean.periodic_type(title) or "announcement"
+        if source_type != "announcement" and _is_redundant_periodic(title):
+            logger.debug("跳过定期报告的冗余版本：%s", title[:40])
+            return None
         event_type = clean.announcement_event_type(title) or ("定期报告" if source_type != "announcement" else "公告")
 
         return RawDoc(
