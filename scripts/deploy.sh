@@ -16,12 +16,12 @@
 #
 # 前置条件：已 git clone 本仓库到 /opt/stock-agent（见 deploy/README.prod.md 第 1 步）。
 #
-# 环境变量 REMOTE_BUNDLE=/tmp/xxx.bundle：update 时跳过 git fetch origin，改从该 bundle
-# 取代码后快进合并。服务器到 GitHub 不通时由 scripts/release.sh --via-ssh 传入。
+# 环境变量 DEPLOY_TARGET_SHA=<sha>：update 时跳过 git fetch origin，直接快进到该提交。
+# 由 scripts/release.sh 传入——它已经把提交 git push 进本仓库（服务器出口到 GitHub 会间歇性超时）。
 
 set -euo pipefail
 
-REPO_URL="https://github.com/hrz908/stock-agent-rag.git"
+REPO_URL="https://github.com/hrz908/stock-agent-python.git"
 BRANCH="main"
 DEPLOY_DIR="/opt/stock-agent"
 # 相对 deploy/ 目录（脚本各处都会先 cd 到那里）
@@ -266,14 +266,16 @@ cmd_update() {
     # 防止服务器上的手工改动被 pull 覆盖或阻塞快进
     [ -z "$(git status --porcelain)" ] || die "服务器有未提交改动，先导出 diff 并回滚，禁止直接更新"
 
-    # 两条取代码的通道：默认走 origin（GitHub）；服务器连不上 GitHub 时，
-    # release.sh --via-ssh 把 bundle 传到 /tmp，这里从文件取代码后快进合并
+    # 两条取代码的通道：
+    #   1) release.sh 已经把提交直推进本仓库并传入 DEPLOY_TARGET_SHA —— 按它快进，
+    #      完全不依赖服务器能否访问 GitHub（实测服务器到 github.com:443 会超时 129s）；
+    #   2) 直接在服务器上手工跑 update —— 退回 git fetch origin。
     local src_ref
-    if [ -n "${REMOTE_BUNDLE:-}" ]; then
-        log "使用本地传来的 bundle $REMOTE_BUNDLE（跳过 git fetch origin）"
-        [ -f "$REMOTE_BUNDLE" ] || die "找不到 $REMOTE_BUNDLE：确认本地上传成功了"
-        git fetch "$REMOTE_BUNDLE" "$BRANCH"
-        src_ref="FETCH_HEAD"
+    if [ -n "${DEPLOY_TARGET_SHA:-}" ]; then
+        git cat-file -e "${DEPLOY_TARGET_SHA}^{commit}" 2>/dev/null \
+            || die "本仓库没有提交 $DEPLOY_TARGET_SHA：先在本地 git release（会把提交直推进来）"
+        src_ref="$DEPLOY_TARGET_SHA"
+        log "使用直推进来的提交 ${DEPLOY_TARGET_SHA:0:7}（跳过 git fetch origin）"
     else
         log "拉取最新代码（$BRANCH）..."
         git fetch origin "$BRANCH"

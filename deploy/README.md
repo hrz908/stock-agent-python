@@ -15,7 +15,7 @@
 
 ## 0. 前置准备
 
-1. **本地代码已全部 push**：服务器从 `https://github.com/hrz908/stock-agent-rag.git`（main 分支）拉取。先在本地 `git status` 确认没有未提交改动。
+1. **本地代码已全部提交**：日常发布由本地 `git release` 把提交直接推进服务器仓库，服务器不需要访问 GitHub。先在本地 `git status` 确认没有未提交改动。
 2. **微信 AppSecret**：mp.weixin.qq.com → 开发管理 → 开发设置 → AppSecret（重置后只显示一次，先复制）。
 3. **硅基流动 API Key**（LLM + 语音识别）：`OPENAI_API_KEY`。
 4. **云厂商安全组放行**：22（SSH）、80、443。ufw 由脚本自动配置。
@@ -24,7 +24,7 @@
 
 ```bash
 ssh root@<服务器IP>
-git clone https://github.com/hrz908/stock-agent-rag.git /opt/stock-agent
+git clone https://github.com/hrz908/stock-agent-python.git /opt/stock-agent
 cd /opt/stock-agent
 ```
 
@@ -93,13 +93,22 @@ sudo bash scripts/deploy.sh logs              # 全部服务日志
 它会 rebase 到 origin → push → ssh 执行上面的 `update` → 校验服务器 HEAD 与本地一致 → 探活 `/healthz`。
 本地工作区不干净、服务器有未提交改动、update 失败都会明确中止；`--dry-run` 只预演不推送。
 
-**服务器连不上 GitHub 时**（国内机器常见，症状是 update 只报「服务器更新失败」，
-`ssh` 上去 `git fetch` 卡 `Failed to connect to github.com port 443`）：本地跑
-`git release --via-ssh`。它把当前分支打成 bundle 流式写到服务器 `/tmp`，再让 `update`
-用 `REMOTE_BUNDLE` 跳过 `git fetch origin`、从文件取代码后快进合并，发布完自动删掉 bundle。
-（不用 `git push` 直推服务器：服务器仓库里历次 sudo 部署留下的对象属主是 root，
-ubuntu 直推会 `Permission denied`。）GitHub 那边的 push 失败只告警、不阻塞上线，
-下次正常 `git release` 会补推。
+**取代码通道：本地直推服务器，服务器不再 fetch GitHub**（2026-10-27 起）。
+服务器出口到 `github.com:443` 会间歇性超时（实测 129s 后 `Connection timed out`），
+所以 `git release` 改为把提交 `git push` 进 `/opt/stock-agent` 仓库，再让 `update`
+按 `DEPLOY_TARGET_SHA` 快进——整条链路只依赖「本地 → 服务器」的 SSH。
+
+配套的两个一次性设置（已在生产机执行过，新机照做）：
+
+```bash
+# 1) 允许 push 直接更新工作区（否则 git 拒绝推已检出的分支）
+git -C /opt/stock-agent config receive.denyCurrentBranch updateInstead
+# 2) .git 里的对象必须由 ubuntu 所有（历史 sudo 部署留下过 root 属主）
+sudo chown -R ubuntu:ubuntu /opt/stock-agent/.git
+```
+
+本地连不上 GitHub、只想更新服务器时用 `git release --via-ssh`（跳过 origin 推送）。
+GitHub 那边的 push 失败不阻塞上线，下次正常 `git release` 会补推。
 服务器地址取自本地 `remote.prod`（`ssh://ubuntu@tearsinrain.top/opt/stock-agent`），`--force` 用于「只改了 `.env` 想重建」。
 alias 与 `remote.prod` 都在 `.git/config`（不入库），换机器跑一次 `bash scripts/install-hooks.sh`（见 `docs/LOCAL_SETUP.md`）；
 PowerShell 里的 `bash` 指向 WSL，别用 `bash scripts/release.sh`，要么 `git release`，要么进 Git Bash。

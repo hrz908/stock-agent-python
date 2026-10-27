@@ -3,7 +3,7 @@
 #
 # 用法：
 #   git release                           # 完整发布（推荐；仓库本地 alias，任意子目录都行）
-#   git release --via-ssh                 # 服务器连不上 GitHub 时用：本地直推服务器，跳过服务器侧 fetch
+#   git release --via-ssh                 # 本地连不上 GitHub 时用：只更新服务器，不推 origin
 #   git release --dry-run                 # 预演：fetch + 打印待推送提交与服务器当前提交，不推送不动服务器
 #   git release --force                   # 服务器已是同一提交也重建（只改了 .env 才需要）
 #   git release --skip-health             # 跳过发布后的 /healthz 探活
@@ -28,7 +28,7 @@ DRY_RUN=0
 FORCE=0
 SKIP_HEALTH=0
 VIA_SSH=0
-REMOTE_BUNDLE=""              # 非空时让 deploy.sh 从服务器上的 bundle 取代码，跳过 git fetch
+
 
 log()  { echo -e "\033[32m[release]\033[0m $*"; }
 warn() { echo -e "\033[33m[release]\033[0m $*" >&2; }
@@ -40,7 +40,7 @@ usage() {
 
 用法（任意子目录，git 会切到仓库根执行）：
   git release                            完整发布
-  git release --via-ssh                  服务器连不上 GitHub 时用：本地直推服务器，跳过服务器侧 fetch
+  git release --via-ssh                  本地连不上 GitHub 时用：只更新服务器，不推 origin
   git release --dry-run                  预演：fetch + 打印待推送提交与服务器当前提交，不推送不动服务器
   git release --force                    服务器已是同一提交也重建（只改了 .env 才需要）
   git release --skip-health              跳过发布后的 /healthz 探活
@@ -136,32 +136,22 @@ sync_origin() {
     fi
 }
 
-# 服务器到 GitHub 不通时的兜底通道：本地把当前分支打成一个 bundle，流式写进服务器 /tmp，
-# 由 deploy.sh（root）从文件 fetch 后快进合并。
-# 用 bundle 而不是 git push，是因为服务器仓库里历次 sudo 部署留下的对象属主是 root，
-# ubuntu 直推会撞 Permission denied；而写 /tmp 与 root 读 /tmp 都不受限。
-upload_bundle() {
-    local name
-    name="stock-agent-$(git rev-parse --short HEAD).bundle"
-    log "打包 $BRANCH 并上传服务器 /tmp/$name（绕过 GitHub）"
-    git bundle create - "$BRANCH" 2>/dev/null | ssh "$SSH_TARGET" "cat > /tmp/$name" \
-        || die "上传 bundle 失败：确认到 $SSH_TARGET 的 ssh 可用"
-    REMOTE_BUNDLE="/tmp/$name"
-}
-
-# bundle 只服务本次发布，清理失败不影响结果
-cleanup_bundle() {
-    [ -n "$REMOTE_BUNDLE" ] || return 0
-    ssh "$SSH_TARGET" "rm -f '$REMOTE_BUNDLE'" 2>/dev/null || warn "服务器上的 $REMOTE_BUNDLE 没删掉，不影响本次发布"
+# 取代码通道：本地直接把提交推进服务器仓库（不是让服务器去 fetch GitHub）。
+# 服务器出口网络到 github.com 会间歇性超时（实测 129s 后 Connection timed out），
+# 而本地 → 服务器的 ssh 一直可用；服务器仓库已设 receive.denyCurrentBranch=updateInstead，
+# push 会顺带更新工作区，deploy.sh 再按 DEPLOY_TARGET_SHA 快进即可。
+push_to_server() {
+    log "推送代码到服务器仓库 $SSH_TARGET:$DEPLOY_DIR"
+    git push "ssh://$SSH_TARGET$DEPLOY_DIR" "HEAD:$BRANCH" \
+        || die "直推服务器仓库失败：确认 $SSH_TARGET 可写、且服务器工作区干净（git status 为空）"
 }
 
 # sudo 需要密码，必须分配 TTY；没有 TTY 时让它直接失败，而不是静默跳过部署。
+# DEPLOY_TARGET_SHA 用 bash -c 传：sudo 默认不允许在命令行设环境变量（需要 SETENV 权限）。
 run_remote_update() {
-    local env_prefix=""
-    if [ -n "$REMOTE_BUNDLE" ]; then
-        env_prefix="REMOTE_BUNDLE='$REMOTE_BUNDLE' "
-    fi
-    ssh -t "$SSH_TARGET" "cd '$DEPLOY_DIR' && sudo ${env_prefix}bash scripts/deploy.sh update" || {
+    local sha
+    sha=$(git rev-parse HEAD)
+    ssh -t "$SSH_TARGET" "cd '$DEPLOY_DIR' && sudo bash -c 'DEPLOY_TARGET_SHA=$sha bash scripts/deploy.sh update'" || {
         echo "  看服务器日志：ssh $SSH_TARGET 'cd $DEPLOY_DIR && sudo bash scripts/deploy.sh logs server'" >&2
         die "服务器更新失败"
     }
@@ -188,9 +178,8 @@ main() {
     fi
 
     if [ "$VIA_SSH" = "1" ]; then
-        # GitHub 只是代码托管，服务器拿不到它不该卡住上线：推失败只告警
-        log "同步 $ORIGIN $BRANCH（失败不阻塞，本次走直推服务器通道）"
-        git push "$ORIGIN" "HEAD:$BRANCH" || warn "推 $ORIGIN 失败，本次只部署到服务器"
+        # GitHub 只是代码托管，本地连不上它时不该卡住上线：跳过推送，只更新服务器
+        log "跳过 $ORIGIN 推送（--via-ssh：本次只更新服务器）"
     else
         log "推送 $ORIGIN $BRANCH"
         git push "$ORIGIN" "HEAD:$BRANCH"
@@ -199,12 +188,9 @@ main() {
     if [ "$REMOTE_SHA" = "$local_sha" ] && [ "$FORCE" = "0" ]; then
         log "服务器已是 $local_short，跳过 update（改了 .env 或想强制重建用 --force）"
     else
-        if [ "$VIA_SSH" = "1" ]; then
-            upload_bundle
-        fi
+        push_to_server
         log "服务器更新：$remote_short → $local_short"
         run_remote_update
-        cleanup_bundle
     fi
 
     local deployed
