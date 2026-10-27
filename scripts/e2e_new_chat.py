@@ -97,13 +97,13 @@ def main():
     ok = st == 200 and body.get("code") == 0 and data_of(body).get("token")
     check("S1 登录拿 token（code=demo）", ok, body)
     if not ok:
-        print("\n  通过 %d/%d" % (len(PASS), len(PASS) + len(FAIL)))
+        print(f"\n  通过 {len(PASS)}/{len(PASS) + len(FAIL)}")
         sys.exit(1)
     token = body["data"]["token"]
     uid = body["data"]["user_id"]
 
     # 用例之间用不同 sid，脚本可重复跑而不互相干扰
-    sid = "sess_e2e_%d" % int(time.time())
+    sid = f"sess_e2e_{int(time.time())}"
 
     # ---- 正常：注册新对话 ----
     st, body = call(base, "POST", "/api/v1/agent/sessions", token,
@@ -120,7 +120,7 @@ def main():
     check("S3 列表按最近活跃倒序（新会话在首位）", bool(rows) and rows[0].get("session_id") == sid, rows[:2])
 
     # ---- 正常：新会话恢复为空，前端据此显示问候语 ----
-    st, body = call(base, "GET", "/api/v1/agent/sessions/%s/messages" % sid, token)
+    st, body = call(base, "GET", f"/api/v1/agent/sessions/{sid}/messages", token)
     check("S4 恢复空会话 → messages=[]", st == 200 and data_of(body).get("messages") == [],
           (st, body))
 
@@ -138,7 +138,7 @@ def main():
                      ("", "空")]:
         st, body = call(base, "POST", "/api/v1/agent/sessions", token,
                         {"session_id": bad, "title": ""})
-        check("S6 非法 session_id（%s）→ 400" % why,
+        check(f"S6 非法 session_id（{why}）→ 400",
               st == 400 and body.get("code") == 400, (st, body))
     st, body = call(base, "GET", "/api/v1/agent/sessions/bad%20id/messages", token)
     check("S6 非法 session_id 查询消息 → 400", st == 400 and body.get("code") == 400, (st, body))
@@ -173,26 +173,26 @@ def main():
         check("S9 标题被首个真实问题替换",
               bool(mine) and mine[0].get("title") == query, mine)
 
-        st, body = call(base, "GET", "/api/v1/agent/sessions/%s/messages" % sid2, token)
+        st, body = call(base, "GET", f"/api/v1/agent/sessions/{sid2}/messages", token)
         msgs = data_of(body).get("messages") or []
         check("S9 上下文可恢复（user 提问 + assistant 回答）",
               len(msgs) == 2 and msgs[0].get("role") == "user"
               and msgs[0].get("content") == query and msgs[1].get("role") == "assistant", msgs)
 
-        call(base, "DELETE", "/api/v1/agent/sessions/%s" % sid2, token)
+        call(base, "DELETE", f"/api/v1/agent/sessions/{sid2}", token)
 
     # ---- 删除：一次真删、一次幂等 ----
-    st, body = call(base, "DELETE", "/api/v1/agent/sessions/%s" % sid, token)
+    st, body = call(base, "DELETE", f"/api/v1/agent/sessions/{sid}", token)
     check("S8 删除会话 → 200/deleted=true",
           st == 200 and data_of(body).get("deleted") is True, (st, body))
-    st, body = call(base, "DELETE", "/api/v1/agent/sessions/%s" % sid, token)
+    st, body = call(base, "DELETE", f"/api/v1/agent/sessions/{sid}", token)
     check("S8 重复删除幂等 → deleted=false",
           st == 200 and data_of(body).get("deleted") is False, (st, body))
     st, body = call(base, "GET", "/api/v1/agent/sessions", token)
     rows = data_of(body).get("sessions") or []
     check("S8 删除后不再出现在列表", all(r.get("session_id") != sid for r in rows), rows[:3])
 
-    print("\n  用户 user_id=%s；通过 %d/%d" % (uid, len(PASS), len(PASS) + len(FAIL)))
+    print(f"\n  用户 user_id={uid}；通过 {len(PASS)}/{len(PASS) + len(FAIL)}")
     if FAIL:
         print("  失败：" + " | ".join(FAIL))
         sys.exit(1)

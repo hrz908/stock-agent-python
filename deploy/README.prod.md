@@ -217,14 +217,16 @@ ssl_certificate_key /etc/nginx/ssl/stock-agent.key;
     （多半属于别的小程序，或已重置的旧值）；`40013 invalid appid` = appid 写错。
     不要等真机登录失败再查——prod 启动只校验非空，填错照样能起来。
 
-## 10. A股语料与主数据（可选 profile）
+## 10. A股语料与主数据（可选 profile，纯 API embedding 模式）
 
+4核4G 服务器不装 torch（4B 模型单 FP16 权重就 8GB），embedding 全部走
+`OPENAI_API_BASE`。**不需要下载模型权重到宿主机**，不需要 `/models` 挂载。
 设计与参数说明见 [`docs/ASHARE_VECTORIZATION.md`](../docs/ASHARE_VECTORIZATION.md)；
 业务表取舍见 [`docs/ASHARE_BUSINESS_SCHEMA.md`](../docs/ASHARE_BUSINESS_SCHEMA.md)。
 
 ```bash
-# 1) 模型权重放到宿主机（compose 只读挂载，容器内不联网拉取）
-#    /opt/stock-agent/models/Qwen3-Embedding-4B
+# 1) 确保 .env 里 ASHARE_INSTALL_EMBED=0（默认已是），不需要 ASHARE_MODEL_DIR/NAME
+#    embedding 模型由 OFFLINE_EMBED_MODEL + EMBED_DIM 控制，复用 OPENAI_API_BASE/KEY
 # 2) 首次部署：先跑迁移（已有数据卷不会自动执行 initdb）
 cd /opt/stock-agent/deploy
 docker compose -f docker-compose.prod.yml --profile ashare run --rm ashare \

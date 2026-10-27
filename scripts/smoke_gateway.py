@@ -299,6 +299,51 @@ async def test_sse(app) -> None:
         agent_bridge.upsert_session = original_upsert  # type: ignore[assignment]
 
 
+async def test_sse_slow_first(app) -> None:
+    """首个事件超过 ttft_timeout 后必须继续复用同一个 __anext__ 任务。
+
+    历史事故：超时分支丢掉未完成的 task、下一轮又 create_task(iterator.__anext__())，
+    上游直接抛 RuntimeError: anext(): asynchronous generator is already running，
+    整轮回答变成 error 帧（评测里表现为 8s 左右整条失败）。
+    """
+    print("[3b] 对话 SSE · 首事件超时后又恢复")
+
+    async def _slow_stream(thread_id: str, query: str, user_id: str):
+        await asyncio.sleep(0.15)
+        yield {"event": "token", "data": {"delta": "慢"}}
+        yield {"event": "done", "data": {"thread_id": thread_id, "usage": {}}}
+
+    async def _noop_upsert(user_id: str, session_id: str, title: str) -> None:
+        return
+
+    original = agent_bridge.stream_events
+    original_upsert = agent_bridge.upsert_session
+    cfg = app.state.runtime.cfg
+    original_ttft = cfg.agent.ttft_timeout
+    agent_bridge.stream_events = _slow_stream  # type: ignore[assignment]
+    agent_bridge.upsert_session = _noop_upsert  # type: ignore[assignment]
+    cfg.agent.ttft_timeout = 0.05
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            stream = client.stream(
+                "POST",
+                "/api/v1/agent/stream",
+                headers=auth_headers(),
+                json={"query": "慢启动", "session_id": "sess_smoke_slow"},
+            )
+            async with stream as resp:
+                raw = (await resp.aread()).decode("utf-8")
+        names = [name for name, _ in parse_sse(raw)]
+        check("超时先发 status", names[:1] == ["status"], str(names))
+        check("之后仍能拿到 token+done", names[-2:] == ["token", "done"], str(names))
+        check("没有 error 帧", "error" not in names, str(names))
+    finally:
+        cfg.agent.ttft_timeout = original_ttft
+        agent_bridge.stream_events = original  # type: ignore[assignment]
+        agent_bridge.upsert_session = original_upsert  # type: ignore[assignment]
+
+
 async def test_quickask(app) -> None:
     print("[4] Quick Ask")
     import re
@@ -460,6 +505,7 @@ async def main() -> None:
 
     await test_envelope_and_auth(app)
     await test_sse(app)
+    await test_sse_slow_first(app)
     await test_quickask(app)
     await redis.aclose()
 

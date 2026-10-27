@@ -39,6 +39,9 @@ usage() {
   fmt           ruff format
   migrate       把 server/migrations/*.sql 依次灌进库（新库初始化用）
 
+评测/压测
+  bench [cmd]   评测与压测统一入口（bash scripts/dev.sh bench help）
+
 小程序
   miniapp       npm install（换机器首次必做）
   fix-npm       「构建 npm」之后必须跑，否则 PC 端微信白屏
@@ -113,6 +116,7 @@ case "$cmd" in
   lint)           cmd_lint ;;
   fmt)            cmd_fmt ;;
   migrate)        cmd_migrate ;;
+  bench)          shift; exec bash "$ROOT/scripts/bench.sh" "$@" ;;
   miniapp)        cmd_miniapp ;;
   fix-npm)        cmd_fix_npm ;;
   help|-h|--help) usage ;;

@@ -1,7 +1,12 @@
-"""质量评估：规则断言 + LLM 评委五维打分。
+"""质量评估：规则断言 + LLM 评委五维打分 + 数字一致性诊断。
 
 规则断言（确定性，不调 LLM）：
 - 路由意图、工具调用、卡片发射、文案包含/排除、免责声明、非空、无 error
+
+数字一致性（诊断项，不计入规则通过率）：
+- 从卡片/工具数据里抽出真值，核对回答中出现的关键数字是否能在容差内对上；
+- 只在有卡片或工具数据的轮次生效，概念/闲聊类自动跳过；
+- 之所以不上门禁：答案可能做合理换算（万/亿、同比），误判成本高于收益。
 
 LLM 评委（get_small_llm 结构化输出）五个维度各 1~5 分：
 - accuracy       准确性：数字与事实是否与工具返回一致，有无编造
@@ -93,6 +98,139 @@ def rule_check(case, result: dict) -> list:
     return checks
 
 
+_NUM_RE = re.compile(
+    r"(?<![0-9A-Za-z.])(-?\d+(?:\.\d+)?)\s*(万亿|亿|万|%|％)?"
+)
+_YEAR_MIN, _YEAR_MAX = 1990, 2100
+_UNIT_FACTOR = {"万亿": 1e12, "亿": 1e8, "万": 1e4}
+
+
+def _to_number(match) -> tuple[float, float, str]:
+    """返回 (换算成绝对值后的数值, 原始数值, 单位)。"""
+    raw = float(match.group(1))
+    unit = match.group(2) or ""
+    return raw * _UNIT_FACTOR.get(unit, 1.0), raw, unit
+
+
+def _collect_numbers(value, out: list, depth: int = 0) -> None:
+    """把卡片 payload / 工具数据里的所有数字摊平进 out（绝对值）。"""
+    if depth > 8 or len(out) >= 400:
+        return
+    if isinstance(value, bool):
+        return
+    if isinstance(value, (int, float)):
+        out.append(float(value))
+        return
+    if isinstance(value, str):
+        for m in _NUM_RE.finditer(value):
+            converted, _raw, _unit = _to_number(m)
+            out.append(converted)
+        return
+    if isinstance(value, dict):
+        for v in value.values():
+            _collect_numbers(v, out, depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for v in value[:80]:
+            _collect_numbers(v, out, depth + 1)
+
+
+def _numeric_universe(result: dict) -> list:
+    """真值来源：卡片 payload（http/inproc 都有）+ 工具 data_head（仅 inproc）。"""
+    universe: list = []
+    for turn in result.get("turns") or []:
+        for item in turn.get("card_data") or []:
+            _collect_numbers(item.get("payload"), universe)
+        for tool in turn.get("tools") or []:
+            _collect_numbers(tool.get("data_head"), universe)
+    return universe
+
+
+def _answer_numbers(text: str) -> list:
+    out = []
+    for m in _NUM_RE.finditer(text or ""):
+        labeled, raw, unit = _to_number(m)
+        if not unit:
+            # 计数（3 只/2 倍）与年份不参与核对，避免整句都被判不一致
+            if "." not in m.group(1) and (abs(labeled) < 100 or
+                                          _YEAR_MIN <= labeled <= _YEAR_MAX):
+                continue
+        out.append({"text": m.group(0).strip(), "value": labeled,
+                    "raw": raw, "unit": unit})
+    return out
+
+
+def _num_close(item: dict, universe: list) -> bool:
+    """容差 1%（最少 0.02）；同时接受「1675.8亿」对上卡片里的 1675.8。"""
+    cands = [item["value"], item["raw"]]
+    unit = item["unit"]
+    if unit in ("%", "％"):
+        # 上游可能把 2.35% 存成 2.35，也可能存成 0.0235
+        cands += [item["value"] / 100, item["value"] * 100]
+    if unit in ("万", "亿", "万亿"):
+        # 同一金额可能以元/万元/亿元三种口径落在卡片里
+        cands += [item["value"] / 1e4, item["value"] / 1e8, item["value"] * 1e4]
+    for target in cands:
+        for truth in universe:
+            # 用绝对值比较：正文写「跌 1.02%」而卡片存 -1.02，方向词不该算不一致
+            if abs(abs(target) - abs(truth)) <= max(0.02, abs(truth) * 0.01):
+                return True
+    return False
+
+
+def numeric_check(case, result: dict) -> dict:
+    """回答数字 vs 卡片/工具真值。诊断用，不参与规则通过率。"""
+    universe = _numeric_universe(result)
+    text = (result.get("final") or {}).get("text") or ""
+    items = _answer_numbers(text)
+    if not universe or not items:
+        return {"applicable": False, "checked": 0, "matched": 0, "rate": None,
+                "unmatched": []}
+    unmatched = [i["text"] for i in items if not _num_close(i, universe)]
+    matched = len(items) - len(unmatched)
+    return {
+        "applicable": True,
+        "checked": len(items),
+        "matched": matched,
+        "rate": round(matched / len(items), 3),
+        "unmatched": unmatched[:10],
+    }
+
+
+_CITE_RE = re.compile(r"\[(\d{1,2})\]")
+
+
+def citation_check(result: dict) -> dict:
+    """RAG 引用落地：来源条数 vs 正文 [n] 标注。诊断用，不参与规则通过率。
+
+    判定口径来自 agent/prompts/rag.xml：只允许引用 contexts 里的编号，
+    所以正文出现 [n] 但 n 超过来源条数即为越界（编造来源）。
+    有来源却一个 [n] 都没写，说明检索资料没被真正用上。
+    """
+    # 只看最后一轮带来源的轮次：多轮时 [n] 编号只对应当前轮的 contexts，
+    # 把历史轮次的来源也拼进来会把合法编号误判成越界。
+    docs = []
+    for turn in reversed(result.get("turns") or []):
+        if turn.get("source_docs"):
+            docs = list(turn["source_docs"])
+            break
+    if not docs:
+        return {"applicable": False, "sources": 0, "citations": 0, "valid": 0,
+                "invalid": [], "cited": False, "coverage": None}
+    text = (result.get("final") or {}).get("text") or ""
+    markers = sorted({int(m) for m in _CITE_RE.findall(text)})
+    valid = [m for m in markers if 1 <= m <= len(docs)]
+    invalid = [m for m in markers if m > len(docs)]
+    return {
+        "applicable": True,
+        "sources": len(docs),
+        "citations": len(markers),
+        "valid": len(valid),
+        "invalid": invalid,
+        "cited": bool(valid),
+        "coverage": round(len(valid) / len(docs), 3),
+    }
+
+
 def _judge_model():
     from pydantic import BaseModel, Field
 
@@ -154,10 +292,20 @@ async def llm_judge(case, result: dict) -> dict:
 
 
 async def evaluate(results: list, cases_by_id: dict, with_judge: bool = True,
-                   concurrency: int = 4, progress=None) -> list:
-    """评估整批结果。with_judge=False 时只跑规则断言（离线快速模式）。"""
+                   concurrency: int = 4, progress=None, judge_sample: float = 1.0) -> list:
+    """评估整批结果。with_judge=False 时只跑规则断言（离线快速模式）。
+
+    judge_sample < 1 时按 id 排序做等距抽样，只对抽中的用例调评委：
+    评委是主力模型、单条 3~5s，全量 120 条的评委成本比被测链路本身还高。
+    """
     sem = asyncio.Semaphore(max(1, concurrency))
     evals = []
+    judge_ids = None
+    if with_judge and 0 < judge_sample < 1:
+        ordered = sorted(results, key=lambda r: r["id"])
+        step = max(1, round(1 / judge_sample))
+        judge_ids = {r["id"] for r in ordered[::step]}
+        print(f"[eval] 评委抽样 {len(judge_ids)}/{len(results)} 条（步骤 {step}）")
 
     async def _one(result: dict):
         case = cases_by_id.get(result["id"])
@@ -165,7 +313,8 @@ async def evaluate(results: list, cases_by_id: dict, with_judge: bool = True,
             return None
         async with sem:
             checks = rule_check(case, result)
-            judge = await llm_judge(case, result) if with_judge else {"skipped": True}
+            use_judge = with_judge and (judge_ids is None or result["id"] in judge_ids)
+            judge = await llm_judge(case, result) if use_judge else {"skipped": True}
             passed = sum(1 for c in checks if c["pass"])
             scores = [judge.get(k) for k in
                       ("accuracy", "completeness", "relevance", "timeliness", "clarity")]
@@ -177,6 +326,9 @@ async def evaluate(results: list, cases_by_id: dict, with_judge: bool = True,
                 "rule_failures": [c for c in checks if not c["pass"]],
                 "judge": judge,
                 "judge_avg": round(sum(scores) / len(scores), 2) if scores else None,
+                # 数字一致性与引用落地都是诊断项，不进 rule_pass_rate
+                "numeric": numeric_check(case, result),
+                "citation": citation_check(result),
             }
             if progress:
                 j = rec["judge_avg"]
@@ -206,6 +358,10 @@ def summarize(evals: list) -> dict:
 
     total_rules = sum(r["rule_total"] for r in evals)
     passed_rules = sum(r["rule_passed"] for r in evals)
+    numeric_rates = [
+        r["numeric"]["rate"] for r in evals
+        if (r.get("numeric") or {}).get("applicable")
+    ]
     summary = {
         "cases": len(evals),
         "rule_pass_rate": round(passed_rules / total_rules, 3) if total_rules else None,
@@ -213,8 +369,29 @@ def summarize(evals: list) -> dict:
         "judge_avg": _avg(evals, "judge_avg"),
         "dims": {d: _avg(evals, f"judge.{d}") for d in
                  ("accuracy", "completeness", "relevance", "timeliness", "clarity")},
+        "numeric_cases": len(numeric_rates),
+        "numeric_rate": (round(sum(numeric_rates) / len(numeric_rates), 3)
+                         if numeric_rates else None),
+        "numeric_weak": [
+            {"id": r["id"], "rate": r["numeric"]["rate"],
+             "unmatched": r["numeric"]["unmatched"]}
+            for r in evals
+            if (r.get("numeric") or {}).get("applicable") and r["numeric"]["rate"] < 1.0
+        ][:8],
+        "citation_cases": 0,
+        "citation_rate": None,
+        "citation_invalid_cases": 0,
+        "citation_missing": [],
         "by_category": {}, "by_difficulty": {},
     }
+    cite_cases = [(r["id"], r["citation"]) for r in evals
+                  if (r.get("citation") or {}).get("applicable")]
+    if cite_cases:
+        summary["citation_cases"] = len(cite_cases)
+        summary["citation_rate"] = round(
+            sum(1 for _, c in cite_cases if c["cited"]) / len(cite_cases), 3)
+        summary["citation_invalid_cases"] = sum(1 for _, c in cite_cases if c["invalid"])
+        summary["citation_missing"] = [cid for cid, c in cite_cases if not c["cited"]][:8]
     for dim in ("category", "difficulty"):
         groups = {}
         for r in evals:

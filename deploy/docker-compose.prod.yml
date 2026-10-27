@@ -169,9 +169,9 @@ services:
 
   # 可选：A股文本语料采集 + 离线向量化。需要时加 --profile ashare 启动
   #
-  # 模型权重不打进镜像：宿主机目录只读挂到 /models，容器内禁网拉取。
-  # 首次部署前把模型放到 ${ASHARE_MODEL_DIR}/${ASHARE_MODEL_NAME}，例如
-  #   /opt/stock-agent/models/Qwen3-Embedding-4B
+  # 纯 API embedding（默认）：4核4G 服务器不装 torch，embedding 全部走 OPENAI_API_BASE。
+  # 若将来切回本地模型（GPU/大内存机器），在 .env 设 ASHARE_INSTALL_EMBED=1，
+  # 取消 docker-compose 里 /models volume 挂载的注释，把模型权重放到宿主机 ASHARE_MODEL_DIR 下。
   ashare:
     build:
       context: ../ingest
@@ -192,15 +192,17 @@ services:
       # 与 agent/ingest 的 embedding 保持同一模型同一维度，否则写入和检索落在两个向量空间
       ASHARE_EMBED_MODEL: ${OFFLINE_EMBED_MODEL:-Qwen/Qwen3-Embedding-4B}
       ASHARE_EMBED_DIM: ${EMBED_DIM:-1536}
-      ASHARE_MODEL_PATH: /models/${ASHARE_MODEL_NAME:-Qwen3-Embedding-4B}
-      # 没有本地模型权重时走 OpenAI 兼容 embedding API；两者都空才回退本地模型
+      # 纯 API 模式：直接复用 OPENAI_API_BASE/KEY，不再需要本地模型路径、HF_OFFLINE 等项
       ASHARE_EMBED_API_BASE: ${OPENAI_API_BASE:-}
       ASHARE_EMBED_API_KEY: ${OPENAI_API_KEY:-}
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
+      # 本地模型相关（纯 API 模式下留空无害，ashare embedder 在 API 分支直接 return）
+      # ASHARE_MODEL_PATH: /models/${ASHARE_MODEL_NAME:-Qwen3-Embedding-4B}
+      # HF_HUB_OFFLINE: "1"
+      # TRANSFORMERS_OFFLINE: "1"
     volumes:
       - asharedata:/data/ashare
-      - ${ASHARE_MODEL_DIR:-../models}:/models:ro
+      # 本地模型权重挂载（纯 API 模式下不再需要，恢复本地 embedding 时取消注释）
+      # - ${ASHARE_MODEL_DIR:-../models}:/models:ro
       # init-db 子命令直接读这份迁移，避免在容器里再造一份 SQL
       - ../server/migrations:/app/migrations:ro
     depends_on:

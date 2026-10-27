@@ -50,15 +50,17 @@ def _ms(value):
     return "—" if value is None else f"{int(round(value))}"
 
 
-def _latency_row(name: str, turns: list) -> list:
+def _latency_row(name: str, turns: list, min_n: int = 10) -> list:
+    """一行延迟分位；样本不足时在名称后打 *，避免把 3 条样本的 P99 当结论。"""
     ttft = [t["ttft_ms"] for t in turns if t.get("ttft_ms") is not None]
     first = [t["first_event_ms"] for t in turns if t.get("first_event_ms") is not None]
     total = [t["elapsed_ms"] for t in turns if t.get("elapsed_ms") is not None]
+    mark = "" if len(turns) >= min_n else "*"
     return [
-        name, str(len(turns)),
-        _ms(_pct(ttft, 50)), _ms(_pct(ttft, 90)),
+        f"{name}{mark}", str(len(turns)),
+        _ms(_pct(ttft, 50)), _ms(_pct(ttft, 90)), _ms(_pct(ttft, 95)), _ms(_pct(ttft, 99)),
         _ms(_pct(first, 50)), _ms(_pct(first, 90)),
-        _ms(_pct(total, 50)), _ms(_pct(total, 90)),
+        _ms(_pct(total, 50)), _ms(_pct(total, 90)), _ms(_pct(total, 95)), _ms(_pct(total, 99)),
     ]
 
 
@@ -74,7 +76,17 @@ def render_report(results: list, evals: list, summary: dict, tag: str, mode: str
     add("## 总览\n")
     add(f"- 规则通过率：**{_fmt(summary['rule_pass_rate'], '')}**"
         f"（{summary['cases_all_rules_pass']}/{summary['cases']} 用例全部通过）")
-    add(f"- LLM 评委均分：**{_fmt(summary['judge_avg'])} / 5**\n")
+    add(f"- LLM 评委均分：**{_fmt(summary['judge_avg'])} / 5**")
+    num_cases = summary.get("numeric_cases") or 0
+    add(f"- 数字一致性（诊断，不计入门禁）：**{_fmt(summary.get('numeric_rate'))}**"
+        f"（{num_cases} 条有卡片/工具数据）")
+    cite_cases = summary.get("citation_cases") or 0
+    if cite_cases:
+        rate = summary.get("citation_rate")
+        add(f"- 引用落地（诊断）：**{rate:.1%}**（{cite_cases} 条有资料来源，"
+            f"越界引用 {summary.get('citation_invalid_cases') or 0} 条）\n")
+    else:
+        add("- 引用落地（诊断）：本批无资料来源，跳过\n")
     add("| 维度 | 均分 |")
     add("| --- | --- |")
     for k, name in DIM_NAMES.items():
@@ -84,9 +96,9 @@ def render_report(results: list, evals: list, summary: dict, tag: str, mode: str
     # ---------- 延迟 ----------
     turns_all = [(r, t) for r in results for t in (r.get("turns") or [])]
     add("## 延迟\n")
-    add("| 范围 | 轮次 | 答案 TTFT P50(ms) | TTFT P90 | 首事件 P50 | 首事件 P90 "
-        "| 总耗时 P50 | 总耗时 P90 |")
-    add("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    add("| 范围 | 轮次 | TTFT P50(ms) | P90 | P95 | P99 | 首事件 P50 | P90 "
+        "| 总耗时 P50 | P90 | P95 | P99 |")
+    add("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     add("| " + " | ".join(_latency_row("全部", [t for _, t in turns_all])) + " |")
     by_cat_turns: dict = {}
     for r, t in turns_all:
@@ -94,8 +106,9 @@ def render_report(results: list, evals: list, summary: dict, tag: str, mode: str
     for cat, ts in sorted(by_cat_turns.items()):
         add("| " + " | ".join(_latency_row(CATEGORY_NAMES.get(cat, cat), ts)) + " |")
     add("")
-    add("注：答案 TTFT 取 token/card/table 的首个事件；首事件包含 tool_start / sources "
-        "等过程提示。旧结果没有 first_event_ms / 阶段计时时显示 —。\n")
+    add("注：答案 TTFT 取 token/card/table 的首个事件；首事件还包含 status / tool_start / "
+        "sources 等过程提示。`*` 表示该行轮次 < 10，分位数仅供参考，不作验收依据。"
+        "旧结果没有 first_event_ms / 阶段计时时显示 —。\n")
 
     stage_values: dict = {}
     for _, t in turns_all:
@@ -104,15 +117,17 @@ def render_report(results: list, evals: list, summary: dict, tag: str, mode: str
                 stage_values.setdefault(k, []).append(v)
     if stage_values:
         add("### 阶段耗时\n")
-        add("| 阶段 | 样本 | P50(ms) | P90(ms) |")
-        add("| --- | --- | --- | --- |")
+        add("| 阶段 | 样本 | P50(ms) | P90(ms) | P95(ms) |")
+        add("| --- | --- | --- | --- | --- |")
         ordered = [k for k in STAGE_NAMES if k in stage_values]
         ordered += [k for k in stage_values if k not in STAGE_NAMES]
         for k in ordered:
             vals = stage_values[k]
             add(f"| {STAGE_NAMES.get(k, k)} | {len(vals)} | "
-                f"{_ms(_pct(vals, 50))} | {_ms(_pct(vals, 90))} |")
+                f"{_ms(_pct(vals, 50))} | {_ms(_pct(vals, 90))} | {_ms(_pct(vals, 95))} |")
         add("")
+        add("注：http 模式的阶段耗时来自 `agent_runs.timings`（服务端真值）；"
+            "`rerank_failed` 是计数不是毫秒，出现即说明该轮重排被静默降级为 RRF。\n")
 
     add("## 分类表现\n")
     add("| 类型 | 用例数 | 规则通过率 | 评委均分 |")
@@ -165,6 +180,21 @@ def render_report(results: list, evals: list, summary: dict, tag: str, mode: str
         if isinstance(j, dict) and j.get("accuracy") is not None:
             add(f"- 评委：准确 {j['accuracy']}｜完整 {j['completeness']}｜相关 "
                 f"{j['relevance']}｜时效 {j['timeliness']}｜清晰 {j['clarity']}")
+        num = ev.get("numeric") or {}
+        if num.get("applicable"):
+            line = f"- 数字核对：{num['matched']}/{num['checked']} 命中"
+            if num.get("unmatched"):
+                line += f"，未匹配：{', '.join(num['unmatched'])}"
+            add(line)
+        cite = ev.get("citation") or {}
+        if cite.get("applicable"):
+            if cite["cited"]:
+                line = f"- 引用：{cite['valid']}/{cite['sources']} 条来源被 [n] 标注"
+            else:
+                line = f"- 引用：**未标注 [n]**（来源 {cite['sources']} 条）"
+            if cite["invalid"]:
+                line += f"，越界编号 {cite['invalid']}"
+            add(line)
         for issue in (j.get("issues") or [])[:5]:
             add(f"- 问题：{issue}")
         if j.get("suggestion"):
@@ -199,6 +229,8 @@ def render_compare(before: dict, after: dict, tag_b: str, tag_a: str,
     row("规则通过率", before["rule_pass_rate"], after["rule_pass_rate"], pct=True)
     row("全部通过的用例数", before["cases_all_rules_pass"], after["cases_all_rules_pass"])
     row("评委均分", before["judge_avg"], after["judge_avg"])
+    row("数字一致性", before.get("numeric_rate"), after.get("numeric_rate"), pct=True)
+    row("引用落地率", before.get("citation_rate"), after.get("citation_rate"), pct=True)
     for k, name in DIM_NAMES.items():
         row(name, before["dims"].get(k), after["dims"].get(k))
     add("")

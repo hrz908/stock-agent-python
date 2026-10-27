@@ -16,10 +16,11 @@ from datetime import datetime
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from core.keywords import fast_chat, fast_intent
+from core.keywords import fast_chat, fast_intent, fast_off_topic, hit_data_keyword
 from core.llm import get_small_llm
 from core.redis import get_redis
 from core.template import load_template, render
+from rag.entity import entity_mentions
 
 # 与 nodes/classify.py 的低置信度口径保持一致（低于该值强制 clarify）
 _CONF_MIN = 0.6
@@ -129,16 +130,24 @@ async def _get_summary(thread_id: str) -> str:
     return summary.decode() if isinstance(summary, bytes) else summary
 
 
-def _needs_rewrite(query: str) -> bool:
+async def _needs_rewrite(query: str) -> bool:
     """问题本身是否依赖上下文（保守判据：拿不准就改写）。
 
-    只有「不含任何指代词」且「自带明确标的（6 位代码或 ≥8 字）」才跳过，
-    避免为了省一次调用把「那它呢」这类问题改坏。
+    旧判据「≥8 字即完整」会漏掉「最近成交量有放大吗」这类**没有标的、但很长**的
+    追问：它跳过改写后拿不到代码，工具只能空取，整轮退化成「请补充股票代码」
+    （评测 GMT-04 实测）。现在改为：带 6 位代码 / 命中明确股票名 / 长句且不含
+    数据词，三者任一才视为独立问句。
     """
     q = (query or "").strip()
     if not q or _ANAPHORA_RE.search(q):
         return True
-    return not (_CODE_RE.search(q) or len(q) >= 8)
+    if _CODE_RE.search(q):
+        return False
+    if len(q) < 8:
+        return True
+    if not hit_data_keyword(q):
+        return False
+    return not await entity_mentions(q)
 
 
 async def rewrite(state: dict) -> dict:
@@ -159,8 +168,8 @@ async def rewrite(state: dict) -> dict:
             "entities": {},
             "timings": timings,
         }
-    # 有历史，但问题自己就完整（无指代、带代码/足够长）：不惊动小模型
-    if not _needs_rewrite(query):
+    # 有历史，但问题自己就完整（无指代、带代码/明确标的）：不惊动小模型
+    if not await _needs_rewrite(query):
         return {"rewritten": query, "timings": timings}
 
     # 滚动摘要作为对话背景前缀，弥补被裁剪掉的早期历史
@@ -182,6 +191,13 @@ async def rewrite(state: dict) -> dict:
         ])
         text = (decision.rewritten or "").strip().strip('"').strip()
         rewritten = (text.splitlines()[0].strip() if text else query) or query
+        # 合并模型有时把指代原样留在 rewritten 里、只把实体填进 symbol 字段
+        # （实测「最近成交量有放大吗」→ symbol=比亚迪 但 rewritten 未补全，
+        # 下游实体识别拿不到代码，工具只能空取，GMT-04 因此失败）。
+        # symbol 存在且 rewritten 里没有它时，直接补进句首。
+        symbol = (decision.symbol or "").strip()
+        if symbol and symbol not in rewritten:
+            rewritten = f"{symbol} {rewritten}".strip()
         intent = decision.intent if decision.intent in _ROUTE_INTENTS else "clarify"
         confidence = float(decision.confidence or 0.0)
         # 关键词兜底：改写后命中取数/文档词时以确定性口径为准，防止合并路由
@@ -189,6 +205,8 @@ async def rewrite(state: dict) -> dict:
         fast = fast_intent(rewritten)
         if fast:
             intent, confidence = fast, 1.0
+        elif fast_off_topic(rewritten):
+            intent, confidence = "off_topic", 1.0
         elif confidence < _CONF_MIN:
             intent, confidence = "clarify", 0.0
         return {

@@ -160,3 +160,30 @@ def fast_chat(text: str) -> bool:
     if hit_data_keyword(q) or is_document_question(q):
         return False
     return any(w in q for w in _GREETING_WORDS)
+
+
+# 越界请求的强特征词：路由 LLM 对「翻译合同 / 写快速排序」不稳定（实测判成
+# stock_agent，还真把代码写了出来）。这些模式足够确定，先走快路径婉拒再交给 LLM。
+# 只要句子里带股票/投资相关词就不拦：例如「用 Python 写个选股脚本」属于投研需求。
+_OFF_TOPIC_ALLOW = (
+    "股票", "选股", "行情", "财报", "证券", "投资", "a股", "量化", "回测", "基金", "债券",
+    # 翻译/写作类请求若指向投研材料，仍属股票场景，不能一律婉拒
+    "研报", "公告", "年报", "季报", "中报",
+)
+_OFF_TOPIC_PATTERNS = (
+    re.compile(r"翻译"),
+    re.compile(r"写[^，。]{0,12}(辞职信|周报|简历|作文|邮件|请假条|感谢信|小说|诗)"),
+    re.compile(r"(python|java|golang|javascript|c\+\+|c#|sql)\s*(写|实现|编写|做|搭)"),
+    re.compile(r"写[^，。]{0,12}(快速排序|冒泡排序|爬虫|脚本|代码|程序|算法|网页|网站|接口|教程)"),
+    re.compile(r"(菜谱|做菜|作业)"),
+)
+
+
+def fast_off_topic(text: str) -> bool:
+    """与股票无关的强特征请求 -> True（确定性婉拒，跳过路由 LLM）。"""
+    q = (text or "").strip().lower()
+    if not q:
+        return False
+    if any(k in q for k in _OFF_TOPIC_ALLOW):
+        return False
+    return any(p.search(q) for p in _OFF_TOPIC_PATTERNS)

@@ -16,9 +16,9 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from server import agent_bridge
@@ -43,14 +43,15 @@ logger = logging.getLogger("stocka.server.chat")
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
+# FastAPI Annotated 依赖别名：agent_limiter 通过 runtime 服务容器注入
+AgentLimiterDep = Annotated[
+    AgentLimiter, Depends(lambda: runtime().service("agent_limiter"))
+]
+
 STREAM_BODY_LIMIT = 64 << 10
 MAX_QUERY_RUNES = 2000
 MAX_SESSION_ID_LEN = 64
 SESSION_TITLE_RUNES = 40
-
-
-def _limiter() -> AgentLimiter:
-    return runtime().service("agent_limiter")
 
 
 def _run_semaphore() -> asyncio.Semaphore:
@@ -128,6 +129,7 @@ async def _sse_stream(
             iterator = agen.__aiter__()
             first = True
             finished = False
+            next_task: asyncio.Task | None = None
 
             try:
                 while True:
@@ -135,9 +137,13 @@ async def _sse_stream(
                     if remaining <= 0:
                         raise TimeoutError("agent run timeout")
 
-                    # 首字节等待单独设上限：超时先推一帧安抚前端，不取消上游任务
+                    # 首字节等待单独设上限：超时先推一帧安抚前端，不取消上游任务。
+                    # 必须复用同一个 next_task：重复 create_task(iterator.__anext__())
+                    # 会抛 RuntimeError: anext(): asynchronous generator is already running
+                    # （评测实测：首个事件超过 ttft_timeout=8s 时整轮失败）。
                     timeout = min(ttft_timeout, remaining) if first else remaining
-                    next_task = asyncio.create_task(iterator.__anext__())
+                    if next_task is None:
+                        next_task = asyncio.create_task(iterator.__anext__())
                     done, _ = await asyncio.wait({next_task}, timeout=timeout)
 
                     if not done:
@@ -149,8 +155,9 @@ async def _sse_stream(
                             first = False
                         continue
 
+                    task, next_task = next_task, None
                     try:
-                        event = next_task.result()
+                        event = task.result()
                     except StopAsyncIteration:
                         finished = True
                         break
@@ -177,6 +184,13 @@ async def _sse_stream(
                     "error", {"code": "agent_error", "msg": f"{type(exc).__name__}: {exc}"}
                 )
             finally:
+                # 先收掉可能还挂着的 __anext__（否则 aclose 会撞上「生成器正在运行」）
+                if next_task is not None and not next_task.done():
+                    next_task.cancel()
+                    try:
+                        await next_task
+                    except (asyncio.CancelledError, StopAsyncIteration):
+                        pass
                 # 客户端中途断开时，显式关闭上游生成器，释放图与连接资源
                 if not finished:
                     try:
@@ -188,7 +202,11 @@ async def _sse_stream(
 
 
 @router.post("/stream")
-async def agent_stream(request: Request, user_id: CurrentUser):
+async def agent_stream(
+    request: Request,
+    user_id: CurrentUser,
+    limiter: AgentLimiterDep,
+):
     payload = await read_json(request, STREAM_BODY_LIMIT, "请求体格式错误")
     query = payload.get("query")
     if not isinstance(query, str) or not query.strip():
@@ -202,14 +220,15 @@ async def agent_stream(request: Request, user_id: CurrentUser):
     if session_id and not _valid_session_id(session_id):
         raise ApiError(CODE_BAD_REQUEST, "session_id 不合法")
 
-    limiter = _limiter()
     # 流尚未开始，可直接回标准 429，便于前端与监控区分「被限流」与「流内错误」
     rejected = await limiter.allow(user_id)
     if rejected is not None:
         raise ApiError(CODE_TOO_MANY_REQUESTS, _reject_message(rejected))
 
     # 会话注册是旁路：异步执行、脱离请求生命周期，客户端断开也能把标题写进去
-    asyncio.create_task(_register_session(user_id, session_id, query))
+    from core.tasktracker import tracker
+    tracker().add(asyncio.create_task(_register_session(user_id, session_id, query),
+                                      name="register_session"))
 
     return StreamingResponse(
         _sse_stream(user_id, session_id, query, limiter),

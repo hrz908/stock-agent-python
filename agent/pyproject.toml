@@ -16,10 +16,14 @@ extend-exclude = ["__pycache__", "*.pyc"]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [tool.ruff.lint.per-file-ignores]
-# 测试 / 压测脚本：长行、同步文件 IO 都在一次性脚本里，为它们拆线程或硬换行没有收益
+# 测试 / 压测脚本：长行、同步文件 IO、旧 % 格式化都在一次性脚本里
 "tests/**" = ["E501", "ASYNC109", "ASYNC230", "ASYNC240", "UP031"]
+# 运维/调试脚本：同上，一次性跑的 e2e 脚本旧风格不改
+"../scripts/**" = ["E501", "UP031"]
 # call_tool_safe 的 timeout 参数是对外 API（工具层统一传超时），不是内部实现细节
 "tools/__init__.py" = ["ASYNC109"]
+# agent_bridge.py 的跨树惰性导入是技术约束（同名模块 core/config/db），全局 import 会劫持
+"../server/agent_bridge.py" = ["PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -19,7 +19,10 @@
   python -X utf8 tests/benchmark/run.py all --tag tuned
 
 过滤：--ids Q-01,F-02｜--category concept｜--difficulty hard
-HTTP 模式（打运行中的服务）：--mode http --base-url http://localhost:8000
+HTTP 模式（打生产链路）：--mode http --base-url http://127.0.0.1:8080
+  --users N 用 N 个合成 uid 分摊用例，绕开单用户限流（qps=2 / concurrent=3）
+  --user-id 起始 uid，默认 900001（避开真实用户）
+  --jwt-secret 不传则读 JWT_SECRET，再退到服务端 dev 默认值
 只跑规则不调评委：eval --no-judge
 """
 import argparse
@@ -54,11 +57,16 @@ async def _cmd_run(args) -> Path:
         return RUNS_DIR / args.tag
     if args.mode == "inproc":
         runner.apply_inproc_env(verbose=True)
+    else:
+        # http 模式只需要 JWT_SECRET / DATABASE_URL，不做宿主直连覆盖
+        runner.apply_env_file(verbose=True)
     from datetime import datetime
     run_id = f"{args.tag}-{datetime.now().strftime('%H%M%S')}"
+    users = args.users or max(1, args.concurrency)
     results = await runner.run_batch(
         cases, mode=args.mode, run_id=run_id, concurrency=args.concurrency,
-        base_url=args.base_url, progress=_progress)
+        base_url=args.base_url, users=users, base_user_id=args.user_id,
+        jwt_secret=args.jwt_secret, progress=_progress)
     out = RUNS_DIR / args.tag
     runner.save_results(results, out / "results.jsonl")
     print(f"DONE -> {out / 'results.jsonl'} ({len(results)} cases)")
@@ -71,7 +79,8 @@ async def _cmd_eval(args) -> Path:
     results = runner.load_results(RUNS_DIR / args.tag / "results.jsonl")
     by_id = {c.id: c for c in CASES}
     evals = await ev.evaluate(results, by_id, with_judge=not getattr(args, "no_judge", False),
-                              concurrency=args.concurrency, progress=_progress)
+                              concurrency=args.concurrency, progress=_progress,
+                              judge_sample=getattr(args, "judge_sample", 1.0))
     summary = ev.summarize(evals)
     out = RUNS_DIR / args.tag
     ev.save_evals(evals, out / "evals.json")
@@ -121,8 +130,13 @@ def main():
     def common(p):
         p.add_argument("--tag", required=True, help="运行标签（结果目录名）")
         p.add_argument("--mode", default="inproc", choices=["inproc", "http"])
-        p.add_argument("--base-url", default="http://localhost:8000")
+        p.add_argument("--base-url", default="http://127.0.0.1:8080",
+                       help="生产入口：http 模式固定打 /api/v1/agent/stream")
         p.add_argument("--concurrency", type=int, default=4)
+        p.add_argument("--users", type=int, default=0,
+                       help="合成 uid 数；0 表示等于 concurrency（http 模式）")
+        p.add_argument("--user-id", type=int, default=900001, help="起始 uid")
+        p.add_argument("--jwt-secret", default=None, help="缺省读 JWT_SECRET")
         p.add_argument("--ids", default=None, help="逗号分隔的用例 id")
         p.add_argument("--category", default=None)
         p.add_argument("--difficulty", default=None)
@@ -132,6 +146,8 @@ def main():
     p_eval = sub.add_parser("eval", help="评估结果")
     common(p_eval)
     p_eval.add_argument("--no-judge", action="store_true", help="只跑规则断言")
+    p_eval.add_argument("--judge-sample", type=float, default=1.0,
+                        help="评委抽样比例（0~1，按 id 等距抽样；默认全量）")
     p_rep = sub.add_parser("report", help="生成报告")
     common(p_rep)
     p_cmp = sub.add_parser("compare", help="A/B 对比")

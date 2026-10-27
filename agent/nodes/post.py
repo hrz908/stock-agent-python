@@ -17,11 +17,9 @@ from config import SUMMARY_TOKEN_LIMIT
 from core.llm import count_message_tokens, get_small_llm, message_chars
 from core.pg import get_pool
 from core.redis import get_redis
+from core.tasktracker import tracker
 
 logger = logging.getLogger("stocka.agent")
-
-# 后台摘要任务引用：不持有引用的话任务可能在跑完前被 GC 回收
-_bg_tasks: set = set()
 
 # 距上次摘要至少再攒这么多条消息才重算。会话一旦越过 token 阈值，messages 会被
 # guardrail 裁在 12k 内长期停留，若每轮都重算，摘要就变成「每轮一次小模型调用」，
@@ -31,9 +29,7 @@ _SUMMARY_MIN_NEW_MSGS = 4
 
 def _spawn_summary(state: dict) -> None:
     """把滚动摘要移出关键路径：post 在流末尾，等一次小模型调用会把 done 事件推后。"""
-    task = asyncio.create_task(_roll_summary(state))
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
+    tracker().add(asyncio.create_task(_roll_summary(state), name="roll_summary"))
 
 
 def _collect_usage(messages: list) -> dict:

@@ -831,6 +831,21 @@ def test_intent_taxonomy():
     }))
     check("概念型问句仍判 stock（走 RAG）", st_concept.get("intent") == "stock", str(st_concept))
 
+    # 越界强特征：翻译/写代码必须在快路径判 off_topic（实测会被判成 stock_agent）
+    from core.keywords import fast_off_topic
+    check("翻译合同判越界", fast_off_topic("帮我翻译一段英文合同"))
+    check("写代码判越界", fast_off_topic("用 Python 写个快速排序"))
+    check("写文档判越界", fast_off_topic("帮我写一封辞职信"))
+    check("股票脚本不误伤", not fast_off_topic("用 Python 写个选股脚本"))
+    st_off = asyncio.run(classify({
+        "query": "用 Python 写个快速排序", "rewritten": "", "messages": [],
+    }))
+    check("越界问句确定性判 off_topic", st_off.get("intent") == "off_topic", str(st_off))
+    st_off2 = asyncio.run(classify({
+        "query": "帮我翻译一段英文合同", "rewritten": "", "messages": [],
+    }))
+    check("翻译请求判 off_topic", st_off2.get("intent") == "off_topic", str(st_off2))
+
     from core.keywords import is_realtime_data_question
     check("行情问句属于实时数据", is_realtime_data_question("茅台现在多少钱"))
     check("年报内容问句不算实时数据",
@@ -1413,6 +1428,17 @@ def test_fast_plan_and_chat_shortcut():
                                  "result": {"ok": True, "data": [{"code": "300750"}]}}]))
         check("复用 symbol_search 结果取数",
               plan and plan[0]["args"]["code"] == "300750", str(plan))
+
+        # 龙虎榜曾被打进资金流族：问榜单却调 get_money_flow，拿资金流数据冒充席位
+        plan = asyncio.run(fast_tool_calls("比亚迪最近的龙虎榜席位明细"))
+        check("龙虎榜 -> get_top_list",
+              plan and plan[0]["name"] == "get_top_list", str(plan))
+
+        # 量能对比要同时取快照与历史序列
+        plan = asyncio.run(fast_tool_calls("比亚迪最近成交量有放大吗"))
+        planned = {c["name"] for c in (plan or [])}
+        check("量能 -> 行情+历史序列",
+              {"get_quote", "get_history_daily"} <= planned, str(plan))
 
         check("对比类交还 LLM", asyncio.run(fast_tool_calls("宁德时代和比亚迪哪个好")) is None)
         check("概念题交还 LLM", asyncio.run(fast_tool_calls("市盈率是什么意思")) is None)

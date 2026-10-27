@@ -13,6 +13,8 @@ LIMIT %(limit)s 相互独立，RRF 分由窗口函数算出、与截断无关，
   python -X utf8 tests/benchmark/sweep_retrieval.py latency --tag sweep1 --latency-queries 20
   python -X utf8 tests/benchmark/sweep_retrieval.py replay  --tag sweep1
 
+指标：Hit@k / Recall@N / MRR@k / NDCG@k / Noise@k / Coverage / 误升级率 / 负样本误命中。
+
 产物：
   runs/<tag>/pool.jsonl    采集到的候选池（RRF 序，含正文，可反复重放）
   runs/<tag>/latency.json  各 N 的重排延迟分位
@@ -22,6 +24,7 @@ LIMIT %(limit)s 相互独立，RRF 分由窗口函数算出、与截断无关，
 import argparse
 import asyncio
 import json
+import math
 import random
 import sys
 import time
@@ -284,6 +287,16 @@ async def cmd_latency(args, pools: list = None) -> dict:
 
 # ===== replay：离线切片重放 =====
 
+def _rank_metrics(ctx_ids: list, gold: set, k: int) -> tuple[float, float]:
+    """二元相关的 MRR 与 NDCG@k；纯函数，便于脱离 langchain 单测。"""
+    ranks = [i for i, cid in enumerate(ctx_ids) if cid in gold]
+    mrr = 1.0 / (ranks[0] + 1) if ranks else 0.0
+    dcg = sum(1.0 / math.log2(i + 2) for i in ranks)
+    ideal = min(len(gold), max(k, 1))
+    idcg = sum(1.0 / math.log2(i + 2) for i in range(ideal))
+    return mrr, (dcg / idcg if idcg else 0.0)
+
+
 def _eval_one(rec: dict, n: int, k: int, filt: bool, per_doc: int,
               th: float, min_chunks: int, tok_cache: dict) -> dict:
     """按线上顺序复现一次检索：切 RRF 前 N → 重排排序 → 裁阈值 → clean → 切 k。"""
@@ -304,11 +317,15 @@ def _eval_one(rec: dict, n: int, k: int, filt: bool, per_doc: int,
     ctx = rg._clean_docs(docs, per_doc=per_doc)[:k]
 
     gold = set(rec["gold"])
-    ctx_ids = {d.metadata["id"] for d in ctx}
+    ctx_list = [d.metadata["id"] for d in ctx]
+    ctx_ids = set(ctx_list)
     scores = [d.metadata.get("rerank_score") or 0.0 for d in ctx]
     top = max(scores) if scores else 0.0
     # 与 sufficiency_check 同口径：有效片段 <2 或最高分不过阈值即升级
     escalate = len(ctx) < min_chunks or top < th
+
+    # 排序质量：Hit 只看有没有、MRR/NDCG 看排在第几；gold 是二元相关
+    mrr, ndcg = _rank_metrics(ctx_list, gold, k)
 
     tokens = 0
     for d in ctx:
@@ -320,6 +337,8 @@ def _eval_one(rec: dict, n: int, k: int, filt: bool, per_doc: int,
     return {
         "hit": bool(gold & ctx_ids),
         "recall": bool(gold & {p["chunk_id"] for p in sub}),
+        "mrr": mrr,
+        "ndcg": ndcg,
         "n_ctx": len(ctx),
         "noise": sum(1 for s in scores if s < th) / k,
         "coverage": len({d.metadata["title"] for d in ctx}) / k,
@@ -335,6 +354,8 @@ def _aggregate(rows: list) -> dict:
         "hit": _mean(hit),
         "hit_ci": _boot_ci(hit),
         "recall": _mean([1.0 if r["recall"] else 0.0 for r in rows]),
+        "mrr": _mean([r["mrr"] for r in rows]),
+        "ndcg": _mean([r["ndcg"] for r in rows]),
         "noise": _mean(noise),
         "n_ctx": _mean([r["n_ctx"] for r in rows]),
         "coverage": _mean([r["coverage"] for r in rows]),
@@ -459,6 +480,8 @@ def _decide(matrix: list, ns: list, ks: list, latency: dict = None) -> dict:
             "recall_max": rec_max,
             "hit": best["hit"],
             "hit_max": hit_max,
+            "mrr": best.get("mrr"),
+            "ndcg": best.get("ndcg"),
             "noise": best["noise"],
             "escalate": best["escalate"],
             "esc_base": esc_base,
@@ -534,6 +557,7 @@ def render_report(sweep: dict, decision: dict, latency: dict) -> str:
             add(f"- ⚠ 延迟受限：召回未达饱和点，N 被延迟预算钳制"
                 f"（重排 p95 相对 N=20 的增量上限 {LAT_SLACK_MS}ms）")
         add(f"- 命中：Hit@{p['k']} = {_fmt(p['hit'], True)}（该 N 下最优 {_fmt(p['hit_max'], True)}）"
+            f"，MRR {_fmt(p.get('mrr'))}，NDCG {_fmt(p.get('ndcg'))}"
             f"，噪音率 {_fmt(p['noise'], True)}，进上下文均值 {_fmt(p['n_ctx'], False, 1)} 条")
         add(f"- 安全阀：误升级率 {_fmt(p['escalate'], True)}"
             f"（基线 {_fmt(p['esc_base'], True)}），负样本误命中 {_fmt(p['false_hit'], True)}")
@@ -579,10 +603,11 @@ def render_report(sweep: dict, decision: dict, latency: dict) -> str:
             continue
         lat = (latency or {}).get(str(n), {})
         rows.append([str(n), _fmt(r["recall"], True), _fmt(r["hit"], True),
-                     _fmt(r["noise"], True), _fmt(r["tokens"], False, 0),
+                     _fmt(r.get("mrr")), _fmt(r.get("ndcg")), _fmt(r["noise"], True),
+                     _fmt(r["tokens"], False, 0),
                      _fmt(lat.get("p50_ms"), False, 0), _fmt(lat.get("p95_ms"), False, 0),
                      _fmt(lat.get("tokens"), False, 0)])
-    L += _table(["N", "Recall@N", "Hit@k", "Noise@k", "上下文 tokens",
+    L += _table(["N", "Recall@N", "Hit@k", "MRR@k", "NDCG@k", "Noise@k", "上下文 tokens",
                  "重排 p50(ms)", "重排 p95(ms)", "重排 tokens"], rows)
     add("")
 
@@ -603,10 +628,12 @@ def render_report(sweep: dict, decision: dict, latency: dict) -> str:
             mark = " ✅" if k == p["k"] else ""
             rows.append([f"{k}{mark}", _fmt(r["hit"], True),
                          f"{_fmt(r['hit_ci'][0], True)}~{_fmt(r['hit_ci'][1], True)}",
+                         _fmt(r.get("mrr")), _fmt(r.get("ndcg")),
                          _fmt(r["noise"], True), _fmt(r["n_ctx"], False, 1),
                          _fmt(r["coverage"], True), _fmt(r["tokens"], False, 0),
                          _fmt(r["escalate"], True)])
-        L += _table(["k", "Hit@k", "95%CI", "Noise@k", "实进条数", "Coverage", "tokens", "误升级率"], rows)
+        L += _table(["k", "Hit@k", "95%CI", "MRR@k", "NDCG@k", "Noise@k", "实进条数",
+                     "Coverage", "tokens", "误升级率"], rows)
         add("")
 
     # ---------- 延迟 ----------

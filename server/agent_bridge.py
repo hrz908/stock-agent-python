@@ -117,6 +117,13 @@ async def startup(rt: Runtime) -> None:
 async def shutdown() -> None:
     global _ready, _cleanup_task
 
+    # 等所有后台任务先收口，再关连接池，防止还有任务在写库/写 Redis
+    try:
+        from core.tasktracker import tracker
+        await tracker().gather_all()
+    except Exception as exc:  # noqa: BLE001
+        logger.info("tasktracker gather failed: %s", exc)
+
     if _cleanup_task is not None:
         _cleanup_task.cancel()
         try:
