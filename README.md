@@ -114,7 +114,7 @@ PostgreSQL(pgvector) + Redis  ← ingest/ 写入文档向量；网关与 agent �
 | 文档 | 内容 |
 |---|---|
 | [`server/README.md`](server/README.md) | 接口总表、卡片契约、业务规则、环境变量、运行方式 |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层与数据持久化（**注意：§1 拓扑图仍是 Go 网关时期的双服务版本，单进程拓扑以上面「架构」为准**） |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 服务拓扑、分层与目录职责、数据持久化、部署形态 |
 | [`docs/ASHARE_VECTORIZATION.md`](docs/ASHARE_VECTORIZATION.md) | A股文本语料：采集、清洗、分块、向量化 |
 | [`docs/ASHARE_BUSINESS_SCHEMA.md`](docs/ASHARE_BUSINESS_SCHEMA.md) | A股业务表设计（主数据/财务指标）与建表取舍 |
 | [`deploy/README.prod.md`](deploy/README.prod.md) | 生产部署与运维手册 |
