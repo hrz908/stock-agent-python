@@ -41,15 +41,15 @@
 /* 周期 chip 的文字：标签统一走全局小号 */
 .chip-text {
   font-size: var(--font-sm);
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 .chip--on {
-  border-color: var(--line);
+  border-color: var(--border);
 }
 
 .chip--on .chip-text {
-  color: var(--ink);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -73,7 +73,7 @@
   border: var(--hairline-dashed);
   border-radius: 0;
   font-size: var(--font-base);   /* 图区占位（搜索并选择股票后展示 / 暂无数据）：标准 */
-  color: var(--ink-3);
+  color: var(--text-hint);
 }
 
 /* ===== 区间指标行：等距居中；支撑压力行：整行靠左 =====
@@ -83,7 +83,7 @@
 .sr-row {
   margin-top: var(--space-md);
   font-size: var(--font-sm);   /* 支撑 · 压力：小号（图区脚注，比指标栏低一档） */
-  color: var(--ink-2);
+  color: var(--text-secondary);
   text-align: left;
 }
 

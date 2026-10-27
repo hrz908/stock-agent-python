@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--bg-page);
   position: relative;
 }
 
@@ -21,7 +21,7 @@
 .overview {
   flex: none;
   display: flex;
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -43,12 +43,12 @@
   font-size: var(--font-lg);   /* 宫格数字：大号 */
   font-weight: var(--fw-medium);
   line-height: 1.1;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 .g-label {
   font-size: var(--font-base);   /* 全部提醒 / 今日触发：普通 */
-  color: var(--ink-2);
+  color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -58,7 +58,7 @@
   margin: var(--space-lg) 0 var(--space-md);
   font-size: var(--font-base);   /* 价格与涨幅提醒：普通 */
   font-weight: 600;
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 /* ===== 列表滚动区 =====
@@ -84,7 +84,7 @@
    overflow 裁掉子元素溢出，编辑/删除的 88rpx 热区不会顶到卡片外面 */
 .alert-card {
   padding: 0 var(--space-lg) var(--space-lg);
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -100,7 +100,7 @@
 .alert-card-name {
   font-size: var(--font-base);
   font-weight: 600;
-  color: var(--ink);
+  color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -109,7 +109,7 @@
   margin-left: var(--space-md);
   font-size: var(--font-sm);
   font-weight: 400;
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 头部右侧的两个文字入口：编辑在左、删除在右 */
@@ -130,7 +130,7 @@
   min-height: 88rpx;
   margin: calc(-1 * var(--space-xs)) 0;
   font-size: var(--font-sm);
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 /* 阈值行：等宽 + 涨跌色。字号降到 hero 档，行高随图标一起收，
@@ -167,7 +167,7 @@
   justify-content: space-between;
   gap: var(--space-lg);
   font-size: var(--font-sm);
-  color: var(--ink-2);
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
@@ -178,7 +178,7 @@
 
 .alert-card-freq {
   flex: none;
-  color: var(--ink-3);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
@@ -206,7 +206,7 @@
 .add-btn-text {
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
-  color: var(--color-text-primary);
+  color: var(--text-primary);
 }
 
 /* ===== 新增提醒表单 ===== */
@@ -217,7 +217,7 @@
 .form-label {
   margin-bottom: var(--space-xs);
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 输入行：输入框 + 尾部单位 / 清除按钮 */
@@ -231,7 +231,7 @@
   padding: 0 var(--space-md);
   box-sizing: border-box;
   font-size: var(--font-base);
-  color: var(--ink);
+  color: var(--text-primary);
   background: transparent;
   border: var(--hairline);
   border-radius: var(--radius-sm);
@@ -244,7 +244,7 @@
   top: 50%;
   transform: translateY(-50%);
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
   pointer-events: none;
 }
 
@@ -262,7 +262,7 @@
 }
 
 .form-input-placeholder {
-  color: var(--ink-3);
+  color: var(--text-hint);
   font-size: var(--font-base);
 }
 
@@ -282,7 +282,7 @@
 
 .selected-stock-text {
   font-size: var(--font-sm);
-  color: var(--ink);
+  color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -306,12 +306,12 @@
 }
 
 .option-picker.option-row--hover .option-row {
-  border-color: var(--line);
+  border-color: var(--border);
 }
 
 .option-label {
   font-size: var(--font-base);
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 .option-value {
@@ -323,7 +323,7 @@
 
 .option-value-text {
   font-size: var(--font-sm);
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 /* ===== 代码联想下拉 ===== */
@@ -337,7 +337,7 @@
   right: 0;
   top: 100%;
   margin-top: var(--space-xs);
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -359,16 +359,16 @@
 
 .search-item-name {
   font-size: var(--font-base);
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 下拉里的代码（别名）：全局小号 */
 .search-item-code {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
-/* 现价与距目标差距：次要信息，用 --ink-3 弱化，与条件行同档字号 */
+/* 现价与距目标差距：次要信息，用 --text-primary 弱化，与条件行同档字号 */
 .alert-card-quote {
   margin-top: var(--space-xs);
   display: flex;
@@ -378,10 +378,10 @@
 
 .alert-card-current {
   font-size: var(--font-xs);
-  color: var(--ink-3);
+  color: var(--text-hint);
 }
 
 .alert-card-gap {
   font-size: var(--font-xs);
-  color: var(--ink-3);
+  color: var(--text-hint);
 }

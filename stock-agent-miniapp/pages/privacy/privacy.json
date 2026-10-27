@@ -2,8 +2,5 @@
   "navigationStyle": "custom",
   "usingComponents": {
     "base-navbar": "/components/base/navbar/navbar"
-  },
-  "backgroundColor": "#F2EDE6",
-  "backgroundColorTop": "#F2EDE6",
-  "backgroundColorBottom": "#F2EDE6"
+  }
 }

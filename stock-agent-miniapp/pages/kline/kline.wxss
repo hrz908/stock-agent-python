@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--bg-page);
   position: relative;
 }
 
@@ -34,7 +34,7 @@
   height: 88rpx;
   padding: 0 var(--space-lg);
   box-sizing: border-box;
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-sm);
 }
@@ -44,11 +44,11 @@
   min-width: 0;
   height: 100%;
   font-size: var(--font-base);
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 .search-ph {
-  color: var(--ink-3);
+  color: var(--text-hint);
   font-size: var(--font-base);
 }
 
@@ -71,7 +71,7 @@
   top: 100%;
   margin-top: var(--space-xs);
   z-index: 10;
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -92,13 +92,13 @@
 
 .search-item-name {
   font-size: var(--font-base);
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 下拉里的代码（别名）：全局小号 */
 .search-item-code {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* ===== 当前股票 =====
@@ -123,7 +123,7 @@
   min-width: 0;
   font-size: var(--font-base);
   font-weight: 600;
-  color: var(--ink);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -133,7 +133,7 @@
 .picked-code {
   flex: none;
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 刷新入口：无底色，图标 + 文字，与自选股页的刷新同一个样子 */
@@ -148,7 +148,7 @@
 
 .picked-refresh-text {
   font-size: var(--font-sm);
-  color: var(--ink);
+  color: var(--text-secondary);
 }
 
 /* 图标组件渲染成 <text>（行内元素），transform 对行内元素不生效，

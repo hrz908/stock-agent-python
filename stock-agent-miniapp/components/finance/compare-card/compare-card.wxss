@@ -41,7 +41,7 @@
 }
 
 /* 指标列固定宽度，数值列均分且不收缩（横向滚动由外层 scroll-view 负责）。
-   这里不写 color：写死 --ink 会盖掉 _card.wxss 的 .up/.down，
+   这里不写 color：写死 --text-primary 会盖掉 _card.wxss 的 .up/.down，
    涨跌幅与「更优者」的着色全部失效（同名优先级，后定义者胜） */
 .cmp-cell {
   flex: 1;
@@ -57,20 +57,20 @@
   flex: none;
   width: 128rpx;
   text-align: left;
-  color: var(--ink-3);
+  color: var(--text-secondary);
   font-size: var(--font-base);     /* 指标名：标准 */
   word-break: break-word;        /* 不裁剪：指标名换行完整显示 */
 }
 
 .cmp-row--head .cmp-cell {
-  color: var(--ink-3);
+  color: var(--text-secondary);
   font-size: var(--font-base);     /* 表头标的：标准 */
   font-weight: 400;
   white-space: nowrap;
 }
 
 .cmp-row--head .cmp-cell--label {
-  color: var(--ink-3);
+  color: var(--text-secondary);
   word-break: break-word;        /* 不裁剪：表头指标名换行完整显示 */
 }
 

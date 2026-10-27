@@ -23,7 +23,7 @@
       <view class="hero-desc num">
         <text>{{totalRateText}} · 已同步 {{syncedAt}}</text>
         <view class="refresh-btn {{refreshing ? 'refresh-btn--spinning' : ''}}" bindtap="onRefresh">
-          <base-icon class-name="refresh-icon" type="LoopOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+          <base-icon class-name="refresh-icon" type="LoopOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
           <text class="refresh-btn-text">刷新</text>
         </view>
       </view>
@@ -54,7 +54,7 @@
             </view>
             <!-- 左滑露出的删除操作 -->
             <view class="stock-row-action" data-index="{{index}}" bindtap="onDelete">
-              <base-icon type="DeleteOutline" style="font-size:var(--icon-sm);color:#FFFFFF;" />
+              <base-icon type="DeleteOutline" style="font-size:var(--icon-sm);color:var(--text-inverse);" />
               <text class="stock-row-action-text">删除</text>
             </view>
           </view>

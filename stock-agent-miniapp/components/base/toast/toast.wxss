@@ -1,6 +1,6 @@
 /* 轻提示：屏幕居中偏上的深色小药丸，z-index 高于弹层（校验失败要能在弹窗上看到）。
    浅色主题下仍用深色药丸：白底上深色提示对比更强、更像平台原生提示；
-   代价是文字必须显式反白——不能再用 var(--ink)（浅色主题下它是近黑） */
+   代价是文字必须显式反白——不能再用 var(--text-primary)（浅色主题下它是近黑） */
 .toast {
   position: fixed;
   left: 50%;
@@ -9,7 +9,7 @@
   z-index: var(--z-toast);
   max-width: 70%;
   padding: var(--space-md) var(--space-lg);
-  background: var(--color-text-primary);
+  background: var(--text-primary);
   border-radius: var(--radius-sm);
   animation: toast-in 180ms ease both;
   box-shadow: var(--shadow-md);
@@ -18,7 +18,7 @@
 .toast-text {
   font-size: var(--font-sm);
   line-height: 1.6;
-  color: var(--primary-fg); /* 深色药丸上的浅色文字 */
+  color: var(--text-inverse); /* 深色药丸上的浅色文字 */
   text-align: center;
   word-break: break-all;
 }

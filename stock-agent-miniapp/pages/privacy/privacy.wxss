@@ -5,7 +5,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--bg-page);
   position: relative;
 }
 
@@ -20,7 +20,7 @@
 
 .meta {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 .sec {
@@ -31,25 +31,25 @@
   font-size: var(--font-base);
   font-weight: 600;
   line-height: 1.5;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 .p {
   margin-top: var(--space-md);
   font-size: var(--font-base);     /* 隐私说明正文：标准 */
   line-height: 1.8;
-  color: var(--ink-2);
+  color: var(--text-primary);
   word-break: break-word;
 }
 
 /* 待补充项要显眼：这是上线前必须清掉的占位，不能当成普通正文混过去 */
 .p--todo {
-  color: var(--warn);
+  color: var(--warning);
 }
 
 .tail {
   margin-top: var(--space-lg);
   font-size: var(--font-sm);
   line-height: 1.7;
-  color: var(--ink-3);
+  color: var(--text-hint);
 }

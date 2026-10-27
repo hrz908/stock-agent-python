@@ -5,7 +5,7 @@
     <!-- 左侧：打开侧边抽屉的菜单图标（汉堡）。
          原本顶栏应有此键，缺失后抽屉只能靠右滑开，这里补回 -->
     <view slot="left" class="nav-menu-btn" aria-label="打开导航抽屉" bindtap="onMenuTap">
-      <base-icon type="UnorderedListOutline" style="font-size:var(--icon-base);color:var(--ink);" />
+      <base-icon type="UnorderedListOutline" style="font-size:var(--icon-base);color:var(--text-primary);" />
     </view>
   </base-navbar>
   <!-- 对话区：高度由 JS 精算并固定为像素值，不随视口变化抖动 -->
@@ -102,7 +102,7 @@
           <view class="quick-ask" wx:for="{{quickAsks}}" wx:for-item="q" wx:key="id" data-q="{{q.query}}" data-code="{{q.stock_code}}" bindtap="onQuickAsk">
             <text wx:if="{{q.tag}}" class="quick-ask-tag">{{q.tag}}</text>
             <text class="quick-ask-text">{{q.display}}</text>
-            <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+            <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
           </view>
         </view>
         <!-- ===== AI 加载态 =====
@@ -204,7 +204,7 @@
         <view class="drawer-section-title drawer-nav-title">导航</view>
         <view class="drawer-item" wx:for="{{menus}}" wx:for-item="m" wx:key="key" data-menu="{{m.key}}" bindtap="onMenuSelect">
           <text class="drawer-item-text">{{m.label}}</text>
-          <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+          <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
         </view>
       </view>
       <!-- 历史对话：只有这一块滚（占掉导航与底部按钮之间的全部高度）。
@@ -217,7 +217,7 @@
               <text class="history-item-title">{{item.title}}</text>
             </view>
             <view class="history-item-del" data-sid="{{item.session_id}}" catchtap="onSessionDelete">
-              <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+              <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
             </view>
           </view>
           <view wx:if="{{!sessions.length}}" class="history-empty">暂无历史对话</view>

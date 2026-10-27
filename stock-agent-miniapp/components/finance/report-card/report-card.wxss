@@ -37,7 +37,7 @@
   flex: 1;                       /* 名称：整行 1/2 */
   min-width: 0;
   font-size: var(--font-base);     /* 指标键：标准（8 张卡统一） */
-  color: var(--ink-2);
+  color: var(--text-secondary);
   text-align: left;
   word-break: break-word;        /* 不裁剪：超长标签换行完整显示 */
 }
@@ -47,7 +47,7 @@
   display: flex;
   gap: var(--space-md);
   font-size: var(--font-base);     /* 金额与同比：标准 */
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 金额与同比各占整行 1/4，统一右对齐 */

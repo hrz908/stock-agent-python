@@ -4,8 +4,5 @@
     "base-toast": "/components/base/toast/toast",
     "base-icon": "/components/base/icon/icon",
     "kline-card": "/components/finance/kline-card/kline-card"
-  },
-  "backgroundColor": "#F2EDE6",
-  "backgroundColorTop": "#F2EDE6",
-  "backgroundColorBottom": "#F2EDE6"
+  }
 }

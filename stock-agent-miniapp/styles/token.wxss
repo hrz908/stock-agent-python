@@ -10,8 +10,8 @@
    - 颜色一律引用变量，业务样式里禁止裸 hex / 裸 rpx 字号
    - 按钮用 flex 居中 + padding 撑高，禁止写死 height
 
-   兼容层：--ink / --surface / --bg 等旧名保留为「指向令牌的别名」，
-   供存量样式引用；新增样式请直接用 --color-* 名。
+   颜色变量一律用 --primary / --bg-page / --text-primary 这类语义名，
+   不加 --color- 前缀、不建兼容别名：组件只能引用本节列出的令牌。
    ============================================================= */
 page {
   /* ---- 字号六档：相邻差 4rpx ---- */
@@ -85,69 +85,55 @@ page {
   --radius-round: 999rpx;
 
   /* ---- 阴影三档：只给浮起元素 ----
-     阴影带一点暖调（取文字深色的 RGB），纯黑阴影压在宣纸底上会发脏 */
-  --shadow-sm: 0 2rpx 8rpx rgba(54, 49, 27, 0.06);
-  --shadow-md: 0 4rpx 16rpx rgba(54, 49, 27, 0.08);
-  --shadow-lg: 0 8rpx 32rpx rgba(54, 49, 27, 0.12);
+     阴影取文字深色的 RGB，带一点冷调；纯黑阴影在白卡上会发脏 */
+  --shadow-sm: 0 2rpx 8rpx rgba(26, 29, 36, 0.06);
+  --shadow-md: 0 4rpx 16rpx rgba(26, 29, 36, 0.08);
+  --shadow-lg: 0 8rpx 32rpx rgba(26, 29, 36, 0.12);
 
-  /* ---- 色彩 · 宣纸 · 墨 · 一点青（2026-10-27）----
-     palette：#F2EDE6（宣纸底）/ #DCD1CB（描边）/ #2E6B72（黛青强调）/ #36311B（暖墨）
-     底色饱和度压到 8% 以下，描边与底色同族（色相 21° vs 35°）：
-     底只是底，全站唯一的饱和色留给涨跌红绿与警告琥珀。
-     灰阶一律由 #36311B 加透明度派生，保持暖调，不再混入中性灰。 */
-  --color-text-primary: #36311B;
-  --color-text-secondary: rgba(54, 49, 27, 0.65);
-  --color-text-hint: rgba(54, 49, 27, 0.45);
-  --color-text-disabled: rgba(54, 49, 27, 0.38);
-  --color-text-inverse: #FFFFFF;
-  --color-bg-page: #F2EDE6;
-  --color-bg-card: #FFFFFF;
-  /* 次级表面（快捷提问、用户提问块、禁用按钮）用低透明度的墨色：
-     宣纸底上 1.24:1、白卡上 1.24:1，两种底都不会消失，也不与描边撞色 */
-  --color-bg-disabled: rgba(54, 49, 27, 0.12);
-  --color-border: #DCD1CB;
-  --color-divider: rgba(54, 49, 27, 0.10);
-  --color-mask: rgba(54, 49, 27, 0.40);
-  --color-brand: #2E6B72;
-  --color-brand-press: #24575C;
-  /* 语义色收口（不跟主题走：涨跌/成功/错误有固定预期，换色会被误读）：
-     红只有一个（涨 = 危险 = 错误），绿只有一个（跌 = 成功），信息色并入强调色 */
-  --color-success: #15803D;
-  --color-warning: #FF9F18;
-  --color-error: #DC2626;
-  --color-info: #2E6B72;
+  /* ===========================================================
+     色彩 · 冷灰蓝（唯一色值来源）
+     palette：#F5F7FA（页面底）/ #DCDFE6（描边）/ #2363C7（主色）/ #1A1D24（文字）
+     底色低饱和、描边与底色同族；全站饱和色只留给涨跌与警告。
 
-  /* ---- 兼容别名（值即令牌，禁止新增引用） ---- */
-  --bg: var(--color-bg-page);
-  --surface: var(--color-bg-card);
-  --surface-2: var(--color-bg-disabled);
-  --line: var(--color-border);
-  /* 2026-10-26 用户要求：文字一律纯黑，层级靠字号与字重拉开，不再用灰阶区分。
-     --color-text-secondary / --color-text-hint 仍保留在令牌表里供将来恢复灰阶 */
-  --ink: var(--color-text-primary);
-  --ink-2: var(--color-text-primary);
-  --ink-3: var(--color-text-primary);
-  --primary-fg: var(--color-text-inverse);
-  --danger: var(--color-error);
-  --mask: var(--color-mask);
+     分层：① 核心 9（换肤入口）② 扩展角色 ③ 数据语义色。
+     铁律：业务样式只写 var(--*)；hex / rgba / 命名色只允许出现在本文件。
+     =========================================================== */
 
-  /* ---- 数据语义色：涨跌与状态，不参与 UI 强调 ----
-     跌绿取 #15803D：原 #16a34a 在白卡上仅 3.3:1、宣纸底 2.9:1，
-     加深后 5.0:1 / 4.3:1，正文级数字也读得清 */
-  --up: #dc2626;
+  /* ---- ① 核心 9 ---- */
+  --primary: #2363C7;
+  --success: var(--primary);
+  --warning: #E67E22;
+  --danger: #D93025;
+  --text-primary: #1A1D24;
+  --text-secondary: #525966;
+  --text-disabled: #828A99;
+  --bg-page: #F5F7FA;
+  --border: #DCDFE6;
+
+  /* ---- ② 扩展角色：核心 9 之外的必需面 ---- */
+  --text-hint: rgba(26, 29, 36, 0.45);   /* 角标 / 提示，不承载正文 */
+  --text-inverse: #FFFFFF;               /* 反白文字（主色底、遮罩上） */
+  --bg-card: #FFFFFF;                    /* 卡片 / 导航白面 */
+  /* 次级表面（快捷提问、用户提问块、禁用按钮）用低透明度文字色：
+     页面底与白卡上都能落出层次，也不与描边撞色 */
+  --bg-disabled: rgba(26, 29, 36, 0.12);
+  --mask: rgba(26, 29, 36, 0.40);        /* 弹层遮罩 */
+
+  /* ---- ③ 数据语义色：涨跌与状态，不参与 UI 强调 ----
+     红涨绿跌是行情预期，换色会被误读：
+     涨跟随 --danger，跌单独一枚深绿（--success 已被主色占用为蓝，不可复用）。
+     跌绿 #15803D：白卡 5.0:1、页面底 4.8:1，正文级数字也读得清 */
+  --up: var(--danger);
   --down: #15803D;
-  --flat: rgba(54, 49, 27, 0.45);
-  --up-tint: rgba(220, 38, 38, 0.08);
-  --up-border: rgba(220, 38, 38, 0.28);
+  --flat: var(--text-hint);
+  --up-tint: rgba(217, 48, 37, 0.08);
+  --up-border: rgba(217, 48, 37, 0.28);
   --down-tint: rgba(21, 128, 61, 0.08);
   --down-border: rgba(21, 128, 61, 0.28);
-  --warn: var(--color-warning);
-  --warn-tint: rgba(255, 159, 24, 0.10);
-  --warn-border: rgba(255, 159, 24, 0.30);
 
   /* ---- 描边：1rpx，卡片与分割线共用一档 ---- */
-  --hairline: 1rpx solid var(--color-border);
-  --hairline-dashed: 1rpx dashed var(--color-border);
+  --hairline: 1rpx solid var(--border);
+  --hairline-dashed: 1rpx dashed var(--border);
 
   /* ---- z 层级：四档收敛 ---- */
   --z-mask: 1000;
@@ -163,8 +149,8 @@ page {
   /* ---- 基线 ---- */
   font-size: var(--font-base);
   line-height: var(--lh-base);
-  color: var(--color-text-primary);
-  background-color: var(--color-bg-page);
+  color: var(--text-primary);
+  background-color: var(--bg-page);
 }
 
 /* =============================================================
@@ -202,7 +188,7 @@ page {
   align-items: center;
   height: var(--icon-touch);
   padding-top: env(safe-area-inset-top);
-  background: var(--color-bg-card);
+  background: var(--bg-card);
 }
 
 /* 底部安全区兜底：吸底元素外层统一挂它，别各写 env() */
@@ -212,7 +198,7 @@ page {
 
 /* 卡片：白面 + 1rpx 描边 + 12rpx 圆角，默认不加阴影 */
 .card {
-  background: var(--color-bg-card);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   padding: var(--pad-normal);

@@ -16,13 +16,13 @@
 .empty-text {
   margin-top: var(--space-lg);
   font-size: var(--font-base);
-  color: var(--ink-2);
+  color: var(--text-primary);
 }
 
 /* 补充说明：小号（与标签同档） */
 .empty-sub {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
   line-height: 1.6;
   text-align: center;
 }

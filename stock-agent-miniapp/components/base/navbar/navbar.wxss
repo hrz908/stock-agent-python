@@ -1,8 +1,8 @@
-/* 导航栏：底色与页面一致（--bg 宣纸 #F2EDE6），底部不加分隔线，靠内容区留白区分 */
+/* 导航栏：底色与页面一致（--bg-page），底部不加分隔线，靠内容区留白区分 */
 .navbar {
   width: 100%;
   box-sizing: border-box;
-  background: var(--bg);
+  background: var(--bg-page);
   flex: none;
 }
 
@@ -53,7 +53,7 @@
   min-width: 0;
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
-  color: var(--ink);
+  color: var(--text-primary);
   letter-spacing: 0.5rpx;
   white-space: nowrap;
   overflow: hidden;

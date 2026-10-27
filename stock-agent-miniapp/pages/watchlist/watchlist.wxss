@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--bg-page);
   position: relative;
 }
 
@@ -20,7 +20,7 @@
 .overview-card {
   flex: none;
   padding: var(--space-lg);
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
 }
@@ -35,7 +35,7 @@
 /* 「自选总浮动」标题：普通（标准） */
 .overview-title {
   font-size: var(--font-base);
-  color: var(--ink-3);
+  color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -56,8 +56,8 @@
   border-radius: var(--radius-xs);
   border: var(--hairline);
   font-size: var(--font-base);
-  background: var(--surface-2);
-  color: var(--ink-2);
+  background: var(--bg-disabled);
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
@@ -90,7 +90,7 @@
 
 /* 盈亏为 0：中性色（与行情卡主价格同色），既不标红也不标绿 */
 .is-flat {
-  color: var(--ink);
+  color: var(--text-secondary);
 }
 
 .hero-amount.is-down {
@@ -104,7 +104,7 @@
   gap: var(--space-md);
   margin-top: var(--space-xs);
   font-size: var(--font-base);   /* 百分比 · 已同步：普通 */
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 刷新入口：无底色（与背景一致），图标与文字用主色（黑），置于 hero-desc 行右侧 */
@@ -118,7 +118,7 @@
 
 .refresh-btn-text {
   font-size: var(--font-base);   /* 刷新：普通 */
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 图标组件渲染成 <text>（行内元素），transform 对行内元素不生效，
@@ -147,7 +147,7 @@
   display: flex;
   margin-top: var(--space-lg);
   padding: var(--space-xs);
-  background: var(--surface-2);
+  background: var(--bg-disabled);
   border-radius: var(--radius-sm);
 }
 .filter-radio__item {
@@ -156,13 +156,13 @@
   text-align: center;
   padding: var(--space-xs) 0;
   font-size: var(--font-lg);   /* 全部 / 涨幅榜 / 跌幅榜：大号 */
-  color: var(--ink-2);
+  color: var(--text-primary);
   border-radius: var(--radius-sm);
   transition: color .2s;
 }
 .filter-radio__item--on {
-  background: var(--surface);
-  color: var(--ink);
+  background: var(--bg-card);
+  color: var(--text-primary);
   font-weight: var(--fw-semibold);
 }
 
@@ -182,7 +182,7 @@
 }
 
 .stock-list {
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -203,7 +203,7 @@
   justify-content: space-between;
   gap: var(--space-md);
   padding: var(--space-md) var(--space-lg);
-  background: var(--surface);
+  background: var(--bg-card);
   transition: transform 200ms ease;
 }
 
@@ -222,7 +222,7 @@
 .stock-name {
   font-size: var(--font-base);
   font-weight: 400;
-  color: var(--ink);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -232,7 +232,7 @@
 .stock-code {
   margin-top: var(--space-xs);
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 .price-note {
@@ -275,7 +275,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-xs);
-  background: var(--color-error);
+  background: var(--danger);
   opacity: 0;
 }
 
@@ -285,7 +285,7 @@
 
 .stock-row-action-text {
   font-size: var(--font-sm);
-  color: var(--primary-fg); /* 深色底上的浅色文字 */
+  color: var(--text-inverse); /* 深色底上的浅色文字 */
 }
 
 /* ===== 底部「添加股票」 ===== */
@@ -312,7 +312,7 @@
 .add-btn-text {
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
-  color: var(--color-text-primary);
+  color: var(--text-primary);
 }
 
 /* ===== 添加自选表单 ===== */
@@ -328,7 +328,7 @@
 .form-label {
   margin-bottom: var(--space-xs);
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 .form-input {
@@ -337,14 +337,14 @@
   padding: 0 var(--space-md);
   box-sizing: border-box;
   font-size: var(--font-base);
-  color: var(--ink);
+  color: var(--text-primary);
   background: transparent;
   border: var(--hairline);
   border-radius: var(--radius-sm);
 }
 
 .form-input-placeholder {
-  color: var(--ink-3);
+  color: var(--text-hint);
   font-size: var(--font-base);
 }
 
@@ -365,7 +365,7 @@
   right: 0;
   top: 100%;
   margin-top: var(--space-xs);
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -388,14 +388,14 @@
 
 .search-item-name {
   font-size: var(--font-base);
-  color: var(--ink);
+  color: var(--text-primary);
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* 下拉里的代码（名称的别名）：全局小号 */
 .search-item-code {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
   font-feature-settings: 'tnum';
   flex: none; white-space: nowrap;
 }
@@ -410,7 +410,7 @@
 /* 「支持这些交易所的代码前缀」与下面沪市 / 深市 / 北交所三行：小号 */
 .note-title {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 .note-row {
@@ -424,10 +424,10 @@
 /* 标签列固定宽度，代码前缀才能上下对齐 */
 .note-label {
   flex: 0 0 96rpx;
-  color: var(--ink-2);
+  color: var(--text-hint);
 }
 
 .note-codes {
   flex: 1;
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }

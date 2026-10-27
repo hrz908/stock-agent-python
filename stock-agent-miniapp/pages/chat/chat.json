@@ -12,8 +12,5 @@
     "finance-research-card": "/components/finance/research-card/research-card",
     "finance-event-card": "/components/finance/event-card/event-card",
     "finance-compare-card": "/components/finance/compare-card/compare-card"
-  },
-  "backgroundColor": "#F2EDE6",
-  "backgroundColorTop": "#F2EDE6",
-  "backgroundColorBottom": "#F2EDE6"
+  }
 }

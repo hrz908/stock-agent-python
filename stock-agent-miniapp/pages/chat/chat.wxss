@@ -9,7 +9,7 @@
   /* 用 100% 而非 100vh：vh 是固定像素，键盘弹起时重算会与键盘动画不同步导致跳变 */
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--bg-page);
   /* 自身作为定位容器：输入栏用 absolute 而非 fixed，
      页面转场动画期间不会因 fixed 元素单独定位而与页面错位 */
   position: relative;
@@ -67,14 +67,14 @@
 .bubble--user {
   max-width: 80%;
   padding: var(--space-md) var(--space-lg);
-  background: var(--surface-2);
+  background: var(--bg-disabled);
   border-radius: var(--radius-md);
 }
 
 .bubble-text {
   font-size: var(--font-base);
   line-height: 1.7;
-  color: var(--ink);
+  color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -92,7 +92,7 @@
   padding: var(--space-xs) 0 var(--space-xs) var(--space-lg);
   background: transparent;
   border: none;
-  border-left: 1rpx solid var(--line); /* 例外：页边线是版式标记，不走 --hairline */
+  border-left: 1rpx solid var(--border); /* 例外：页边线是版式标记，不走 --hairline */
   border-radius: var(--radius-md);
 }
 
@@ -101,7 +101,7 @@
    容器一旦 pre-wrap，WXML 里的模板缩进就会变成空白行（见 chat.wxml 的 mdInline） */
 .md-h {
   font-weight: 600;
-  color: var(--ink);
+  color: var(--text-primary);
   line-height: 1.4;
 }
 
@@ -118,7 +118,7 @@
 .md-p {
   font-size: var(--font-base);
   line-height: 1.7;
-  color: var(--ink);
+  color: var(--text-primary);
   word-break: break-word;
 }
 
@@ -132,10 +132,10 @@
 .md-quote {
   margin: var(--space-md) 0;
   padding: var(--space-xs) 0 var(--space-xs) var(--space-md);
-  border-left: 4rpx solid var(--line); /* 第8条例外：引用线是 4rpx 强调竖线，不适用 --hairline */
+  border-left: 4rpx solid var(--border); /* 第8条例外：引用线是 4rpx 强调竖线，不适用 --hairline */
   font-size: var(--font-sm);
   line-height: 1.7;
-  color: var(--ink-2);
+  color: var(--text-secondary);
   word-break: break-word;
 }
 
@@ -149,7 +149,7 @@
 .md-code {
   margin: var(--space-md) 0;
   padding: var(--space-md) var(--space-lg);
-  background: var(--surface-2);
+  background: var(--bg-disabled);
   border: var(--hairline);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -159,7 +159,7 @@
   font-family: Menlo, Consolas, "Liberation Mono", monospace;
   font-size: var(--font-sm);
   line-height: 1.5;
-  color: var(--ink-2);
+  color: var(--text-primary);
   white-space: pre;
 }
 
@@ -188,7 +188,7 @@
   min-width: var(--space-lg);
   font-size: var(--font-base);
   line-height: 1.7; /* 与 .md-li-body 同值，否则标记与首行文字光学错位 */
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 .md-li-body {
@@ -196,7 +196,7 @@
   min-width: 0;
   font-size: var(--font-base);
   line-height: 1.7;
-  color: var(--ink);
+  color: var(--text-primary);
   word-break: break-word;
 }
 
@@ -218,7 +218,7 @@
 }
 
 .md-tr--head {
-  background: var(--surface-2);
+  background: var(--bg-disabled);
   border-bottom: var(--hairline);
 }
 
@@ -232,12 +232,12 @@
 }
 
 .md-th {
-  color: var(--ink-3);
+  color: var(--text-secondary);
   font-weight: 400;
 }
 
 .md-td {
-  color: var(--ink-2);
+  color: var(--text-primary);
   word-break: break-word;
 }
 
@@ -248,7 +248,7 @@
 
 .md-strong {
   font-weight: 600;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 .md-em {
@@ -257,7 +257,7 @@
 
 .md-del {
   text-decoration: line-through;
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 行内代码：等宽 + 次级面小底。
@@ -265,17 +265,17 @@
 .md-code-inline {
   padding: 0 var(--space-xs);
   border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  background: var(--bg-disabled);
   font-family: Menlo, Consolas, "Liberation Mono", monospace;
   font-size: var(--font-sm);   /* 与块级 .md-code-text 同档，跟随字号设置 */
-  color: var(--ink);
+  color: var(--text-primary);
   white-space: pre-wrap;
 }
 
 /* 链接：黛青 + 下划线；点击复制（见 onMdLinkTap） */
 .md-link {
-  /* 强调色收口：链接是 --color-brand 的合法用法之一 */
-  color: var(--color-brand);
+  /* 强调色收口：链接是 --primary 的合法用法之一 */
+  color: var(--primary);
   text-decoration: underline;
 }
 
@@ -335,7 +335,7 @@
   width: 12rpx;
   height: 12rpx;
   border-radius: 999rpx;
-  background-color: var(--ink);
+  background-color: var(--text-primary);
   animation: ai-load-blink 1.4s infinite ease-in-out;
 }
 
@@ -358,14 +358,14 @@
   font-size: var(--font-base);
   font-weight: 400;
   line-height: 1.5;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 补充说明只服务长耗时档：弱一档字号与字色，读不读都不影响理解 */
 .ai-load-hint {
   font-size: var(--font-sm);
   line-height: 1.5;
-  color: var(--ink-3);
+  color: var(--text-hint);
 }
 
 /* 三点呼吸：只走透明度与缩放，不做位移——位移会带动整块文字视觉抖动 */
@@ -383,10 +383,10 @@
 /* 页边线呼吸：只在中性灰之间走，不做彩色分割线 */
 @keyframes ai-load-breathe {
   0%, 100% {
-    border-left-color: var(--line);
+    border-left-color: var(--border);
   }
   50% {
-    border-left-color: var(--ink-3);
+    border-left-color: var(--text-primary);
   }
 }
 
@@ -404,14 +404,14 @@
   height: 36rpx;
   flex: none;
   border-radius: 0;
-  background: var(--ink);
+  background: var(--text-primary);
   animation: md-caret-blink 1s infinite;
 }
 
 .md-caret-text {
   font-size: var(--font-sm);
   line-height: 1.5;
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 @keyframes md-caret-blink {
@@ -433,7 +433,7 @@
   margin-bottom: var(--space-lg);
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 /* ===== 首屏引导问题 =====
@@ -449,7 +449,7 @@
 /* 首屏引导区标题：全局小号（与分节标题同档） */
 .quick-asks-title {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 引导问题：次级胶囊（浅灰底、无描边），与主行动点区分 */
@@ -460,7 +460,7 @@
   gap: var(--space-md);
   min-height: 80rpx;
   padding: var(--space-md) var(--space-lg);
-  background: var(--surface-2);
+  background: var(--bg-disabled);
   border-radius: var(--radius-sm);
 }
 
@@ -472,7 +472,7 @@
   padding-right: var(--space-md);
   font-size: var(--font-sm);
   line-height: 1.2;
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 问句最多两行：股票名 + 代码 + 上下文一句话，单行放不下时截断会把问句砍半，
@@ -483,7 +483,7 @@
   min-width: 0;
   font-size: var(--font-base);
   line-height: 1.4;
-  color: var(--ink);
+  color: var(--text-primary);
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -496,7 +496,7 @@
   margin-top: var(--space-lg);
   font-size: var(--font-sm);   /* 全局小号：与标签同档 */
   line-height: 1.7;
-  color: var(--ink-3);
+  color: var(--text-hint);
 }
 
 /* ===== 输入栏 ===== */
@@ -507,7 +507,7 @@
   right: 0;
   /* bottom 由页面按键盘高度驱动：卡片上移与对话区收窄共用同一份数据 */
   bottom: 0;
-  background: var(--bg);
+  background: var(--bg-page);
   transition: bottom 0.25s ease;
   /* 输入栏与屏幕两侧留白；下内边距由内联样式给：键盘弹起时为 0，否则让出安全区 */
   padding: var(--space-md) var(--space-lg) 0;
@@ -527,7 +527,7 @@
   margin-bottom: var(--space-md);
   padding: var(--space-xs) var(--space-xs);
   box-sizing: border-box;
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-sm);
 }
@@ -542,7 +542,7 @@
   height: var(--icon-touch);
   box-sizing: border-box;
   border-radius: 999rpx;
-  color: var(--ink-2);
+  color: var(--text-primary);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -586,7 +586,7 @@
   bottom: 100%;
   margin-bottom: var(--space-md);
   padding: 0 var(--space-lg) var(--space-lg);
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
   animation: voice-live-in 160ms ease both;
@@ -606,7 +606,7 @@
   flex: 1;
   min-width: 0;
   font-size: var(--font-sm);
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 .voice-panel-cancel {
@@ -615,7 +615,7 @@
   align-items: center;
   padding-left: var(--space-lg);
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 波形：三根竖条错相跳动。用强调色而不是红/绿——红绿在这里会被读成涨跌 */
@@ -631,7 +631,7 @@
   width: var(--space-xs);
   height: var(--space-xs);
   border-radius: 999rpx;
-  background: var(--ink);
+  background: var(--text-primary);
   animation: voice-wave 900ms ease-in-out infinite;
 }
 
@@ -656,12 +656,12 @@
   overflow: hidden;
   font-size: var(--font-base);
   line-height: 1.6;
-  color: var(--ink);
+  color: var(--text-primary);
   word-break: break-word;
 }
 
 .voice-panel-text--empty {
-  color: var(--ink-3);
+  color: var(--text-hint);
 }
 
 @keyframes voice-live-in {
@@ -694,14 +694,14 @@
   max-height: 104rpx;
   font-size: var(--font-base);
   line-height: 52rpx;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 占位文案：与输入文字同档。
    原先写在 textarea 的 placeholder-style 行内（36rpx），既不跟「字体大小」设置，
    又比正文大 6rpx；改成 class 与全站其他输入框（.form-input-placeholder）一致 */
 .bar-input-placeholder {
-  color: var(--ink-3);
+  color: var(--text-hint);
   font-size: var(--font-base);
 }
 
@@ -718,7 +718,7 @@
   justify-content: center;
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
-  color: var(--ink);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -733,7 +733,7 @@
   height: var(--icon-touch);
   border-radius: 999rpx;
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -746,11 +746,11 @@
    未在聆听时与左端模式键同灰，聆听中才提到正文字色，表示此刻可点 */
 .bar-send--plain {
   background: transparent;
-  color: var(--ink-2);
+  color: var(--text-primary);
 }
 
 .bar-send--plain.bar-send--live {
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 加载态：方块代替发送图标（沿用 chat-sender 的「停止」观感）。
@@ -759,11 +759,11 @@
   width: var(--space-lg);
   height: var(--space-lg);
   border-radius: 999rpx;
-  background: var(--ink);
+  background: var(--text-primary);
 }
 
 .bar-send--plain .bar-send-stop {
-  background: var(--ink-2);
+  background: var(--text-primary);
 }
 
 /* 中间区（输入框 / 语音键）不做进场动画：
@@ -804,7 +804,7 @@
   height: 112rpx;
   border-radius: 999rpx;
   overflow: hidden;
-  background: var(--surface-2);
+  background: var(--bg-disabled);
 }
 
 .drawer-title-col {
@@ -819,14 +819,14 @@
 .drawer-title {
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
-  color: var(--ink);
+  color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* 品牌副标题（昵称别名）：小号 */
 .drawer-sub {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -858,7 +858,7 @@
 .drawer-new-text {
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 创建中：底色不变，只把整块压暗一档 + 转圈，提示「在忙」而不是「点了没反应」。
@@ -872,7 +872,7 @@
   width: 32rpx;
   height: 32rpx;
   box-sizing: border-box;
-  border: 4rpx solid var(--ink);
+  border: 4rpx solid var(--text-primary);
   border-top-color: transparent;
   border-radius: 999rpx;
   animation: drawer-new-spin 0.8s linear infinite;
@@ -902,7 +902,7 @@
   min-height: 96rpx;
   margin-bottom: var(--space-xs);
   padding: 0 var(--space-md);
-  background: var(--color-bg-card);
+  background: var(--bg-card);
   border-radius: var(--radius-sm);
 }
 
@@ -912,7 +912,7 @@
   flex: 1;
   font-size: var(--font-lg);
   font-weight: 400;
-  color: var(--ink);
+  color: var(--text-primary);
   text-align: left;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -948,7 +948,7 @@
   padding: var(--space-lg) var(--space-md) var(--space-md);
   font-size: var(--font-sm);
   font-weight: 600;
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 /* 会话行：平时无壳，当前会话才套一个方框。
@@ -960,15 +960,15 @@
   height: 88rpx;
   margin-bottom: var(--space-md);
   padding: 0 var(--space-xs) 0 var(--space-md);
-  background: var(--color-bg-card);
+  background: var(--bg-card);
   border-radius: var(--radius-sm);
 }
 
 /* 当前会话：浅灰底标出选中态，不加描边也不加阴影 */
 /* 当前会话：同样是白卡，靠左侧黑竖条 + 600 字重标出选中 */
 .history-item--active {
-  background: var(--color-bg-card);
-  border-left: 4rpx solid var(--color-text-primary);
+  background: var(--bg-card);
+  border-left: 4rpx solid var(--text-primary);
   padding-left: var(--space-sm);
 }
 
@@ -981,12 +981,12 @@
 .history-item-title {
   display: block;
   font-size: var(--font-base);
-  color: var(--ink-2);
+  color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .history-item--active .history-item-title {
-  color: var(--ink);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -1004,12 +1004,12 @@
   padding: var(--space-lg) 0;
   text-align: center;
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-hint);
 }
 
 /* ===== 知识库引用来源 =====
    挂在 assistant 气泡底部：一行标题 + 若干条标题文本。
-   用 --ink-3 弱化，避免和正文抢注意力；分隔线用 --hairline（1rpx） */
+   用 --text-primary 弱化，避免和正文抢注意力；分隔线用 --hairline（1rpx） */
 .msg-sources {
   margin-top: var(--space-md);
   padding-top: var(--space-sm);
@@ -1021,7 +1021,7 @@
   font-size: var(--font-xs);
   line-height: var(--lh-sm);
   letter-spacing: var(--ls-xs);
-  color: var(--ink-3);
+  color: var(--text-hint);
 }
 
 .msg-sources-list {
@@ -1033,5 +1033,5 @@
 .msg-sources-item {
   font-size: var(--font-xs);
   line-height: var(--lh-base);
-  color: var(--ink-2);
+  color: var(--text-hint);
 }

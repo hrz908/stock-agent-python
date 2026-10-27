@@ -117,7 +117,7 @@
           />
           <!-- 清除按钮：原生 input 没有内建清除，自绘一个 -->
           <view wx:if="{{searchKeyword}}" class="input-clear" bindtap="onSearchClear">
-            <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+            <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
           </view>
         </view>
         <!-- 下拉联想结果 -->
@@ -141,7 +141,7 @@
       <!-- 已选中股票：点右侧 x 清除重新选 -->
       <view wx:if="{{selectedStock}}" class="selected-stock" bindtap="onClearStock">
         <text class="selected-stock-text num">{{selectedStock.name}} ({{selectedStock.market}}{{selectedStock.code}})</text>
-        <base-icon type="CloseOutline" style="font-size:var(--icon-sm);color:var(--ink);" />
+        <base-icon type="CloseOutline" style="font-size:var(--icon-sm);color:var(--text-primary);" />
       </view>
       </block>
 
@@ -168,7 +168,7 @@
             <text class="option-label">触发条件</text>
             <view class="option-value">
               <text class="option-value-text">{{conditionText}}</text>
-              <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+              <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
             </view>
           </view>
         </picker>
@@ -208,7 +208,7 @@
             <text class="option-label">基准周期</text>
             <view class="option-value">
               <text class="option-value-text">{{volumeBaseText}}</text>
-              <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+              <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
             </view>
           </view>
         </picker>
@@ -228,7 +228,7 @@
             <text class="option-label">检查频率</text>
             <view class="option-value">
               <text class="option-value-text">{{frequencyText}}</text>
-              <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+              <base-icon type="RightOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
             </view>
           </view>
         </picker>

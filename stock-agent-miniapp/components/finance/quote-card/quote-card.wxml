@@ -8,7 +8,7 @@
     </view>
   </view>
 
-  <!-- 参考图：主价格保持主文字色（--ink），只有涨跌额/涨跌幅跟随涨跌着色。
+  <!-- 参考图：主价格保持主文字色（--text-primary），只有涨跌额/涨跌幅跟随涨跌着色。
        三个数字等距居中：一格一个数字，flex:1 均分 + 文字居中（同数据栅格口径） -->
   <view class="price-row">
     <text class="price num">{{priceText}}</text>

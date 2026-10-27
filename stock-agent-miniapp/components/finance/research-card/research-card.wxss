@@ -29,10 +29,10 @@
 .quote {
   margin-top: var(--space-md);
   padding-left: var(--space-md);
-  border-left: 4rpx solid var(--line); /* 第8条例外：摘要引用竖线，不适用 --hairline */
+  border-left: 4rpx solid var(--border); /* 第8条例外：摘要引用竖线，不适用 --hairline */
   font-size: var(--font-base);     /* 卡内正文：标准 */
   line-height: 1.5;
-  color: var(--ink-2);
+  color: var(--text-secondary);
   word-break: break-word;        /* 不裁剪：完整显示核心观点（去掉 2 行 clamp） */
 }
 
@@ -40,8 +40,8 @@
    min-height 从 88rpx 收到 56rpx：它写在说明行里，撑到 88rpx 会把整行顶开 */
 .src-link {
   margin-left: var(--space-md);
-  /* 强调色收口：链接走 --color-brand（黛青） */
-  color: var(--color-brand);
+  /* 强调色收口：链接走 --primary（黛青） */
+  color: var(--primary);
   text-decoration: underline;
   display: inline-flex; align-items: center; min-height: 56rpx;
 }

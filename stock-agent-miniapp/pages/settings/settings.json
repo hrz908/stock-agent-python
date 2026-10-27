@@ -4,8 +4,5 @@
     "base-icon": "/components/base/icon/icon",
     "base-popup": "/components/base/popup/popup",
     "base-toast": "/components/base/toast/toast"
-  },
-  "backgroundColor": "#F2EDE6",
-  "backgroundColorTop": "#F2EDE6",
-  "backgroundColorBottom": "#F2EDE6"
+  }
 }

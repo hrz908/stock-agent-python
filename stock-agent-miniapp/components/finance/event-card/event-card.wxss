@@ -30,7 +30,7 @@
   top: var(--space-lg);
   bottom: calc(-1 * var(--space-md));
   width: 1rpx;
-  background: var(--line);
+  background: var(--border);
 }
 
 .evt:last-child::before {
@@ -49,13 +49,13 @@
 /* 需关注：琥珀色（金色在白底上对比度不足，降一档到琥珀仍保留「提醒」语义）；
    常规：浅蓝。两者都不与涨跌红绿冲突 */
 .evt-dot--gold {
-  background: var(--warn);
+  background: var(--warning);
 }
 
 .evt-dot--blue {
   /* 常规事件：中性灰。与「需关注=琥珀」配对，默认态用中性色，
      不再占用强调蓝（shadcn 状态表达：默认中性 + 单状态色） */
-  background: var(--ink-3);
+  background: var(--text-primary);
 }
 
 .evt-body {
@@ -66,13 +66,13 @@
 .evt-t {
   font-size: var(--font-base);
   line-height: 1.5;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 事件标题：与类型标签同字号但字重略高，撑起层次 */
 .evt-title {
   font-weight: 400;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 事件类型小标签（财报 / 解禁 / 回购…）：标签统一走全局小号 */
@@ -82,9 +82,9 @@
   padding: var(--space-xs) var(--space-xs);
   border-radius: 0;
   border: var(--hairline);
-  background: var(--surface-2);
+  background: var(--bg-disabled);
   font-size: var(--font-sm);
-  color: var(--ink-2);
+  color: var(--text-secondary);
   vertical-align: middle;
 }
 
@@ -92,7 +92,7 @@
   margin-top: var(--space-xs);
   font-size: var(--font-base);     /* 事件描述：标准 */
   line-height: 1.5;
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 .evt-foot {
@@ -104,14 +104,14 @@
 
 .evt-date {
   font-size: var(--font-sm);
-  color: var(--ink-3);
+  color: var(--text-hint);
 }
 
 /* 原文链接：复制。min-height 收到 56rpx，避免把日期行顶高 */
 .evt-src {
   font-size: var(--font-sm);
-  /* 强调色收口：链接走 --color-brand（黛青） */
-  color: var(--color-brand);
+  /* 强调色收口：链接走 --primary（黛青） */
+  color: var(--primary);
   text-decoration: underline;
   display: inline-flex; align-items: center; min-height: 56rpx;
 }

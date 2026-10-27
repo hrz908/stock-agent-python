@@ -32,7 +32,7 @@
 
 .flow-pct {
   font-size: var(--font-base);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 四档列表：顶部分隔线，逐行展开 */
@@ -58,11 +58,11 @@
 }
 
 .flow-k {
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 /* 数值不写 color：金额按正负着色（.up / .down 来自 _card.wxss），
-   在这里写死 --ink 会以「后定义者胜」把着色整片盖掉。
+   在这里写死 --text-primary 会以「后定义者胜」把着色整片盖掉。
    字号与标签同档（标准），着色承担主次 */
 .flow-v {
   font-size: var(--font-base);
@@ -80,7 +80,7 @@
 
 .lhb-title {
   font-size: var(--font-base);
-  color: var(--ink-3);
+  color: var(--text-primary);
 }
 
 .lhb-row {
@@ -95,7 +95,7 @@
 .lhb-seat {
   flex: 1;
   min-width: 0;
-  color: var(--ink-2);
+  color: var(--text-primary);
   word-break: break-word;        /* 不裁剪：长席位名（如「中信证券上海分公司」）完整换行显示 */
 }
 
@@ -177,14 +177,14 @@
   padding-bottom: var(--space-xs);
   border-bottom: var(--hairline);
   font-size: var(--font-base);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 表头对齐与数据行一致：三列居中（席位 / 买入 / 卖出），
    列宽也复用 .lhb-seat / .lhb-vals 的 1:2 分配，所以表头与数据上下对齐。
    这里不覆盖 text-align。 */
 .lhb-head .lhb-seat {
-  color: var(--ink-3);           /* 覆盖 .lhb-seat 的 --ink-2，表头用弱文字 */
+  color: var(--text-secondary);           /* 覆盖 .lhb-seat 的 --text-primary，表头用弱文字 */
   font-weight: 400;
 }
 

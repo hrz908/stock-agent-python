@@ -1,12 +1,12 @@
 /* 金融卡共享外壳：8 张卡共用（各卡 wxss 用 @import 引入，
    避免每张卡重复一遍基础样式）。
-   视觉规格对齐设计稿与 HTML 预览：--surface 卡面 / --line 描边 /
+   视觉规格对齐设计稿与 HTML 预览：--bg-card 卡面 / --border 描边 /
    --radius-lg 圆角 / --space-lg 内边距；数字一律配 .num 等宽（styles/base.wxss）。 */
 .fcard {
   width: 100%;
   box-sizing: border-box;
   padding: var(--space-lg);
-  background: var(--surface);
+  background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-md);
 }
@@ -34,14 +34,14 @@
 }
 
 /* 卡主标题（左上角）：大号 --font-lg（36rpx）+ 700 加黑，8 张卡统一。
-   字号封顶 --font-xl（40rpx）：卡内焦点数字才用上限档，标题靠 700 与 --ink 主色拿权重，
+   字号封顶 --font-xl（40rpx）：卡内焦点数字才用上限档，标题靠 700 与 --text-primary 主色拿权重，
    不靠字号（2026-10-26 令牌收敛，display 档已取消）。
    不裁剪不截断（需求：卡片信息不要 overflow）——超长名称换行完整显示 */
 .fcard-name {
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
   line-height: 1.2;
-  color: var(--ink);
+  color: var(--text-primary);
   word-break: break-word;
 }
 
@@ -51,7 +51,7 @@
 .fcard-code {
   margin-top: var(--space-xs);
   font-size: var(--font-base);
-  color: var(--ink-3);
+  color: var(--text-secondary);
   word-break: break-word;
 }
 
@@ -89,13 +89,13 @@
 /* 指标键：标准（8 张卡统一，口径同 K 线卡的区间涨幅 / 振幅 / MA5 / 量比） */
 .fcell-k {
   font-size: var(--font-base);
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 .fcell-v {
   margin-top: var(--space-xs);
   font-size: var(--font-base);
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 /* 底部说明：数据日期 / 来源 / 备注（口径类文案已按需求全部移除）。
@@ -106,12 +106,12 @@
   border-top: var(--hairline-dashed);
   font-size: var(--font-sm);
   line-height: 1.5;
-  color: var(--ink-3);
+  color: var(--text-secondary);
 }
 
 /* 来源机构名 / 原文链接入口 */
 .fnote-src {
-  color: var(--ink-2);
+  color: var(--text-secondary);
 }
 
 /* 红涨绿跌（国内习惯）：组件内样式隔离，不会渗到页面 */

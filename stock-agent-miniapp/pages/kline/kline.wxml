@@ -6,10 +6,10 @@
   <view class="content">
     <view class="search-field">
       <view class="search-box">
-        <base-icon type="SearchOutline" style="font-size:var(--icon-sm);color:var(--ink);" />
+        <base-icon type="SearchOutline" style="font-size:var(--icon-sm);color:var(--text-primary);" />
         <input class="search-input" value="{{keyword}}" placeholder="股票代码 / 名称 / 拼音" placeholder-class="search-ph" bindinput="onSearchInput" />
         <view wx:if="{{keyword}}" class="search-clear" bindtap="onSearchClear">
-          <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+          <base-icon type="CloseOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
         </view>
       </view>
       <!-- 联想结果：选中即关闭下拉并触发五张卡拉数 -->
@@ -27,7 +27,7 @@
         <text class="picked-code num">{{stock.market}}{{stock.code}}</text>
       </view>
       <view class="picked-refresh {{loading ? 'picked-refresh--spinning' : ''}}" bindtap="onRefresh">
-        <base-icon class-name="picked-refresh-icon" type="LoopOutline" style="font-size:var(--icon-xs);color:var(--ink);" />
+        <base-icon class-name="picked-refresh-icon" type="LoopOutline" style="font-size:var(--icon-xs);color:var(--text-primary);" />
         <text class="picked-refresh-text">刷新</text>
       </view>
     </view>

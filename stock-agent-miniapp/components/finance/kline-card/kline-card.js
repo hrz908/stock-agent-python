@@ -8,6 +8,7 @@
 // 数据字段与版式与设计稿一致，后续若要交互式图表可平滑替换图表区。
 import { toNum, fmtNum, fmtPct, fmtPctPlain, direction } from '../../../utils/format';
 import { svgToDataUri } from '../../../utils/svg-uri';
+import { CHART_SERIES, PALETTE, TREND_COLORS } from '../../../utils/color';
 
 // viewBox 与分区（对齐视觉稿：K 线区 ≥180rpx，下方成交量）
 const VB_W = 340;
@@ -17,15 +18,15 @@ const PRICE_BOTTOM = 138;
 const VOL_TOP = 150;
 const VOL_BOTTOM = 192;
 
-// 国内习惯：涨红跌绿；均线三色（蓝 / 琥珀 / 紫）——
-// 浅色主题下金色与深灰在白底上对比度不足，换成蓝/琥珀/紫这一组常规均线配色
-const COLOR_UP = '#dc2626';
-// 跌绿随 token 加深（#16a34a → #15803D）：原值在白卡上仅 3.3:1
-const COLOR_DOWN = '#15803D';
+// 色值一律取自 utils/color.js（与 styles/token.wxss 的令牌同步），组件内不写裸色
+// 国内习惯：涨红跌绿
+const COLOR_UP = TREND_COLORS.up;
+// 跌绿取令牌里的深绿：早前用的浅绿在白卡上仅 3.3:1，加深后 5.0:1
+const COLOR_DOWN = TREND_COLORS.down;
 // 均线三色是数据系列标识色（RESTYLE-BLOCKED 有裁决），不随 UI 色板走
-const MA_COLORS = { ma5: '#2559EB', ma10: '#F5A623', ma20: '#8B5CF6' };
-// 网格跟随 --line
-const GRID_COLOR = '#DCD1CB';
+const MA_COLORS = CHART_SERIES;
+// 网格跟随 --border
+const GRID_COLOR = PALETTE.border;
 
 function num(v) {
   const n = parseFloat(v);
