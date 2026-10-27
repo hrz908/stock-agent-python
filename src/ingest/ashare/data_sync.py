@@ -127,7 +127,9 @@ def _finance_row(code: str, period: str, row) -> tuple:
     只映射确定存在的列；资产负债率与经营现金流净额不在该接口里，留 NULL 由
     读取层回落实时接口，不拿「每股经营现金流 × 股本」这种推算值冒充总额。
     """
-    revenue = _num(row, "营业收入-营业收入", "营业收入")
+    # 东财业绩报表的营收列叫「营业总收入-营业总收入」（不是「营业收入」）；
+    # 只写营业收入一个名字会静默入库 NULL——行数正常、字段全空，最难发现的那种错
+    revenue = _num(row, "营业总收入-营业总收入", "营业收入-营业收入", "营业收入")
     netprofit = _num(row, "净利润-净利润", "净利润")
     net_margin = None
     if revenue and netprofit is not None and revenue != 0:
@@ -143,7 +145,7 @@ def _finance_row(code: str, period: str, row) -> tuple:
         _num(row, "销售毛利率"),
         net_margin,
         _num(row, "资产负债率"),
-        _num(row, "营业收入-同比增长", "营业收入同比增长"),
+        _num(row, "营业总收入-同比增长", "营业收入-同比增长", "营业收入同比增长"),
         _num(row, "净利润-同比增长", "净利润同比增长"),
         revenue,
         netprofit,
@@ -184,7 +186,9 @@ def sync_finance(store, codes: list[str], years: int = 5) -> dict:
         store.conn.commit()
         stats["periods"] += 1
         stats["rows"] += len(rows)
-        stats["last_period"] = period  # periods() 倒序，第一次成功的就是最新一期
+        # periods() 倒序：只在第一次成功时记，否则会被后面的老报告期覆盖成 2021Q1
+        if not stats["last_period"]:
+            stats["last_period"] = period
         logger.info("报告期 %s 入库 %d 只", period, len(rows))
         _throttle()
 
