@@ -39,16 +39,21 @@ git 历史同源：本仓库早期提交来自 `stock-agent-rag`，之后独立�
 bash scripts/dev.sh up
 
 # 2) 装依赖并起服务（单进程 = 网关 + agent）
-python -m venv .venv
-.venv/Scripts/pip install -r server/requirements.txt -r agent/requirements.txt   # Windows
-# .venv/bin/pip install -r server/requirements.txt -r agent/requirements.txt     # macOS / Linux
-bash scripts/dev.sh dev
+bash scripts/dev.sh setup   # 建 .venv（默认 Python 3.11，对齐线上镜像）+ 装依赖
+bash scripts/dev.sh dev     # 已有 .venv 的机器直接跑这句
+
+# setup 优先用 uv（并行下载 + 全局缓存，几秒）；没装 uv 则退化为 venv 自带的 pip（分钟级）。
+# 想换解释器版本：PY_VERSION=3.12 bash scripts/dev.sh setup（删掉 .venv 才生效）。
 
 # 3) 契约冒烟（不依赖 DB/Redis，覆盖信封 / 鉴权 / 限流 / SSE 帧 / Quick Ask）
 bash scripts/dev.sh test
 
 # 4) 小程序：微信开发者工具导入 stock-agent-miniapp/，npm install 后「构建 npm」
 ```
+
+> **PowerShell 里别直接写 `bash scripts/dev.sh`**：Windows 的 `bash.exe` 是 WSL 启动器，
+> WSL 里缺 `/bin/bash` 时只会报 `execvpe(/bin/bash) failed`，脚本一行都跑不到。
+> 用 `.\scripts\dev.ps1 <命令>`（自动定位 Git Bash、参数原样透传），或在 Git Bash 里跑 `bash scripts/dev.sh <命令>`。
 
 新电脑先跑 `bash scripts/install-hooks.sh`（钩子 + `remote.prod` + 别名，见 `docs/LOCAL_SETUP.md`）。
 

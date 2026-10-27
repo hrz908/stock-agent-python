@@ -4,6 +4,7 @@
 # 环境：Git Bash / MSYS2（Windows）或任意 bash
 # 用法：bash scripts/dev.sh <命令>      # 不用 chmod 也能跑
 #      bash scripts/dev.sh help       # 看全部命令
+#      .\scripts\dev.ps1 <命令>       # PowerShell 用这个：系统 bash.exe 是 WSL 启动器
 #
 # 为什么不用 Makefile：这台机器上 make 不可用；而且 Makefile 配方行必须以 tab
 # 开头，编辑器格式化或跨系统拷贝常把它换成空格，直接报 missing separator。
@@ -12,8 +13,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$ROOT/server"
+AGENT_DIR="$ROOT/agent"
 MINIAPP_DIR="$ROOT/stock-agent-miniapp"
 DB_NAME="stock_agent"
+# 与 server/Dockerfile 的 python:3.11-slim 对齐：本地跑 3.13、生产跑 3.11
+# 时，asyncio / 标准库行为差异会变成「本地正常、线上复现不了」的那类 bug
+PY_TARGET="${PY_VERSION:-3.11}"
 
 # Windows 的 venv 在 Scripts/，Unix 在 bin/
 VENV_PY="$ROOT/.venv/bin/python"
@@ -32,6 +37,7 @@ usage() {
   redis         进 Redis（限流 rl:* 、日配额 rl:quota:*）
 
 单服务（网关 + agent 同进程，跑在宿主机）
+  setup         装依赖到 .venv（有 uv 走 uv，秒级；没有退化为 pip）
   dev           起服务（--reload，改代码自动重启）
   serve         起服务（无 reload，贴近生产的单进程）
   test          契约冒烟（信封 / 鉴权 / 限流 / SSE 帧格式）
@@ -54,7 +60,7 @@ EOF
 die() { echo "✗ $*" >&2; exit 1; }
 need_compose() { command -v docker >/dev/null 2>&1 || die "没找到 docker，先启动 Docker Desktop"; }
 need_venv() {
-  [[ -x "$VENV_PY" ]] || die "缺少 .venv：python -m venv .venv && .venv/Scripts/pip install -r server/requirements.txt -r agent/requirements.txt"
+  [[ -x "$VENV_PY" ]] || die "缺少 .venv：先跑 bash scripts/dev.sh setup"
 }
 
 COMPOSE_FILE="$SERVER_DIR/docker-compose.yml"
@@ -100,6 +106,40 @@ cmd_migrate() {
 }
 
 cmd_miniapp() { (cd "$MINIAPP_DIR" && npm install); }
+
+# 装依赖：有 uv 就走 uv（并行下载 + 全局缓存，通常几秒），没有才退化到 pip（分钟级）。
+# 首次建 .venv 时用 uv venv --python 3.11 对齐生产镜像；已有 .venv 不重建，只提示版本差异
+# ——重建会让所有人重装一遍依赖，属于该由人决定的动作。
+venv_ver() { "$VENV_PY" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || echo "?"; }
+
+cmd_setup() {
+  if [[ ! -x "$VENV_PY" ]]; then
+    if command -v uv >/dev/null 2>&1; then
+      echo "→ uv venv --python $PY_TARGET .venv"
+      uv venv --python "$PY_TARGET" "$ROOT/.venv" || die "uv venv 失败"
+    elif command -v python >/dev/null 2>&1; then
+      echo "→ python -m venv .venv（装了 uv 会快很多）"
+      python -m venv "$ROOT/.venv"
+    else
+      die "既没有 uv 也没有 python，先装一个（uv 见 https://docs.astral.sh/uv/）"
+    fi
+  else
+    local ver; ver="$(venv_ver)"
+    [[ "$ver" == "$PY_TARGET" ]] || echo "! 现有 .venv 是 Python $ver，生产是 $PY_TARGET；要对齐就删掉 .venv 重跑 setup"
+  fi
+
+  if command -v uv >/dev/null 2>&1; then
+    echo "→ uv pip install -r server/requirements.txt -r agent/requirements.txt"
+    uv pip install --python "$VENV_PY" \
+      -r "$SERVER_DIR/requirements.txt" -r "$AGENT_DIR/requirements.txt" || die "uv pip install 失败"
+  else
+    echo "→ pip install（分钟级）"
+    "$VENV_PY" -m pip install \
+      -r "$SERVER_DIR/requirements.txt" -r "$AGENT_DIR/requirements.txt" || die "pip install 失败"
+  fi
+  echo "✓ 依赖就绪（Python $(venv_ver)）；下一步：bash scripts/dev.sh dev"
+}
+
 cmd_fix_npm() { (cd "$MINIAPP_DIR" && npm run fix:npm); }
 
 cmd="${1:-help}"
@@ -110,6 +150,7 @@ case "$cmd" in
   logs)           cmd_logs ;;
   psql)           cmd_psql ;;
   redis)          cmd_redis ;;
+  setup|install)  cmd_setup ;;
   dev)            cmd_dev ;;
   serve)          cmd_serve ;;
   test|smoke)     cmd_test ;;

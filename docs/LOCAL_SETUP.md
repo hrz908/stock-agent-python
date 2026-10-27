@@ -51,11 +51,11 @@ git config --global alias.pushsafe '!git fetch origin && git diff --quiet && git
 
 | 文件/目录 | 用途 | 恢复方式 |
 |---|---|---|
-| `server/.env` | 本地跑 Go 网关必需（`dev.sh dev`） | 从旧机拷，或按 `server/.env.example` 填 |
+| `server/.env` | 本地跑服务必需（`dev.sh dev`） | 从旧机拷，或按 `deploy/.env.production.example` 填本地版 |
 | `stock-agent-miniapp/project.private.config.json` | 开发者工具个人配置 | 可不要，工具会重新生成 |
 | `stock-agent-miniapp/node_modules` + `miniprogram_npm` | 小程序依赖 | `npm install` + 工具里「构建 npm」 |
-| `agent/.venv`、`ingest/.venv` | Python 依赖 | `pip install -r requirements.txt` |
-| Docker Desktop / Go / Python | 本地开发 | 各自装 |
+| `.venv`（仓库根，server+agent 共用一套） | Python 依赖 | `bash scripts/dev.sh setup`（有 uv 走 uv，秒级） |
+| Docker Desktop / Python 3.11（uv 可选）/ Node | 本地开发 | 各自装 |
 | `/opt/stock-agent/models`（服务器） | 向量模型权重 | 只在服务器需要，本地不用 |
 
 ### 4. 验证

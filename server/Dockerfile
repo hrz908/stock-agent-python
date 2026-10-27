@@ -7,7 +7,6 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     # agent 侧按「项目根 = agent/」的方式互引（from core.x / from tools.x）
     PYTHONPATH=/app/agent
 
@@ -18,7 +17,11 @@ WORKDIR /app
 # 先装依赖再拷代码：改业务代码不会击穿这一层构建缓存
 COPY agent/requirements.txt /tmp/requirements-agent.txt
 COPY server/requirements.txt /tmp/requirements-gateway.txt
-RUN pip install -i "$PIP_INDEX_URL" \
+# BuildKit 缓存挂载：pip 的 HTTP 缓存放在镜像层之外，requirements 变动时
+# 不必重下整棵依赖树（pandas/akshare 那几个包最贵），镜像体积也不受影响。
+# 依赖 compose v2 / docker 23+ 的默认 BuildKit；关掉 BuildKit 会报 unknown flag: --mount。
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install -i "$PIP_INDEX_URL" \
         -r /tmp/requirements-agent.txt \
         -r /tmp/requirements-gateway.txt
 
