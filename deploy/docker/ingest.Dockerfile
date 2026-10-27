@@ -13,13 +13,14 @@ WORKDIR /app
 # pip 源：国内构建默认走清华源，海外可传 --build-arg 覆盖
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
+# COPY 到 /app 根（不是保留 requirements/ 目录），下面的 -r 用文件名
 COPY requirements/ingest.txt requirements/ingest-embed.txt ./
-RUN pip install --no-cache-dir -i ${PIP_INDEX_URL} -r requirements/ingest.txt
+RUN pip install --no-cache-dir -i ${PIP_INDEX_URL} -r ingest.txt
 
 # 本地向量化依赖（torch 近 1GB）：只有跑 ashare profile 才需要，默认不装
 ARG INSTALL_EMBED=0
 RUN if [ "$INSTALL_EMBED" = "1" ]; then \
-        pip install --no-cache-dir -i ${PIP_INDEX_URL} -r requirements/ingest-embed.txt; \
+        pip install --no-cache-dir -i ${PIP_INDEX_URL} -r ingest-embed.txt; \
     fi
 
 COPY src/ingest/ ./src/ingest/

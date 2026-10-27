@@ -16,6 +16,12 @@
 # 说明：
 #   postgres 镜像使用 pgvector/pgvector:pg16（内置 vector 扩展），
 #   sql/migrations/005_agent.sql 里的 CREATE EXTENSION vector 依赖此镜像。
+#
+# 项目名必须显式写死：compose 默认用「compose 文件所在目录」当项目名，
+# 本文件从 server/ 搬到 deploy/compose/ 后目录名变了，不写死就会变成新项目，
+# 数据卷从 server_pgdata 变成 compose_pgdata —— 表现为「库突然空了」。
+name: server
+
 
 services:
   postgres:

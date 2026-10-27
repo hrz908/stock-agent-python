@@ -26,14 +26,16 @@ async def get_checkpointer() -> AsyncPostgresSaver:
     async with _lock:
         if _checkpointer is None:
             # min_size 默认是 4，启动即占满；这里压到 1，按并发按需增长
+            # open=False：psycopg_pool 已弃用「构造即打开」，必须显式 open
             _pool = AsyncConnectionPool(
                 conninfo=DATABASE_URL,
                 min_size=1,
                 max_size=CHECKPOINT_POOL_MAX,
                 kwargs={"autocommit": True, "prepare_threshold": 0},
+                open=False,
             )
             # 等待池中至少一条连接可用
-            await _pool.wait()
+            await _pool.open(wait=True, timeout=10)
             _checkpointer = AsyncPostgresSaver(_pool)
             await _checkpointer.setup()
     return _checkpointer

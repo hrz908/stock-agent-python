@@ -17,6 +17,11 @@
 #
 # .env 变量说明见 .env.production.example。
 
+# 项目名必须显式写死：compose 默认用「compose 文件所在目录」当项目名，
+# 本文件从 deploy/ 搬到 deploy/compose/ 后不写死就会变成新项目，
+# 数据卷从 deploy_pgdata 变成 compose_pgdata —— 线上表现为「库突然空了」。
+name: deploy
+
 # 日志限额：docker 默认 json-file 无上限，agent/ashare 常驻，40GB 盘会被慢慢吃满。
 # 单文件 50MB × 3 份，单服务封顶 150MB；排查历史改用备份/外部日志。
 x-logging: &default-logging
