@@ -13,7 +13,7 @@
     "finance-event-card": "/components/finance/event-card/event-card",
     "finance-compare-card": "/components/finance/compare-card/compare-card"
   },
-  "backgroundColor": "#ffffff",
-  "backgroundColorTop": "#ffffff",
-  "backgroundColorBottom": "#ffffff"
+  "backgroundColor": "#F2EDE6",
+  "backgroundColorTop": "#F2EDE6",
+  "backgroundColorBottom": "#F2EDE6"
 }

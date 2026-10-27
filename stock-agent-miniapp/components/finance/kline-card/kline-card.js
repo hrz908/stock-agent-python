@@ -20,9 +20,12 @@ const VOL_BOTTOM = 192;
 // 国内习惯：涨红跌绿；均线三色（蓝 / 琥珀 / 紫）——
 // 浅色主题下金色与深灰在白底上对比度不足，换成蓝/琥珀/紫这一组常规均线配色
 const COLOR_UP = '#dc2626';
-const COLOR_DOWN = '#16a34a';
+// 跌绿随 token 加深（#16a34a → #15803D）：原值在白卡上仅 3.3:1
+const COLOR_DOWN = '#15803D';
+// 均线三色是数据系列标识色（RESTYLE-BLOCKED 有裁决），不随 UI 色板走
 const MA_COLORS = { ma5: '#2559EB', ma10: '#F5A623', ma20: '#8B5CF6' };
-const GRID_COLOR = '#E5E5E5';
+// 网格跟随 --line
+const GRID_COLOR = '#DCD1CB';
 
 function num(v) {
   const n = parseFloat(v);

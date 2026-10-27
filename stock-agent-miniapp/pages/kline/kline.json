@@ -5,7 +5,7 @@
     "base-icon": "/components/base/icon/icon",
     "kline-card": "/components/finance/kline-card/kline-card"
   },
-  "backgroundColor": "#ffffff",
-  "backgroundColorTop": "#ffffff",
-  "backgroundColorBottom": "#ffffff"
+  "backgroundColor": "#F2EDE6",
+  "backgroundColorTop": "#F2EDE6",
+  "backgroundColorBottom": "#F2EDE6"
 }

@@ -189,7 +189,7 @@
   right: var(--space-2xl);
 }
 
-/* 底部主按钮：白底、无描边、黑字，靠白块从灰底上浮起来 */
+/* 底部主按钮：无填充、--hairline 描边（与输入框同一套），主次只靠字色与字重 */
 .add-btn {
   display: flex;
   align-items: center;
@@ -198,7 +198,8 @@
   min-height: var(--icon-touch);
   padding: 16rpx 32rpx;
   border-radius: var(--radius-sm);
-  background: var(--color-bg-card);
+  background: transparent;
+  border: var(--hairline);
   line-height: var(--lh-base);
 }
 

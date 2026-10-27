@@ -272,9 +272,10 @@
   white-space: pre-wrap;
 }
 
-/* 链接：图表蓝 + 下划线；点击复制（见 onMdLinkTap） */
+/* 链接：黛青 + 下划线；点击复制（见 onMdLinkTap） */
 .md-link {
-  color: var(--ink);
+  /* 强调色收口：链接是 --color-brand 的合法用法之一 */
+  color: var(--color-brand);
   text-decoration: underline;
 }
 
@@ -838,8 +839,9 @@
   margin: var(--space-lg) var(--space-lg) var(--space-md);
   padding: var(--space-xs);
   box-sizing: border-box;
-  /* 抽屉里唯一的主动作：白卡浮在灰底上，不加描边 */
-  background: var(--color-bg-card);
+  /* 抽屉里唯一的主动作：无填充、--hairline 描边（按键与输入框同一套语言） */
+  background: transparent;
+  border: var(--hairline);
   border-radius: var(--radius-sm);
 }
 

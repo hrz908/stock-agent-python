@@ -110,7 +110,8 @@
 /* 原文链接：复制。min-height 收到 56rpx，避免把日期行顶高 */
 .evt-src {
   font-size: var(--font-sm);
-  color: var(--ink);
+  /* 强调色收口：链接走 --color-brand（黛青） */
+  color: var(--color-brand);
   text-decoration: underline;
   display: inline-flex; align-items: center; min-height: 56rpx;
 }

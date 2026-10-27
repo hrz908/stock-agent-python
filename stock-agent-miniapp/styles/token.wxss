@@ -84,29 +84,38 @@ page {
   --radius-xl: 24rpx;
   --radius-round: 999rpx;
 
-  /* ---- 阴影三档：只给浮起元素 ---- */
-  --shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8rpx 32rpx rgba(0, 0, 0, 0.12);
+  /* ---- 阴影三档：只给浮起元素 ----
+     阴影带一点暖调（取文字深色的 RGB），纯黑阴影压在宣纸底上会发脏 */
+  --shadow-sm: 0 2rpx 8rpx rgba(54, 49, 27, 0.06);
+  --shadow-md: 0 4rpx 16rpx rgba(54, 49, 27, 0.08);
+  --shadow-lg: 0 8rpx 32rpx rgba(54, 49, 27, 0.12);
 
-  /* ---- 色彩 ---- */
-  --color-text-primary: #333333;
-  --color-text-secondary: #666666;
-  --color-text-hint: #999999;
-  --color-text-disabled: rgba(51, 51, 51, 0.38);
+  /* ---- 色彩 · 宣纸 · 墨 · 一点青（2026-10-27）----
+     palette：#F2EDE6（宣纸底）/ #DCD1CB（描边）/ #2E6B72（黛青强调）/ #36311B（暖墨）
+     底色饱和度压到 8% 以下，描边与底色同族（色相 21° vs 35°）：
+     底只是底，全站唯一的饱和色留给涨跌红绿与警告琥珀。
+     灰阶一律由 #36311B 加透明度派生，保持暖调，不再混入中性灰。 */
+  --color-text-primary: #36311B;
+  --color-text-secondary: rgba(54, 49, 27, 0.65);
+  --color-text-hint: rgba(54, 49, 27, 0.45);
+  --color-text-disabled: rgba(54, 49, 27, 0.38);
   --color-text-inverse: #FFFFFF;
-  --color-bg-page: #F5F5F5;
+  --color-bg-page: #F2EDE6;
   --color-bg-card: #FFFFFF;
-  --color-bg-disabled: #F2F2F2;
-  --color-border: #E5E5E5;
-  --color-divider: #EEEEEE;
-  --color-mask: rgba(0, 0, 0, 0.4);
-  --color-brand: #07C160;
-  --color-brand-press: #06A352;
-  --color-success: #07C160;
+  /* 次级表面（快捷提问、用户提问块、禁用按钮）用低透明度的墨色：
+     宣纸底上 1.24:1、白卡上 1.24:1，两种底都不会消失，也不与描边撞色 */
+  --color-bg-disabled: rgba(54, 49, 27, 0.12);
+  --color-border: #DCD1CB;
+  --color-divider: rgba(54, 49, 27, 0.10);
+  --color-mask: rgba(54, 49, 27, 0.40);
+  --color-brand: #2E6B72;
+  --color-brand-press: #24575C;
+  /* 语义色收口（不跟主题走：涨跌/成功/错误有固定预期，换色会被误读）：
+     红只有一个（涨 = 危险 = 错误），绿只有一个（跌 = 成功），信息色并入强调色 */
+  --color-success: #15803D;
   --color-warning: #FF9F18;
-  --color-error: #FA5151;
-  --color-info: #3A86FF;
+  --color-error: #DC2626;
+  --color-info: #2E6B72;
 
   /* ---- 兼容别名（值即令牌，禁止新增引用） ---- */
   --bg: var(--color-bg-page);
@@ -122,14 +131,16 @@ page {
   --danger: var(--color-error);
   --mask: var(--color-mask);
 
-  /* ---- 数据语义色：涨跌与状态，不参与 UI 强调 ---- */
+  /* ---- 数据语义色：涨跌与状态，不参与 UI 强调 ----
+     跌绿取 #15803D：原 #16a34a 在白卡上仅 3.3:1、宣纸底 2.9:1，
+     加深后 5.0:1 / 4.3:1，正文级数字也读得清 */
   --up: #dc2626;
-  --down: #16a34a;
-  --flat: #999999;
+  --down: #15803D;
+  --flat: rgba(54, 49, 27, 0.45);
   --up-tint: rgba(220, 38, 38, 0.08);
   --up-border: rgba(220, 38, 38, 0.28);
-  --down-tint: rgba(22, 163, 74, 0.08);
-  --down-border: rgba(22, 163, 74, 0.28);
+  --down-tint: rgba(21, 128, 61, 0.08);
+  --down-border: rgba(21, 128, 61, 0.28);
   --warn: var(--color-warning);
   --warn-tint: rgba(255, 159, 24, 0.10);
   --warn-border: rgba(255, 159, 24, 0.30);

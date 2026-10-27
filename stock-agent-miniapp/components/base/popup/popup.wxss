@@ -52,7 +52,7 @@
   max-width: 78%;
   display: flex;
   flex-direction: column;
-  /* 抽屉底与页面同色（#F5F5F5）：里面的按键与会话行靠白卡浮起来 */
+  /* 抽屉底与页面同色（--bg 宣纸 #F2EDE6）：里面的按键与会话行靠白卡浮起来 */
   background: var(--bg);
   animation: popup-left-in 240ms cubic-bezier(0.25, 0.8, 0.35, 1) both;
   box-shadow: var(--shadow-lg);
@@ -127,7 +127,7 @@
   border-top: var(--hairline);
 }
 
-/* 弹窗按钮：与底部主按钮同一套 —— 白底、无描边、黑字，主次只靠字重 */
+/* 弹窗按钮：与底部主按钮同一套 —— 无填充、--hairline 描边，主次只靠字色与字重 */
 .popup-btn {
   flex: 1;
   min-height: var(--icon-touch);
@@ -136,7 +136,8 @@
   align-items: center;
   justify-content: center;
   line-height: var(--lh-base);
-  background: var(--color-bg-card);
+  background: transparent;
+  border: var(--hairline);
   color: var(--color-text-primary);
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
@@ -150,8 +151,9 @@
   font-weight: 400;
 }
 
+/* 确认键：强调色收口里唯一的按键用法（黛青字），与取消键同描边、加字重 */
 .popup-btn--confirm {
-  color: var(--color-text-primary);
+  color: var(--color-brand);
   font-weight: var(--fw-medium);
 }
 

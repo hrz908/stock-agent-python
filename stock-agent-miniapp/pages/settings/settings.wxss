@@ -86,7 +86,9 @@
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
   line-height: var(--lh-base);
-  background: var(--color-bg-card);
+  /* 按键不铺底色：描边靠 --hairline，主次只靠字色与字重（DESIGN.md 禁止清单） */
+  background: transparent;
+  border: var(--hairline);
   color: var(--color-error);
 }
 
@@ -253,7 +255,8 @@
 .nickname-link {
   padding: var(--space-xs) var(--space-lg);
   font-size: var(--font-sm);
-  color: var(--ink);
+  /* 强调色收口：链接走 --color-brand（黛青），与涨跌红绿区分 */
+  color: var(--color-brand);
   border-radius: var(--radius-md);
   display: flex; align-items: center; justify-content: center; min-height: 88rpx;
 }

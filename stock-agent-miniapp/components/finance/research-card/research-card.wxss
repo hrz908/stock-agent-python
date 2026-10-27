@@ -40,7 +40,8 @@
    min-height 从 88rpx 收到 56rpx：它写在说明行里，撑到 88rpx 会把整行顶开 */
 .src-link {
   margin-left: var(--space-md);
-  color: var(--ink);
+  /* 强调色收口：链接走 --color-brand（黛青） */
+  color: var(--color-brand);
   text-decoration: underline;
   display: inline-flex; align-items: center; min-height: 56rpx;
 }
