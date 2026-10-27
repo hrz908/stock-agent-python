@@ -39,6 +39,18 @@ async def upload_avatar(
     return ok_response(await service.save_avatar(user_id, file.filename, content))
 
 
+@router.post("/avatar/base64")
+async def upload_avatar_base64(request: Request, user_id: CurrentUser):
+    """base64 通道：给 wx.uploadFile 被「合法域名」挡住的小程序兜底。
+
+    multipart 那条（POST /user/avatar）继续保留，开发者工具与已配好 uploadFile
+    域名的环境仍走它；两条通道共用同一套校验与落盘逻辑。
+    """
+    payload = await read_json(request, service.AVATAR_BASE64_MAX_BYTES, "头像参数错误")
+    filename, content = service.decode_avatar_payload(payload)
+    return ok_response(await service.save_avatar(user_id, filename, content))
+
+
 @router.delete("/account")
 async def delete_account(user_id: CurrentUser):
     return ok_response(await service.delete_account(user_id))

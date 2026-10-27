@@ -329,6 +329,38 @@ Page({
     if (url) this.setData({ editAvatar: url, editAvatarSrc: url });
   },
 
+  // 备用入口：chooseAvatar 在未完成隐私授权 / 部分安卓机型上点了没反应（连面板都不弹），
+  // 这里用 wx.chooseMedia 走相册或拍照。失败时把真实原因说出来，别让用户以为是卡了
+  onPickAvatarFromAlbum() {
+    if (!wx.chooseMedia) {
+      this.toast('当前微信版本不支持选择图片');
+      return;
+    }
+    wx.chooseMedia({
+      count: 1,
+      mediaType: ['image'],
+      sourceType: ['album', 'camera'],
+      sizeType: ['compressed'],
+      success: (res) => {
+        const file = res && res.tempFiles && res.tempFiles[0];
+        const path = file && file.tempFilePath;
+        if (!path) return;
+        this.setData({ editAvatar: path, editAvatarSrc: path });
+      },
+      fail: (err) => {
+        const msg = String((err && err.errMsg) || '');
+        console.error('[chooseMedia:fail]', msg);
+        // 用户主动取消不提示
+        if (msg.indexOf('cancel') !== -1) return;
+        if (msg.indexOf('privacy') !== -1) {
+          this.toast('请先同意隐私协议后重试');
+          return;
+        }
+        this.toast('选择图片失败，请重试');
+      }
+    });
+  },
+
   cancelEdit() {
     this._nicknameBackup = '';
     this.setData({ profileVisible: false, nicknamePicking: false, nicknameFocus: false, nicknameArmed: false });

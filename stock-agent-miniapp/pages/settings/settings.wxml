@@ -79,6 +79,10 @@
         </view>
       </button>
 
+      <!-- 备用入口：chooseAvatar 在部分机型 / 未完成隐私授权时点了完全没反应
+           （连面板都不弹），这里用 chooseMedia 走相册/拍照，不依赖 open-type -->
+      <view class="avatar-album" bindtap="onPickAvatarFromAlbum">从相册选择</view>
+
       <view class="edit-field">
         <!-- type 平时是 text，只有点了下方「使用微信昵称」才切成 nickname——
              否则每次聚焦输入框都会弹出微信昵称候选栏，属于打扰。

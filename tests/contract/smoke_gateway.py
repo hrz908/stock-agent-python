@@ -232,6 +232,70 @@ async def test_envelope_and_auth(app) -> None:
         )
 
 
+async def test_avatar_base64(app, cfg) -> None:
+    """头像 base64 通道：给「wx.uploadFile 被合法域名挡住」的小程序兜底。
+
+    2026-10-27 线上现象：真机上选头像后没有任何请求，因为 uploadFile 有自己的
+    合法域名列表（和 request 分开配）。改走 request + base64 后这条通道必须可用。
+    """
+    print("[2b] 头像 base64 上传")
+    transport = httpx.ASGITransport(app=app)
+    # 1x1 透明 PNG：真实文件头，能过 save_avatar 的类型判定
+    png = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/user/avatar/base64",
+            json={"filename": "avatar.png", "data": png},
+            headers=auth_headers(),
+        )
+        body = resp.json()
+        check("base64 上传 200", resp.status_code == 200, resp.text)
+        url = (body.get("data") or {}).get("avatar_url") or ""
+        check("返回站内头像路径", url.startswith(f"/uploads/avatars/avatar_{USER_ID}_"), url)
+        check("扩展名按入参保留", url.endswith(".png"), url)
+        name = url.rsplit("/", 1)[-1]
+        check("文件确实落盘", (Path(cfg.upload_dir) / "avatars" / name).is_file(), url)
+
+        resp = await client.post(
+            "/api/v1/user/avatar/base64",
+            json={"filename": "a.png", "data": "data:image/png;base64," + png},
+            headers=auth_headers(),
+        )
+        check("data URL 前缀能吃", resp.status_code == 200, resp.text)
+
+        resp = await client.post(
+            "/api/v1/user/avatar/base64",
+            json={"filename": "a.png", "data": "not-base64!!"},
+            headers=auth_headers(),
+        )
+        check("非法 base64 → 400", resp.status_code == 400, resp.text)
+        check("非法 base64 文案", resp.json()["message"] == "头像数据格式不正确", resp.text)
+
+        resp = await client.post(
+            "/api/v1/user/avatar/base64",
+            json={"filename": "a.txt", "data": "aGVsbG8="},
+            headers=auth_headers(),
+        )
+        check("非图片文件头 → 400", resp.status_code == 400, resp.text)
+        check(
+            "非图片文案",
+            resp.json()["message"] == "头像必须是 JPG/PNG/WebP 图片",
+            resp.text,
+        )
+
+        resp = await client.post(
+            "/api/v1/user/avatar/base64", json={"filename": "a.png"}, headers=auth_headers()
+        )
+        check("缺 data → 400", resp.status_code == 400, resp.text)
+
+        resp = await client.post(
+            "/api/v1/user/avatar/base64", json={"data": png}
+        )
+        check("无 token → 401", resp.status_code == 401, resp.text)
+
+
 async def test_warmup_contract() -> None:
     """预热不能把启动拖住。
 
@@ -570,6 +634,7 @@ async def main() -> None:
     app, _ = build_app(cfg, redis)
 
     await test_envelope_and_auth(app)
+    await test_avatar_base64(app, cfg)
     await test_sse(app)
     await test_sse_slow_first(app)
     await test_sse_heartbeat(app)

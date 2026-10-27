@@ -10,7 +10,10 @@ user_id 只从鉴权依赖注入，不信任请求体里的任何身份字段。
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
+import re
 import time
 from typing import Any
 
@@ -24,6 +27,10 @@ NICKNAME_MAX = 10
 AVATAR_MAX_BYTES = (2 << 20) + 1024
 AVATAR_PREFIX = "/uploads/avatars/"
 _ALLOWED_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+# base64 膨胀 4/3 再留一点头尾（filename / JSON 括号），供读请求体时先粗挡一次
+AVATAR_BASE64_MAX_BYTES = (AVATAR_MAX_BYTES + 2) // 3 * 4 + 2048
+# base64 里的空白（换行）不算数据，解码前先抹掉；其余的非法字符交给 validate 拒绝
+_WS_RE = re.compile(r"\s+")
 
 
 def _trim(value: Any) -> str:
@@ -113,6 +120,36 @@ async def update_profile(user_id: int, payload: dict[str, Any]) -> dict[str, Any
         _remove_avatar_file(user["avatar"])
 
     return {"nickname": nickname, "avatar": avatar}
+
+
+def decode_avatar_payload(payload: dict[str, Any]) -> tuple[str, bytes]:
+    """解析 `{filename?, data}` 的 base64 头像载荷，返回 (文件名, 字节)。
+
+    这条路是给「wx.uploadFile 发不出去」的环境兜底用的：uploadFile 在微信后台有
+    独立的合法域名列表（和 request 分开配），没配时小程序连请求都发不出来，
+    用户只能看到「头像上传失败」；而 request 那条域名通常是通的。
+
+    校验口径与 multipart 通道完全一致：体积上限 + 文件头判类型（在 save_avatar 里）。
+    """
+    raw = payload.get("data")
+    if not isinstance(raw, str) or not raw.strip():
+        raise ApiError(CODE_BAD_REQUEST, "缺少头像文件")
+    # 允许 data URL 前缀（data:image/png;base64,xxxx）与其中的换行
+    text = _WS_RE.sub("", raw)
+    if text.startswith("data:"):
+        _, _, text = text.partition(",")
+    if not text:
+        raise ApiError(CODE_BAD_REQUEST, "缺少头像文件")
+    try:
+        content = base64.b64decode(text, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ApiError(CODE_BAD_REQUEST, "头像数据格式不正确") from exc
+    if not content:
+        raise ApiError(CODE_BAD_REQUEST, "缺少头像文件")
+    if len(content) > AVATAR_MAX_BYTES:
+        raise ApiError(CODE_BAD_REQUEST, "头像不能超过 2MB")
+    filename = payload.get("filename")
+    return (filename if isinstance(filename, str) else ""), content
 
 
 def _pick_ext(filename: str) -> str:
