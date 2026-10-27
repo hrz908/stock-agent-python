@@ -19,6 +19,9 @@
 2026-10-27 新增：
   P20 回复去重（重复段落 / 重复工具结果 / 同类卡片）与卡片改到正文之后
 
+2026-10-28 新增：
+  P21 池外语料覆盖闸（点名标的没有语料时出固定话术，不升级取数硬答）
+
 用法：python tests/regression/test_regression.py
 """
 import os
@@ -729,12 +732,18 @@ def test_rag_judge_fallback():
 
     from agent.subgraphs import rag as rag_mod
 
-    orig_ent = rag_mod.entity_codes
+    orig_mentions = rag_mod.entity_mentions
+    orig_cov = rag_mod.coverage.detail
 
     async def _no_entity(_q):
-        return set()
+        return []
 
-    rag_mod.entity_codes = _no_entity
+    async def _no_coverage(_codes):
+        # 回归测试不连库：覆盖判定返回空 = 不可用，该闸按 fail-open 跳过
+        return {}
+
+    rag_mod.entity_mentions = _no_entity
+    rag_mod.coverage.detail = _no_coverage
     out = asyncio.run(rag_mod.sufficiency_check({"retrieved": [], "query": "x"}))
     check("空检索 -> stock_agent", out.get("intent") == "stock_agent", str(out))
     out_concept = asyncio.run(rag_mod.sufficiency_check(
@@ -773,9 +782,9 @@ def test_rag_judge_fallback():
 
     # 实体不一致：问题点名茅台，但片段全是宁德时代 -> 按未命中处理（不硬答别家）
     async def _maotai(_q):
-        return {"600519"}
+        return ["600519"]
 
-    rag_mod.entity_codes = _maotai
+    rag_mod.entity_mentions = _maotai
     rag_mod.get_small_llm = lambda **kw: (_ for _ in ()).throw(RuntimeError("不应判读"))
     try:
         out_mismatch = asyncio.run(rag_mod.sufficiency_check(
@@ -787,9 +796,9 @@ def test_rag_judge_fallback():
 
     # 实体一致：片段就是问题这家 -> 高分短路命中
     async def _catl(_q):
-        return {"300750"}
+        return ["300750"]
 
-    rag_mod.entity_codes = _catl
+    rag_mod.entity_mentions = _catl
     rag_mod._judge_runnable = None
     rag_mod.get_small_llm = lambda **kw: (_ for _ in ()).throw(RuntimeError("短路不应判读"))
     try:
@@ -797,7 +806,8 @@ def test_rag_judge_fallback():
             {"retrieved": ret, "query": "宁德时代最新研报观点"}))
         check("实体一致且高分 -> 命中", "intent" not in out_hit, str(out_hit))
     finally:
-        rag_mod.entity_codes = orig_ent
+        rag_mod.entity_mentions = orig_mentions
+        rag_mod.coverage.detail = orig_cov
         rag_mod.get_small_llm = orig
         rag_mod._judge_runnable = None
 
@@ -814,7 +824,7 @@ def test_rag_judge_fallback():
         def with_structured_output(self, schema):
             return _Chain()
 
-    rag_mod.entity_codes = _no_entity  # 该用例只验判官，不涉及实体校验
+    rag_mod.entity_mentions = _no_entity  # 该用例只验判官，不涉及实体校验
     rag_mod.get_small_llm = lambda **kw: _SmallLLM()
     try:
         out3 = asyncio.run(rag_mod.sufficiency_check(
@@ -822,7 +832,67 @@ def test_rag_judge_fallback():
         check("判官判不能 -> stock_agent", out3.get("intent") == "stock_agent", str(out3))
     finally:
         rag_mod.get_small_llm = orig
-        rag_mod.entity_codes = orig_ent
+        rag_mod.entity_mentions = orig_mentions
+        rag_mod.coverage.detail = orig_cov
+
+
+def test_rag_coverage_gate():
+    print("\n[P21] 池外标的的覆盖闸")
+    import asyncio
+
+    from agent.subgraphs import rag as rag_mod
+
+    orig_mentions = rag_mod.entity_mentions
+    orig_cov = rag_mod.coverage.detail
+
+    async def _mentions(_q):
+        return ["600519"]
+
+    def _cov(has_docs: bool, in_pool: bool):
+        async def _f(_codes):
+            return {"600519": (has_docs, in_pool)}
+
+        return _f
+
+    try:
+        rag_mod.entity_mentions = _mentions
+
+        rag_mod.coverage.detail = _cov(False, False)
+        out = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": [], "query": "贵州茅台业务构成"}))
+        check("池外标的 -> out_of_scope", out.get("corpus_miss_reason") == "out_of_scope", str(out))
+        check("池外标的 -> 不升级取数", "intent" not in out, str(out))
+        check("覆盖闸路由到 not_covered",
+              rag_mod.route_after_check(out) == "not_covered", str(out))
+        text = rag_mod._NOT_COVERED_TEXT["out_of_scope"].format(subject="600519", unit="这只标的")
+        check("话术说明采集范围", "300" in text and "语料" in text)
+
+        rag_mod.coverage.detail = _cov(False, True)
+        out2 = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": [], "query": "贵州茅台业务构成"}))
+        check("在池未采集 -> pending", out2.get("corpus_miss_reason") == "pending", str(out2))
+
+        rag_mod.coverage.detail = _cov(True, True)
+        out3 = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": [], "query": "贵州茅台业务构成"}))
+        check("有语料 -> 走常规判定", "corpus_miss" not in out3, str(out3))
+
+        # 数据类问句另有实时工具，不能被覆盖闸挡掉
+        rag_mod.coverage.detail = _cov(False, False)
+        out4 = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": [], "query": "贵州茅台最新市盈率"}))
+        check("数据类问句不被拦截", "corpus_miss" not in out4, str(out4))
+
+        async def _boom(_codes):
+            raise RuntimeError("db down")
+
+        rag_mod.coverage.detail = _boom
+        out5 = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": [], "query": "贵州茅台业务构成"}))
+        check("判定异常 fail-open", "corpus_miss" not in out5, str(out5))
+    finally:
+        rag_mod.entity_mentions = orig_mentions
+        rag_mod.coverage.detail = orig_cov
 
 
 def test_intent_taxonomy():
@@ -1159,12 +1229,17 @@ def test_rag_judge_short_circuit():
     from agent.subgraphs import rag as rag_mod
 
     orig = rag_mod.get_small_llm
-    orig_ent = rag_mod.entity_codes
+    orig_mentions = rag_mod.entity_mentions
+    orig_cov = rag_mod.coverage.detail
 
     async def _no_entity(_q):
-        return set()
+        return []
 
-    rag_mod.entity_codes = _no_entity
+    async def _no_coverage(_codes):
+        return {}
+
+    rag_mod.entity_mentions = _no_entity
+    rag_mod.coverage.detail = _no_coverage
     rag_mod._judge_runnable = None
     rag_mod.get_small_llm = lambda **kw: (_ for _ in ()).throw(RuntimeError("judge 不应被调用"))
     try:
@@ -1201,7 +1276,8 @@ def test_rag_judge_short_circuit():
         check("未达短路阈值仍判读", out2.get("intent") == "stock_agent", str(out2))
     finally:
         rag_mod.get_small_llm = orig
-        rag_mod.entity_codes = orig_ent
+        rag_mod.entity_mentions = orig_mentions
+        rag_mod.coverage.detail = orig_cov
         rag_mod._judge_runnable = None
 
 
@@ -1605,6 +1681,7 @@ def main():
     test_no_disclaimer()
     test_off_topic_refusal()
     test_rag_judge_fallback()
+    test_rag_coverage_gate()
     test_intent_taxonomy()
     test_direct_tools()
     test_rewrite_into_toolcall()
