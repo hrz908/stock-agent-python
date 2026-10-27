@@ -60,11 +60,14 @@ uses_external_pg() {
     return 0
 }
 
-# 所有 compose 调用统一走这里：自带 PG 需要 --profile localpg 才会起 postgres 服务
+# 所有 compose 调用统一走这里：自带 PG 需要 --profile localpg 才会起 postgres 服务。
+# --env-file 必须显式给：compose 只按「compose 文件所在目录」找 .env，而编排文件搬到了
+# deploy/compose/、密钥文件仍在 deploy/.env（backup.sh / watchdog.sh 也读这个路径）。
+# 不给就会报 POSTGRES_PASSWORD is missing a value，update 直接失败。
 compose() {
     local args=()
     uses_external_pg || args+=(--profile localpg)
-    docker compose -f "$COMPOSE_FILE" "${args[@]}" "$@"
+    docker compose --env-file "$DEPLOY_DIR/deploy/.env" -f "$COMPOSE_FILE" "${args[@]}" "$@"
 }
 
 # ---------------------------------------------------------------- swap

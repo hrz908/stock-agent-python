@@ -106,7 +106,9 @@ services:
     <<: *hardening
     restart: unless-stopped
     logging: *default-logging
-    env_file: .env
+    # 相对 compose 文件（deploy/compose/）：密钥文件仍在 deploy/.env，
+    # 与 backup.sh / watchdog.sh 读的路径保持一致
+    env_file: ../.env
     environment:
       # env_file 已注入全部密钥，这里只放「随部署环境变化」的连接项。
       # 环境变量名 = 配置键大写 + 点转下划线（见 server/config.py）
@@ -153,7 +155,9 @@ services:
     <<: *hardening
     restart: unless-stopped
     logging: *default-logging
-    env_file: .env
+    # 相对 compose 文件（deploy/compose/）：密钥文件仍在 deploy/.env，
+    # 与 backup.sh / watchdog.sh 读的路径保持一致
+    env_file: ../.env
     environment:
       # 留空 DATABASE_DSN 走自带 postgres 容器；填云 PG 内网串则整套服务连云上（见 .env.production.example）
       DATABASE_URL: "${DATABASE_DSN:-postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable}"
@@ -189,7 +193,9 @@ services:
     <<: *hardening
     restart: unless-stopped
     logging: *default-logging
-    env_file: .env
+    # 相对 compose 文件（deploy/compose/）：密钥文件仍在 deploy/.env，
+    # 与 backup.sh / watchdog.sh 读的路径保持一致
+    env_file: ../.env
     environment:
       # 留空 DATABASE_DSN 走自带 postgres 容器；填云 PG 内网串则整套服务连云上（见 .env.production.example）
       DATABASE_URL: "${DATABASE_DSN:-postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable}"
