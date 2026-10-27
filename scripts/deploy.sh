@@ -239,11 +239,14 @@ cmd_deploy() {
     cd "$DEPLOY_DIR/deploy"
     compose up -d --build
 
-    log "等待服务就绪..."
+    # 单进程启动要等 agent 预热完（实测 2026-10-27：建表 0s → bridge ready 128s，
+    # 主要是 akshare/baostock 取数工具热身 + 图与 tokenizer 预热）。
+    # uvicorn 在 lifespan 结束前不接连接，所以这段等待必须放宽到 4 分钟。
+    log "等待服务就绪（单进程启动含 agent 预热，通常 1~3 分钟）..."
     local ok=0
-    for _ in $(seq 1 30); do
+    for _ in $(seq 1 60); do
         if curl -kfsS https://127.0.0.1/healthz >/dev/null 2>&1; then ok=1; break; fi
-        sleep 2
+        sleep 4
     done
     [ "$ok" = "1" ] || die "健康检查未通过，请查看日志：sudo bash scripts/deploy.sh logs server"
 
@@ -281,6 +284,15 @@ cmd_update() {
     PREV=$(git rev-parse --short HEAD)
     log "更新前提交：$PREV"
     git merge --ff-only "$src_ref"
+
+    # 脚本自身可能刚被更新：bash 是边读边执行的，merge 之后继续跑会沿用
+    # 「已经解析过的旧变量/旧函数体」（2026-10-27 实测：COMPOSE_FILE 仍是旧路径、
+    # compose() 仍是旧实现，连炸两次）。这里重新 exec 一次，让后续步骤全部走新脚本。
+    if [ "${DEPLOY_REEXEC:-0}" != "1" ] && git diff --name-only "$PREV" HEAD -- scripts/deploy.sh | grep -q .; then
+        log "部署脚本本身有更新，重新执行以加载新版本"
+        export DEPLOY_REEXEC=1
+        exec bash "$0" update
+    fi
 
     # 新版本可能引入新配置项：模板变了但已存在的 .env 不会被更新，这里提示差异
     cmd_env_check

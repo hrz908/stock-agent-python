@@ -99,7 +99,9 @@ remote_final_check() {
     local mode="${1:-health}" out rc=0
     local script="cd '$DEPLOY_DIR' && echo SHA=\$(git rev-parse HEAD)"
     if [ "$mode" = "health" ]; then
-        script="$script && for i in \$(seq 1 15); do curl -kfsS https://127.0.0.1/healthz >/dev/null 2>&1 && exit 0; sleep 2; done; exit 1"
+        # 单进程重启要等 agent 预热（实测 2026-10-27：约 2 分钟），只等 30s 会把
+        # 「部署成功」误判成失败。这里放到 4 分钟，并与 deploy.sh 的等待窗口一致。
+        script="$script && for i in \$(seq 1 80); do curl -kfsS https://127.0.0.1/healthz >/dev/null 2>&1 && exit 0; sleep 3; done; exit 1"
     fi
     out=$(ssh "$SSH_TARGET" "$script" 2>/dev/null) || rc=$?
     REMOTE_FINAL_SHA=$(printf '%s\n' "$out" | sed -n 's/^SHA=//p' | tr -d '\r')
@@ -210,7 +212,7 @@ main() {
         log "校验提交并探活 /healthz"
         remote_final_check health || {
             echo "  看后端日志：ssh $SSH_TARGET 'cd $DEPLOY_DIR && sudo bash scripts/deploy.sh logs server'" >&2
-            die "30 秒内 /healthz 未通过"
+            die "4 分钟内 /healthz 未通过"
         }
     else
         remote_final_check nohealth || die "取服务器 HEAD 失败，无法确认部署结果"
