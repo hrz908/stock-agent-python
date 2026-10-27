@@ -26,11 +26,13 @@ guardrail → rewrite → classify → 按 intent 分流：
 ## 本地验证
 - venv：`agent/.venv`（uv 建，py3.13.16，全依赖）；根 `.venv` 是 py3.14，装不了 langchain。
 - Windows 控制台必须 `-X utf8`，否则中文 print 触发 cp1252 UnicodeEncodeError。
-- 回归：`python -X utf8 tests/regression/test_regression.py`（内置强制 STOCK_MCP_ENABLED=0）；MCP 联调：`python -X utf8 tests/smoke_mcp_tools.py`。
+- 回归：`python -X utf8 tests/regression/test_regression.py`。
 - 本地直起 uvicorn 时 psycopg 在 ProactorEventLoop 下不可用 → checkpointer warmup 失败（被容错吞掉，/healthz 正常）；Docker/Linux 无此问题。
 
 ## 部署
-容器内 `GO_SERVER_URL` 用 `http://host.docker.internal:8080`；Dockerfile `COPY . .` 已含 mcp_servers/；requirements.txt 已锁 mcp<2 + langchain-mcp-adapters。
+无独立容器：`agent_bridge` 在 gateway 进程内 import `agent.*`，镜像只有一个
+（`deploy/docker/gateway.Dockerfile`，`COPY src/` + `PYTHONPATH=/app/src`）。
+不再有 `GO_SERVER_URL` / `GO_SERVER_TOKEN`，工具直调 `gateway.services.*`。
 
 ## 联调发现的坑（2026-10-23）
 - tool_results 跨「用户轮次」累积：operator.add reducer + checkpointer 会把历史轮次结果留存，synthesize 会重发历史卡片（实测同 thread 第 2 轮 1→3 张、跨次运行 9 张）。修法：主图入口 guardrail 返回 {"tool_results": Overwrite([])}（langgraph.types.Overwrite 绕过 reducer）按轮清零；一轮内多跳取数照常累加。
@@ -40,7 +42,9 @@ guardrail → rewrite → classify → 按 intent 分流：
 - Go 网关 config.Load 曾用 *viper.ConfigFileNotFoundError 做 errors.As（viper v1.x 是值类型）→ 无 config.yaml 直接 Fatal；已改为值类型匹配。Go 侧不再加载 .env，本地启动需先把 server/.env 注入进程环境。
 
 ## 联调启动（Windows 本地全链路）
-1) server/ 下 docker compose up -d postgres redis；2) go build -o stock-agent-server.exe . 并带 env 启动；3) agent 下 .venv/Scripts/python.exe -X utf8 dev_server.py（env 从 server/.env 注入，覆盖 GO_SERVER_URL=http://127.0.0.1:8080）；4) e2e：python -X utf8 tests/test_e2e.py（6 问全 OK）。
+1) `bash scripts/dev.sh up`（pg + redis）；2) 仓库根 `cp .env.example .env` 并填 OPENAI_API_KEY；
+3) `bash scripts/dev.sh dev`（单进程 = gateway + agent）；4) `bash scripts/dev.sh test` 或
+`python tests/e2e/test_e2e.py`（需服务已起）。
 
 ## 相关
 `mem:core`、`mem:conventions`

@@ -52,7 +52,7 @@ git config --global alias.pushsafe '!git fetch origin && git diff --quiet && git
 
 | 文件/目录 | 用途 | 恢复方式 |
 |---|---|---|
-| 仓库根 `.env` | 本地跑服务必需（`dev.sh dev`） | 从旧机拷，或按 `deploy/.env.production.example` 填本地版 |
+| 仓库根 `.env` | 本地跑服务必需（`dev.sh dev`） | `cp .env.example .env` 后填 `OPENAI_API_KEY`；键更全的模板见 `deploy/.env.production.example`。旧位置的 `server/.env`、`src/gateway/.env` 仍能被 `dev.sh` 与 `load_config` 兜住 |
 | `stock-agent-miniapp/project.private.config.json` | 开发者工具个人配置 | 可不要，工具会重新生成 |
 | `stock-agent-miniapp/node_modules` + `miniprogram_npm` | 小程序依赖 | `bash scripts/dev.sh miniapp` + 工具里「构建 npm」 |
 | `.venv`（仓库根，server+agent 共用一套） | Python 依赖 | `bash scripts/dev.sh setup`（有 uv 走 uv，秒级；无 pip 的 uv venv 会自动 ensurepip） |

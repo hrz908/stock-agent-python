@@ -55,7 +55,6 @@ sudo bash scripts/deploy.sh deploy
 | `WECHAT_APPID` | 小程序 appid | `wx45a064a4316f240f`（与 AppSecret 必须同号） |
 | `WECHAT_SECRET` | 小程序 secret | 见前置准备第 2 条 |
 | `OPENAI_API_KEY` | LLM/ASR 密钥 | 硅基流动 |
-| `GO_SERVER_TOKEN` | 选填，agent 回调 Go 的 JWT | 见下文「常见问题 5」 |
 
 填完再跑一次 `sudo bash scripts/deploy.sh deploy`。
 
@@ -189,7 +188,7 @@ ssl_certificate_key /etc/nginx/ssl/stock-agent.key;
 2. **pip / 镜像拉取慢或失败**：确认用的是 `scripts/deploy.sh`（已内置清华源 + registry 加速）；Dockerfile 的 `PIP_INDEX_URL` / `GOPROXY` 可用 build-arg 覆盖。
 3. **nginx 502**：server 容器没起来。`sudo bash scripts/deploy.sh logs server`；常见原因是 `.env` 密钥问题导致 prod 拒绝启动。
 4. **migrations 不生效**：`/docker-entrypoint-initdb.d` 只在 postgres 数据卷**为空**时执行。改表请新增 `sql/migrations/00X_*.sql`，已在跑的库要手工执行；`ashare` 容器里可用 `python -m ingest.ashare.cli init-db --file 008_stock_master.sql` 逐条执行（`--file` 可重复）。
-5. **agent 行情工具 401**：`GO_SERVER_TOKEN` 没配。先正常部署，用小程序登录后从 `deploy.sh logs server` 或接口响应里拿一个 JWT 填进 `.env`，`restart` 一次即可；不填不影响对话和行情卡。
+5. **对话里行情卡片为空**：先看 `deploy.sh logs server` 里 agent 工具层有没有 `ok: false`。单进程后工具直调本进程函数，不再需要服务 token；最常见原因是数据源（akshare/baostock）超时或 `OPENAI_API_KEY` 未配导致整轮走降级文案。
 6. **改防火墙后 SSH 断了**：`install-docker` 的 ufw 步骤先 allow OpenSSH 再 allow 80/443；若已被锁，用云厂商 VNC 进服务器 `ufw allow OpenSSH`。
 7. **`env-check` 提示 `.env` 缺键**：新版本在模板里加了配置项，而 `.env` 是首次部署时复制的、不会被 `git pull` 更新。不补也能跑（代码里有同名默认值），只是运维看不到这些开关；要补就 `sudo bash scripts/deploy.sh env-append`，之后 `restart`。
 8. **`deploy/.env` 不见了**：`.env` 被 gitignore，仓库/本地克隆里从来没有它，只在服务器上。

@@ -71,6 +71,10 @@ bash scripts/dev.sh test
 
 **必需的环境变量**（写在仓库根的 `.env`，被 git 忽略；`dev.sh dev` 会自动 source）：
 
+```bash
+cp .env.example .env    # 本地模板，填 OPENAI_API_KEY 即可跑通问答
+```
+
 | 变量 | 说明 |
 |---|---|
 | `JWT_SECRET` | 登录 token 签名密钥；`ENV=prod` 时仍是默认值会拒绝启动 |

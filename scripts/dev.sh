@@ -13,7 +13,18 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC_DIR="$ROOT/src"
+# .env 固定在仓库根；老机器还留着 server/.env 或 src/gateway/.env 时直接沿用并提示，
+# 免得为了换个目录先手工搬一次文件
 ENV_FILE="$ROOT/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  for legacy in "$SRC_DIR/gateway/.env" "$ROOT/server/.env"; do
+    if [[ -f "$legacy" ]]; then
+      echo "! 使用旧位置的 .env：$legacy（建议 mv 到 $ROOT/.env）" >&2
+      ENV_FILE="$legacy"
+      break
+    fi
+  done
+fi
 MINIAPP_DIR="$ROOT/stock-agent-miniapp"
 DB_NAME="stock_agent"
 # 与 deploy/docker/gateway.Dockerfile 的 python:3.11-slim 对齐：本地跑 3.13、生产跑 3.11
