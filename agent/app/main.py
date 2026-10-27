@@ -175,7 +175,14 @@ def _is_answer_event(event: str) -> bool:
     return event in _ANSWER_EVENTS
 
 
-async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGenerator[str, None]:
+async def stream_events(
+    thread_id: str, query: str, user_id: str
+) -> AsyncGenerator[dict, None]:
+    """产出 {"event":..., "data":...} 事件。
+
+    合并进网关后由网关直接转 SSE 帧，省掉一层 ndjson 序列化；
+    事件名与 data 结构一字不改，前端解析逻辑无需变动。
+    """
     usage: dict = {}
     t0 = time.monotonic()
     ttft_ms = None
@@ -231,7 +238,7 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
                     # tool_start / tool_end / sources 是过程提示，单独记 first_event_ms
                     if ttft_ms is None and _is_answer_event(event):
                         ttft_ms = int((time.monotonic() - t0) * 1000)
-                    yield json.dumps(data, ensure_ascii=False) + "\n"
+                    yield data
 
             elif mode == "updates":
                 if isinstance(data, dict):
@@ -262,7 +269,7 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
         error_code = type(e).__name__
         if first_event_ms is None:
             first_event_ms = int((time.monotonic() - t0) * 1000)
-        yield _line("error", {"message": f"{type(e).__name__}: {e}"})
+        yield {"event": "error", "data": {"message": f"{type(e).__name__}: {e}"}}
 
     finally:
         total_ms = int((time.monotonic() - t0) * 1000)
@@ -289,7 +296,7 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
             uid = int(user_id)
         except (TypeError, ValueError):
             uid = None
-        yield _line("done", {"thread_id": thread_id, "usage": usage})
+        yield {"event": "done", "data": {"thread_id": thread_id, "usage": usage}}
 
         task = asyncio.create_task(
             log_agent_run(
@@ -309,6 +316,14 @@ async def event_generator(thread_id: str, query: str, user_id: str) -> AsyncGene
         )
         _bg_tasks.add(task)
         task.add_done_callback(_bg_tasks.discard)
+
+
+async def event_generator(
+    thread_id: str, query: str, user_id: str
+) -> AsyncGenerator[str, None]:
+    """ndjson 版本，保留给独立部署/调试时的 POST /run/stream。"""
+    async for event in stream_events(thread_id, query, user_id):
+        yield _line(str(event.get("event") or ""), event.get("data") or {})
 
 
 @app.post("/run/stream")

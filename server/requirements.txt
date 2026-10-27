@@ -1,0 +1,11 @@
+# 网关依赖（与 agent/requirements.txt 一并安装到同一镜像）
+# 版本对齐 agent 侧既有约束，避免同一进程内出现两份不兼容的 fastapi/pydantic
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0.0
+PyJWT>=2.8.0
+redis>=5.0.0
+psycopg[binary,pool]>=3.2.0
+httpx>=0.27.0
+PyYAML>=6.0.0
+python-multipart>=0.0.9
