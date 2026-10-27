@@ -234,8 +234,16 @@
       <view class="drawer-history">
         <view class="drawer-section-title">历史对话</view>
         <scroll-view class="history-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
-          <view wx:for="{{sessions}}" wx:key="session_id" class="history-item {{item.active ? 'history-item--active' : ''}}">
-            <view class="history-item-main" data-sid="{{item.session_id}}" bindtap="onSessionSelect">
+          <!-- 点击绑在整行（88rpx）而不是里面的文字块：文字块只有一行高，
+               上下留白点了没反应，表现就是「有时候点不动」 -->
+          <view
+            wx:for="{{sessions}}"
+            wx:key="session_id"
+            class="history-item {{item.active ? 'history-item--active' : ''}}"
+            data-sid="{{item.session_id}}"
+            bindtap="onSessionSelect"
+          >
+            <view class="history-item-main">
               <text class="history-item-title">{{item.title}}</text>
             </view>
             <view class="history-item-del" data-sid="{{item.session_id}}" catchtap="onSessionDelete">
