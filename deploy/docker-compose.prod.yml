@@ -93,10 +93,11 @@ services:
 
   server:
     build:
-      context: ../server
-      dockerfile: Dockerfile
+      # 网关与 agent 同进程：构建上下文上移到仓库根，一次 COPY 两个包进同一镜像
+      context: ..
+      dockerfile: server/Dockerfile
       args:
-        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     container_name: stock-agent-server
     <<: *hardening
     restart: unless-stopped
@@ -104,24 +105,18 @@ services:
     env_file: .env
     environment:
       # env_file 已注入全部密钥，这里只放「随部署环境变化」的连接项。
-      # 环境变量名 = 配置键大写 + 点转下划线（见 server/internal/config/config.go）
+      # 环境变量名 = 配置键大写 + 点转下划线（见 server/config.py）
       ENV: prod
       ADDR: ":8080"
       DSN: "${DATABASE_DSN:-postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable}"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD}"
-      # agent 容器名（compose 网络内 DNS）
-      AGENT_BASE_URL: "http://agent:8000"
       UPLOAD_DIR: "/app/uploads"
       # nginx 在宿主机、server 在容器里：真实来源是 docker 网桥（172.17.0.1 或 compose 网段），
       # 只信任 127.0.0.1 会拿不到 X-Forwarded-For，全站共用一个 IP 的限流桶
       TRUSTED_PROXIES: "127.0.0.1,172.16.0.0/12"
-      # Go 运行时内存闸门：默认 GOGC=100 时堆可涨到存活量 2 倍且不感知宿主上限。
-      # GOMEMLIMIT 是软上限（到点加大 GC 频率），留出非堆内存余量后配 448M 硬上限
-      GOMEMLIMIT: "320MiB"
-      GOGC: "50"
-      # 生产不跑 debug 模式（省掉启动时的路由表打印与 pprof 分支）
-      GIN_MODE: "release"
+      # 容器日志不缓冲，否则 docker logs 里看不到实时输出
+      PYTHONUNBUFFERED: "1"
     ports:
       # 只绑回环：宿主机 nginx 反代用，不对公网暴露
       - "127.0.0.1:8080:8080"
@@ -137,38 +132,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 448M
-
-  agent:
-    build:
-      context: ../agent
-      dockerfile: Dockerfile
-      args:
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
-    container_name: stock-agent-python
-    <<: *hardening
-    restart: unless-stopped
-    logging: *default-logging
-    env_file: .env
-    environment:
-      # 留空 DATABASE_DSN 走自带 postgres 容器；填云 PG 内网串则整套服务连云上（见 .env.production.example）
-      DATABASE_URL: "${DATABASE_DSN:-postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/stock_agent?sslmode=disable}"
-      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
-      # 回调 Go 网关：compose 网络内用容器名；token 从 .env 的 GO_SERVER_TOKEN 来
-      GO_SERVER_URL: "http://server:8080"
-    # 不映射宿主端口：agent 只被 server 容器访问，调试用
-    #   docker compose -f docker-compose.prod.yml exec agent curl -s localhost:8000/docs
-    depends_on:
-      postgres:
-        condition: service_healthy
-        required: false
-      redis:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          # 单进程 uvicorn：常驻 250-400M，再留出 akshare/pandas 取数的瞬时峰值
-          memory: 1088M
+          # 原 server(448M) + agent(1088M) 合并为一个进程：
+          # 省掉一份 Python 运行时、一套连接池，以及 ndjson 跨进程缓冲
+          memory: 1400M
 
 
   # 可选：文档 ingest watcher。需要时加 --profile ingest 启动

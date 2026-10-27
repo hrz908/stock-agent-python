@@ -1,0 +1,21 @@
+# 构建上下文是仓库根（server/Dockerfile 需要同时看见 agent/ 与 server/）
+.git
+.venv
+.serena
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+
+# 跑批与基准测试不进镜像
+agent/tests/benchmark
+
+# 前端依赖与本地上传文件
+stock-agent-miniapp/node_modules
+stock-agent-miniapp/miniprogram_npm
+server/uploads
+
+# 文档与本地部署产物
+docs
+deploy/.env
+*.log

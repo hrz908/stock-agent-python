@@ -25,11 +25,13 @@ from server.deps import Runtime, clear_runtime, set_runtime
 from server.middleware.gateway import GatewayMiddleware
 from server.middleware.guards import market_rate_limit
 from server.middleware.rate_limit import SlidingWindowLimiter
+from server.modules import alert as alert_module
 from server.modules import auth as auth_module
 from server.modules import chat as chat_module
 from server.modules import stock as stock_module
 from server.modules import user as user_module
 from server.modules import watchlist as watchlist_module
+from server.wecom.client import WeComClient
 from server.quote.source import MarketSource
 from server.resp import (
     CODE_BAD_REQUEST,
@@ -89,6 +91,7 @@ def _build_api_router() -> APIRouter:
     protected = APIRouter(dependencies=[Depends(require_auth)])
     protected.include_router(chat_module.router)
     protected.include_router(watchlist_module.router)
+    protected.include_router(alert_module.router)
     protected.include_router(user_module.router)
     api.include_router(protected)
 
@@ -123,6 +126,13 @@ def create_app(cfg: Config | None = None) -> FastAPI:
             cfg.wechat_appid, cfg.wechat_secret, cfg.http.wechat_timeout
         )
         rt.services["market_source"] = MarketSource(cfg.http, cfg.quote_api)
+        rt.services["wecom"] = WeComClient(
+            cfg.wecom_corp_id,
+            cfg.wecom_secret,
+            cfg.wecom_agent_id,
+            cfg.wecom_webhook,
+            cfg.http.wecom_timeout,
+        )
         rt.services["agent_limiter"] = AgentLimiter(
             redis_client, cfg.agent.qps, cfg.agent.concurrent, cfg.agent.daily_quota
         )
@@ -146,7 +156,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 await agent_bridge.shutdown()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("agent shutdown failed: %s", exc)
-            for name in ("market_source", "wechat"):
+            for name in ("market_source", "wechat", "wecom"):
                 service = rt.services.get(name)
                 if service is None:
                     continue

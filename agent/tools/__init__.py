@@ -88,18 +88,43 @@ def _auth_headers() -> dict:
     return h
 
 
-async def go_get(path: str, params: dict | None = None) -> dict:
-    """GET Go 网关：拼 base_url、带鉴权头、解包 { code, data } 信封。
+_inproc_go_get = None
+_inproc_checked = False
 
-    返回 {"ok": True, "data": ...} 或 {"ok": False, "error": ...}；
-    HTTP 层异常（非 2xx / 网络错误）仍抛出，由 call_tool_safe 兜底降级重试。
+
+def _resolve_inproc() -> object | None:
+    """探测是否与网关同进程；单独部署 agent 时回退到 HTTP。"""
+    global _inproc_go_get, _inproc_checked
+    if not _inproc_checked:
+        _inproc_checked = True
+        try:
+            from server.agent_bridge import go_get as inproc
+
+            _inproc_go_get = inproc
+        except ImportError:
+            _inproc_go_get = None
+    return _inproc_go_get
+
+
+async def go_get(path: str, params: dict | None = None) -> dict:
+    """取网关业务数据。
+
+    合并部署时**直接调用本进程的业务函数**：少一次 HTTP 往返、一次 JSON 编解码
+    和一次 JWT 自验签，也不再需要 GO_SERVER_TOKEN。
+    单独部署 agent（旧的 POST /run/stream 形态）时仍走 HTTP。
+
+    两种路径返回结构一致：{"ok": True, "data": ...} / {"ok": False, "error": ...}。
     """
+    inproc = _resolve_inproc()
+    if inproc is not None:
+        return await inproc(path, params)  # type: ignore[operator]
+
     client = get_http_client()
     url = GO_SERVER_URL.rstrip("/") + path
     resp = await client.get(url, params=params or {}, headers=_auth_headers())
     resp.raise_for_status()
     data = resp.json()
-    # 解 Go 信封 { code, message, data }
+    # 解统一信封 { code, message, data }
     if isinstance(data, dict) and "code" in data:
         if data.get("code") != _CODE_OK:
             return {"ok": False, "error": data.get("message", "unknown error")}

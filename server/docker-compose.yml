@@ -1,14 +1,17 @@
-# 本地开发依赖：PostgreSQL(pgvector) + Redis + Agent(Python) [+ Ingest]
+# 本地开发依赖：PostgreSQL(pgvector) + Redis [+ Ingest]
 #
-#   docker compose up -d                       # 启动核心依赖（pg/redis/agent）
+#   docker compose up -d                       # 启动核心依赖（pg/redis）
 #   docker compose --profile ingest up -d      # 附带启动文档 ingest 服务
 #   docker compose down                        # 停掉（数据保留在卷里）
 #   docker compose down -v                     # 连数据一起清掉
 #
-# 端口映射到宿主机，与 config.go 里的默认 DSN / Redis 地址一致：
+# 网关与 agent 已合并为同一个 Python 进程，跑在宿主机而不是容器里：
+#   bash scripts/dev.sh dev        # = uvicorn server.main:app --port 8080
+# 所以本文件不再包含 agent / server 服务，只提供它们依赖的中间件。
+#
+# 端口映射到宿主机，与 server/config.py 的默认 DSN / Redis 地址一致：
 #   postgres://postgres:postgres@localhost:5432/stock_agent?sslmode=disable
 #   127.0.0.1:6379
-#   agent: http://localhost:8000
 #
 # 说明：
 #   postgres 镜像使用 pgvector/pgvector:pg16（内置 vector 扩展），
@@ -49,44 +52,6 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-
-  agent:
-    build:
-      context: ../agent
-      dockerfile: Dockerfile
-    container_name: stock-agent-python
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/stock_agent?sslmode=disable
-      REDIS_URL: redis://redis:6379/0
-      OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.siliconflow.cn/v1}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-deepseek-ai/DeepSeek-V3}
-      SMALL_MODEL: ${SMALL_MODEL:-Qwen/Qwen2.5-7B-Instruct}
-      ONLINE_EMBED_MODEL: ${ONLINE_EMBED_MODEL:-Qwen/Qwen3-Embedding-4B}
-      EMBED_DIM: ${EMBED_DIM:-1536}
-      # RAG 相关性阈值（对余弦相似度设阈，非 RRF 分）；仅在重排关闭时生效
-      RAG_THRESHOLD: ${RAG_THRESHOLD:-0.2}
-      # 重排：命中闸改用交叉编码器分数（余弦地板值太高，切不开相关/无关）
-      RERANK_ENABLED: ${RERANK_ENABLED:-true}
-      RERANK_MODEL: ${RERANK_MODEL:-Qwen/Qwen3-Reranker-0.6B}
-      RERANK_CANDIDATES: ${RERANK_CANDIDATES:-20}
-      RERANK_THRESHOLD: ${RERANK_THRESHOLD:-0.5}
-      # Agent 工具回调 Go 网关：容器内 127.0.0.1 指向自身，
-      # 必须用 host.docker.internal 才能访问跑在宿主机上的 Go server
-      GO_SERVER_URL: ${GO_SERVER_URL:-http://host.docker.internal:8080}
-      # 回调 /api/v1/stocks/search 等受保护接口需带合法 JWT，留空则工具必然 401
-      GO_SERVER_TOKEN: ${GO_SERVER_TOKEN:-}
-    # host.docker.internal 在 Docker Desktop 内置可解析；
-    # host-gateway 保证 Linux 宿主上也能解析到宿主机
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - '8000:8000'
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
   ingest:
     build:

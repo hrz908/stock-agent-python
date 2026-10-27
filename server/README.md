@@ -1,14 +1,28 @@
 # 溜来 · 后端服务（server）
 
-技术栈：**Gin + GORM + PostgreSQL + go-redis/v9**（对话走 SSE，不保留 WebSocket）
+技术栈：**Python 3.11 + FastAPI + psycopg3 + redis-py + LangGraph**（对话走 SSE，不保留 WebSocket）
 
-**仓库定位**：本目录与小程序工程 `stock-agent-miniapp` **平级**，是一个独立的 Go 后端服务，
+> **2026-10-27 迁移说明**：本目录原为 Go（Gin + GORM）服务，现已整体重写为 Python，
+> 并与 `agent/` **合并为同一个 FastAPI 进程**（网关 + LangGraph 问答同端口 8080）。
+> 对外契约一字未改：`{code,message,data}` 信封、`/api/v1/*` 路径、SSE 帧格式、
+> `Content-Type: text/event-stream`、金额一律字符串、HTTP 401 触发小程序静默重登。
+> 部署契约也未变：容器内监听 8080、`/healthz`（不鉴权不限流）、`uploads` 卷。
+> Go 源码见 git 历史与 `upstream` 远端仓库。
+
+迁移后的关键差异（运维要知道的三条）：
+
+1. **不再有 `agent` 容器**：`deploy/docker-compose.prod.yml` 里只剩 `server`（Python）+ `postgres` + `redis`。
+2. **不再需要 `AGENT_BASE_URL` / `GO_SERVER_URL` / `GO_SERVER_TOKEN`**：agent 工具层改为直接调用
+   本进程的业务函数（`server/agent_bridge.py`），少一次 HTTP 与一次 JWT 自验签。
+3. **代码位于 `server/`（Python 包）**，入口 `server.main:app`；启动方式见下文「一、运行」。
+
+**仓库定位**：本目录与小程序工程 `stock-agent-miniapp` **平级**，是后端唯一实现，
 不属于任何单个小程序工程。后续其它页面（或其它端）需要后端能力时，一律在**本目录内按模块扩展**，
 不要再新建第二个后端工程。
 
-当前已实现「自选股」页面所需接口：添加自选（带成本价 / 持股数量）、查询列表（含浮动盈亏与涨跌排序）、
-手动刷新行情（含提醒检查与企业微信推送）、提醒规则 CRUD（条件类型 / 阈值 / 基准周期 / 检查频率，
-与「新增提醒」弹窗字段一致）、用户资料与头像。
+**当前迁移进度**：登录 / 用户资料与头像 / 自选股 / 行情 · 搜索 · K线 · 主数据 / 提醒规则
+（含触发检查与企业微信推送）/ 对话 SSE 与历史会话，已全部迁移并冒烟通过；
+**`quick-asks`（快捷提问）尚未迁移**，接口暂缺（详见仓库根 `docs/` 或提交记录）。
 
 ---
 
