@@ -73,7 +73,8 @@ test('markdown：标题深度与段落', () => {
   assert.strictEqual(blocks[0].tag, 'h');
   assert.strictEqual(blocks[0].depth, 2);
   assert.strictEqual(blocks[1].tag, 'p');
-  assert.strictEqual(blocks[1].inlines[0].text, '当前价格 1680.50 元。');
+  // 句末的「。」按产品口径只当换行标记，不进正文（见 normalizeReplyPunctuation）
+  assert.strictEqual(blocks[1].inlines[0].text, '当前价格 1680.50 元');
 });
 
 test('markdown：行内粗体 / 行内代码 / 链接标记', () => {
@@ -115,7 +116,8 @@ test('markdown：连续换行折叠成单次，空行不再撑出整行空白', 
   const flat = JSON.stringify(blocks);
   assert.ok(flat.indexOf('\\n\\n') === -1, 'pre-wrap 容器里不得出现空行');
   const body = blocks[1].items[0].inlines.map((n) => n.text).join('');
-  assert.strictEqual(body, '形态\n：周收盘价依次为 1546.63 → 1117。', '条目内只保留一次换行');
+  // 句号不显示：只保留换行结构
+  assert.strictEqual(body, '形态\n：周收盘价依次为 1546.63 → 1117', '条目内只保留一次换行');
 });
 
 test('markdown：表格拆表头与行，且不再输出无人消费的 align', () => {
@@ -204,6 +206,38 @@ test('markdown 去重：整段重复只留一段，短句与代码块不动', ()
   // 无重复时逐字返回
   const plain = '第一段内容。\n\n第二段内容。';
   assert.strictEqual(md.dedupeParagraphs(plain), plain);
+});
+
+test('markdown 句读：句号与分号都换成换行，且本身不出现', () => {
+  const out = md.normalizeReplyPunctuation('第一句。第二句；第三句。');
+  assert.strictEqual(out, '第一句\n第二句\n第三句');
+  assert.ok(out.indexOf('。') === -1 && out.indexOf('；') === -1, out);
+
+  // 标点后面本来就有换行 / 空行：不能多出空白行
+  assert.strictEqual(md.normalizeReplyPunctuation('一句。\n\n二句。'), '一句\n\n二句');
+
+  // 没有这两个标点时逐字不变
+  const plain = '第一句，第二句：第三句！';
+  assert.strictEqual(md.normalizeReplyPunctuation(plain), plain);
+
+  // 代码块里是代码，不动
+  const code = '说明。\n```\na = 1; b = 2。\n```';
+  assert.strictEqual(
+    md.normalizeReplyPunctuation(code),
+    '说明\n```\na = 1; b = 2。\n```'
+  );
+
+  // 表格行整行保留，换行会把表拆散
+  const table = '| 列 |\n| --- |\n| 值；值 |';
+  assert.strictEqual(md.normalizeReplyPunctuation(table), table);
+});
+
+test('markdown 句读：渲染后每句一行、正文里没有句号', () => {
+  const blocks = md.parseMarkdown('结论先行。依据一；依据二。');
+  const text = blocks
+    .map((b) => (b.inlines || []).map((n) => n.text || '').join(''))
+    .join('');
+  assert.strictEqual(text, '结论先行\n依据一\n依据二');
 });
 
 /* ===================== services/agent 分帧 ===================== */

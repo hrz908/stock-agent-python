@@ -207,10 +207,40 @@ function tableBlock(tk) {
   return { tag: 'table', head: head, rows: rows };
 }
 
+// ===== 句读排版：句号 / 分号不出现在正文里，只当换行标记 =====
+// 产品口径（2026-10-27）：正文里的「。」「；」都不显示，两者行为完全一致——
+// 都表示一句话结束，都在此处换行。转换放在渲染入口，不动落库文本：
+// 历史消息、提示词、复制出来的内容仍是带标点的正常中文。
+// 代码块（围栏内）与表格行里的标点是数据不是排版，整行跳过。
+const SENTENCE_MARK_RE = /[。；][ \t]*/g;
+
+function normalizeReplyPunctuation(text) {
+  const src = String(text == null ? '' : text);
+  if (!src || (src.indexOf('。') === -1 && src.indexOf('；') === -1)) return src;
+  // 按围栏代码块切片：奇数下标是代码，原样返回；未闭合的围栏一直切到结尾
+  return src
+    .split(/(```[\s\S]*?(?:```|$))/g)
+    .map((seg, i) => {
+      if (i % 2 === 1) return seg;
+      const lines = seg.split('\n').map((line) => {
+        // 表格行整行保留：行内「；」换成换行会把表拆散
+        if (/^\s*\|/.test(line)) return line;
+        return line
+          .replace(/[ \t]+$/, '')
+          .replace(SENTENCE_MARK_RE, '\n')
+          // 句末标点换出来的换行由 join 的换行符承担，否则会多出一行空白
+          .replace(/\n+$/, '');
+      });
+      return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+    })
+    .join('')
+    .replace(/^\n+|\n+$/g, '');
+}
+
 // 入口：markdown 源码 -> blocks 数组。
 // 解析失败（极端不完整语法）降级为单段纯文本，绝不让气泡空着
 function parseMarkdown(md) {
-  const src = String(md || '');
+  const src = normalizeReplyPunctuation(md);
   if (!src.trim()) return [];
   let tokens;
   try {
@@ -344,4 +374,4 @@ function dedupeParagraphs(text) {
   return dropped ? kept.join('\n\n') : src;
 }
 
-export { parseMarkdown, createMarkdownStream, dedupeParagraphs };
+export { parseMarkdown, createMarkdownStream, dedupeParagraphs, normalizeReplyPunctuation };
