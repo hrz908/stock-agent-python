@@ -41,16 +41,38 @@ docker compose ps        # 等两个容器都 healthy 再起服务
 
 ### 2）起服务
 
+本地直跑（Python 3.11+）：
+
 ```bash
-go mod tidy          # 首次需要联网拉依赖
-go run .
+python -m venv .venv
+.venv/Scripts/pip install -r server/requirements.txt -r agent/requirements.txt   # Windows
+# .venv/bin/pip install -r server/requirements.txt -r agent/requirements.txt     # macOS / Linux
+
+bash scripts/dev.sh dev     # = uvicorn server.main:app --reload --port 8080
+```
+
+> 网关与 agent 已合并为同一进程：`server.main:app` 同时提供 `/api/v1/*` 与 LangGraph 问答，
+> 不再需要单独启动 agent，`AGENT_BASE_URL` / `GO_SERVER_URL` / `GO_SERVER_TOKEN` 全部作废。
+
+或者整镜像跑（与生产一致，不污染本机 Python）：
+
+```bash
+docker compose -f server/docker-compose.yml up -d     # 只起 pg + redis
+docker build -f server/Dockerfile -t stock-agent-python:local .
+docker run --rm --network server_default -p 18080:8080 \
+  -e ENV=dev -e JWT_SECRET=local-dev-secret-32bytes \
+  -e DSN="postgres://postgres:postgres@postgres:5432/stock_agent?sslmode=disable" \
+  -e REDIS_ADDR="redis:6379" \
+  stock-agent-python:local
 ```
 
 冒烟验证：
 
 ```bash
 curl -s http://127.0.0.1:8080/healthz
-# {"code":0,"data":{"status":"ok"},"message":"success"}
+# {"code":0,"message":"ok","data":{"status":"ok"}}
+
+bash scripts/dev.sh test     # 契约冒烟：信封 / 鉴权 / 限流 / SSE 帧 / Quick Ask
 ```
 
 环境变量（都有默认值，本地可直接起）：
@@ -63,17 +85,22 @@ curl -s http://127.0.0.1:8080/healthz
 | `REDIS_PASSWORD` | 空 | Redis 密码 |
 | `REDIS_DB` | `0` | Redis 库 |
 | `JWT_SECRET` | `please-change-me` | **上线必须改**（`ENV=prod` 时仍是默认则拒绝启动） |
-| `QUOTE_API` | 空 | 自建行情服务基地址；**为空时用内置真实源**（腾讯财经批量接口，见 `quote/source.go`） |
+| `JWT_TTL` | `168h` | 登录 token 有效期（过期后小程序静默重登一次） |
+| `QUOTE_API` | 空 | 自建行情服务基地址；**为空时用内置真实源**（腾讯财经批量接口，见 `quote/source.py`） |
 | `WECHAT_APPID` / `WECHAT_SECRET` | 空 | 小程序凭据；两者都配了登录走 code2session，都没配时退化为演示账号（`ENV=prod` 拒绝启动） |
+| `WECOM_CORP_ID` / `WECOM_SECRET` / `WECOM_AGENT_ID` / `WECOM_WEBHOOK` | 空 | 提醒推送的两条通道（应用消息 / 群机器人），未配则只落站内 |
 | `UPLOAD_DIR` | `./uploads` | 上传根目录；头像存 `avatars/`，静态路由只暴露 `/uploads/avatars` |
 | `ENV` | `dev` | `dev` / `prod`。`prod` 下强制要求 JWT 与微信凭据 |
 | `ALLOW_ORIGINS` | `*` | CORS 允许的 Origin，逗号分隔；`*` 表示全部 |
+| `TRUSTED_PROXIES` | `127.0.0.1` | 可信反代网段；生产要带上 docker 网桥，否则按 IP 限流会共用一个桶 |
+| `AGENT_QPS` / `AGENT_CONCURRENT` / `AGENT_DAILY_QUOTA` | `2` / `3` / `500` | 对话三道闸门（令牌桶 / 并发 / 日配额） |
+| `AGENT_RUN_TIMEOUT` / `AGENT_TTFT_TIMEOUT` | `120s` / `8s` | 单轮总超时 / 首字节安抚帧阈值 |
 
-数值型配置（`REDIS_DB` 等）解析失败会直接终止启动：写错环境变量时静默回退默认值，
+数值型与时长型配置解析失败会直接终止启动：写错环境变量时静默回退默认值，
 问题会藏到运行期才暴露，不如启动时就报错。
 
-启动时会自动建表（AutoMigrate，只覆盖用户 / 自选 / 提醒）。`migrations/` 里 005 之后
-（向量库、A股语料、A股主数据、财务指标）都由 SQL 迁移持有，不进 AutoMigrate；
+启动时会执行 `schema.sql`（幂等 DDL，等价于原 Go 版对用户 / 自选 / 提醒三张表的 AutoMigrate）。
+`migrations/` 里 005 之后（向量库、A股语料、A股主数据、财务指标）由 SQL 迁移持有；
 已有库改表请新增迁移文件并手工执行（initdb 只在空数据卷跑）。
 
 ---
@@ -82,58 +109,64 @@ curl -s http://127.0.0.1:8080/healthz
 
 ```
 server/
-  main.go                       # 启动、依赖注入、优雅关闭
-  internal/
-    config/config.go            # 环境变量
-    deps/deps.go                # 全局 db / rdb
-    db/postgres.go              # GORM 连接 + 自动迁移
-    db/redis.go                 # Redis 客户端
-    quote/quote.go              # 行情缓存：MGET 批量读、Pipeline 批量写
-    quote/source.go             # fetchStockQuote（内置腾讯真实源 / 自建源，可替换）
-    resp/resp.go                # 统一响应体 + resp() / JSONBytes 辅助函数
-    model/user.go               # 跨模块共享的模型（User：登录与用户资料共用）
-    middleware/middleware.go    # Recovery / RequestID / CORS / Auth / RateLimit / AccessLog
-    hook/hook.go                # 模块间事件（行情已更新）
-    domain/stockcode/code.go    # 股票代码归一化 / 展示格式
-    util/amount.go              # 金额与涨跌幅格式化
-    module/                     # 业务模块：一个页面一个包，自带 model/handler/route
-      auth/
-        handler.go              # 登录：code → uid → JWT
-        route.go
-      watchlist/
-        model.go                # UserWatchlist
-        handler.go              # 添加 / 列表 / 刷新
-        route.go
-      alert/
-        model.go                # AlertRule + 条件枚举
-        handler.go              # 提醒 CRUD + checkAlerts
-        route.go
-      stock/
-        handler.go              # 搜索 / 行情快照 / 主数据资料
-        master.go               # 主数据只读查询（stock_basic、v_stock_profile）
-        route.go
-    router/router.go            # 只负责挂载各模块
-  migrations/001_init.sql       # 建表 SQL
-  migrations/002_users.sql      # 用户表
-  migrations/003_alert_rule.sql # alert_rule 升级：对齐「新增提醒」弹窗字段
-  migrations/004_alert_unique.sql # 提醒规则唯一索引（去重后建）
-  migrations/008_stock_master.sql # A股主数据：清单/行业/概念 + v_stock_profile
-  migrations/009_stock_finance_indicator.sql # 报告期财务宽表（P1，可选启用）
+  main.py                       # 应用装配：lifespan、异常→信封、路由挂载、prod 自检
+  config.py                     # 环境变量 / config.yaml（env > yaml > 默认，兼容旧键名）
+  resp.py                       # 统一响应体 {code,message,data} + ApiError
+  context.py                    # request_id 的 contextvar
+  web.py                        # 请求体读取与逐接口限长
+  deps.py                       # 进程级依赖容器（pg / redis / limiter / services）
+  agent_bridge.py               # 与 agent 合流：预热、事件流、会话 CRUD、工具层直调
+  agent_limiter.py              # 对话三道闸门（QPS / 并发 / 日配额）
+  hook.py                       # 模块间事件（行情已更新）
+  schema.sql                    # 网关自管三张表的幂等 DDL
+  middleware/
+    gateway.py                  # 纯 ASGI：Recovery / RequestID / CORS / IP 限流 / AccessLog / BodyLimit
+    rate_limit.py               # 滑动窗口 Lua（放行才写入、Redis 故障 fail-open）
+    guards.py                   # 路由级限流依赖（login / market）
+    clientip.py                 # 可信反代下解析真实 IP
+  security/
+    jwt.py                      # HS256 签发 / 校验（拒绝算法混淆）
+    auth.py                     # require_auth：user_id 只从 Bearer 解出
+  db/
+    postgres.py                 # psycopg3 连接池（启动必须探活成功）
+    redis.py                    # redis.asyncio（连不上降级，不阻断启动）
+  quote/
+    source.py                   # 腾讯行情 / 详情（GBK 转码、字段下标、K线 URL 白名单）
+    cache.py                    # 30s 快照：分片 MGET / Pipeline 批量写
+    batch.py                    # 去重→分批→批间并发；单批失败不取消其它批
+    search.py                   # smartbox（\uXXXX 转义 + 只留 A 股）
+    kline.py                    # 日/周前复权与分钟线
+  modules/
+    auth.py                     # 登录：code → openid → 用户 → JWT
+    user.py                     # 资料 / 头像上传 / 注销
+    watchlist.py                # 自选：添加（先拉行情再写库）/ 列表 / 刷新 / 软删除
+    alert.py                    # 提醒 CRUD + 触发检查（防抖锁、企微双通道）
+    stock.py                    # 搜索 / 行情详情 / K线 / 主数据
+    chat.py                     # SSE 对话 + 历史会话
+    quickask/                   # 快捷提问：pool / sample / template / api 四层
+  util/
+    amount.py                   # 金额定点格式化（负零归一）
+    unique.py                   # 保序去重
+  domain/stockcode.py           # 代码归一化 / 展示格式
+  wechat/session.py             # 小程序 code2session
+  wecom/client.py               # 企业微信应用消息 / 群机器人
+  migrations/                   # 建表 SQL（initdb 只在空数据卷执行一次）
 ```
 
-**分层约定**：`internal/` 下除 `module/` 外都是与具体页面无关的共享基础设施；
-`module/xxx/` 才是业务代码，每个模块自带 `model.go` / `handler.go` / `route.go`。
+**分层约定**：`server/` 是普通 Python 包；`modules/` 只放业务，`quote/` `db/` `middleware/`
+`security/` 是与页面无关的共享基础设施。agent 侧代码仍在 `agent/`，通过 `agent_bridge`
+以**同进程函数调用**接入，不再走 HTTP。
 
 **新增一个页面的后端，三步**：
 
-1. 新建 `internal/module/<模块名>/`，写 `model.go`（GORM 结构体 + `var Models = []any{...}`）、
-   `handler.go`（业务）、`route.go`（`func Register(g *gin.RouterGroup)`）；
-2. 在 `router/router.go` 里 import 并调用一次 `<模块名>.Register(authorized)`
-   （公开接口则挂到未鉴权的 `api` 组上）；
-3. 在 `main.go` 的 `models` 汇总处加上该模块的 `Models`，让建表覆盖到新表。
+1. 新建 `server/modules/<模块名>.py`，定义 `router = APIRouter(prefix=..., tags=[...])`
+   与 handler（用 `CurrentUser` 拿 user_id，用 `ApiError` 返回业务错误）；
+2. 在 `main.py` 的 `_build_api_router()` 里 include 到合适的一档：
+   公开 / 已鉴权（`protected`）/ 行情限流（`market`）；
+3. 需要新表就加到 `schema.sql`（网关自管）或 `migrations/`（agent 或主数据侧）。
 
-模块之间**不要互相 import**：跨模块的联动走 `internal/hook` 的事件订阅
-（现在的用法：`watchlist` 刷新完广播“行情已更新”，`alert` 订阅后做提醒检查）。
+模块之间**不要互相 import**：跨模块联动走 `hook.py` 的事件订阅
+（现在的用法：`watchlist` 刷新完广播「行情已更新」，`alert` 订阅后做提醒检查）。
 
 ---
 

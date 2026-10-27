@@ -81,7 +81,7 @@ async def startup(rt: Runtime) -> None:
     _ensure_agent_path()
     _sync_env(rt)
 
-    from core.checkpointer import get_graph  # 预热图与 checkpointer
+    from core.graph import get_graph  # 预热图（内部会建 checkpointer 连接池）
     from core.sessions import ensure_sessions_table
 
     try:
