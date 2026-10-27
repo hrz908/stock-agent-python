@@ -12,7 +12,7 @@ import json
 from typing import Any
 
 from fastapi import Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 
 CODE_OK = 0
 CODE_BAD_REQUEST = 400
@@ -69,11 +69,6 @@ def ok_response(data: Any = None) -> JSONResponse:
 
 def fail_response(code: int, message: str) -> JSONResponse:
     return JSONResponse(content=body(code, message, None), status_code=http_status(code))
-
-
-def cached_json_response(payload: bytes) -> Response:
-    """直接回写已序列化好的信封字节（带 X-Cache 等头的场景）。"""
-    return Response(content=payload, media_type="application/json; charset=utf-8")
 
 
 async def api_error_handler(_: Request, exc: ApiError) -> JSONResponse:

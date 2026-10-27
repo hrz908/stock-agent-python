@@ -16,14 +16,11 @@ import itertools
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable
 
 import redis.asyncio as aioredis
-from fastapi import Request
 
 from gateway.infra.context import current_request_id
 from gateway.infra.resp import CODE_TOO_MANY_REQUESTS, ApiError
-from gateway.middleware.clientip import client_ip
 
 logger = logging.getLogger("stocka.gateway.ratelimit")
 
@@ -81,38 +78,3 @@ def _too_many() -> ApiError:
     return ApiError(CODE_TOO_MANY_REQUESTS, "请求过于频繁，请稍后再试")
 
 
-def make_ip_limit_dependency(
-    limiter_getter: Callable[[], SlidingWindowLimiter],
-    limit: int,
-    window_seconds: float,
-    trusted_proxies_getter: Callable[[], str],
-    name: str = "ip",
-) -> Callable[[Request], Awaitable[None]]:
-    """构造一个路由级依赖：按客户端 IP 限流。"""
-
-    async def dependency(request: Request) -> None:
-        ip = client_ip(request, trusted_proxies_getter())
-        if not await limiter_getter().allow(name, ip, limit, window_seconds):
-            raise _too_many()
-
-    return dependency
-
-
-def make_user_limit_dependency(
-    limiter_getter: Callable[[], SlidingWindowLimiter],
-    limit: int,
-    window_seconds: float,
-    trusted_proxies_getter: Callable[[], str],
-) -> Callable[[Request], Awaitable[None]]:
-    """按登录用户限流；取不到 user_id 时回退按 IP（公开路由也有保护）。"""
-
-    async def dependency(request: Request) -> None:
-        uid = getattr(request.state, "user_id", None)
-        if isinstance(uid, int) and uid > 0:
-            ident = f"u:{uid}"
-        else:
-            ident = f"ip:{client_ip(request, trusted_proxies_getter())}"
-        if not await limiter_getter().allow("user", ident, limit, window_seconds):
-            raise _too_many()
-
-    return dependency

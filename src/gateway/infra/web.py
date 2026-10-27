@@ -36,28 +36,3 @@ async def read_json(
     if not isinstance(payload, dict):
         raise ApiError(CODE_BAD_REQUEST, error_message)
     return payload
-
-
-def require_str(payload: dict[str, Any], key: str) -> str:
-    value = payload.get(key)
-    return value if isinstance(value, str) else ""
-
-
-def require_int(payload: dict[str, Any], key: str) -> int | None:
-    """取整数；兼容 JSON number 与数字字符串，取不到返回 None。"""
-    value = payload.get(key)
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        try:
-            return int(float(text))
-        except ValueError:
-            return None
-    return None

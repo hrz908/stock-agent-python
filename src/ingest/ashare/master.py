@@ -77,10 +77,6 @@ def _is_st(name: str) -> bool:
 _EX_RIGHTS_PREFIXES = ("XD", "XR", "DR")
 
 
-def _ex_rights_prefixed(name: str) -> bool:
-    return name.upper().startswith(_EX_RIGHTS_PREFIXES)
-
-
 def _strip_ex_rights(name: str) -> str:
     """去掉 XD/XR/DR 前缀；去完太短的（截断严重）保留原文，交给上层过滤。"""
     upper = name.upper()

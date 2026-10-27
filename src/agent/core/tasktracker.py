@@ -47,9 +47,6 @@ class TaskTracker:
                     exc_info=(type(exc), exc, exc.__traceback__),
                 )
 
-    def pending_count(self) -> int:
-        return len(self._tasks)
-
     def cancel_all(self) -> None:
         for t in list(self._tasks):
             t.cancel()

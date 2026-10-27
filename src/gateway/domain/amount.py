@@ -14,24 +14,7 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 _CENT = Decimal("0.01")
-_TEN_THOUSAND = Decimal(10000)
 _HUNDRED_MILLION = Decimal(100000000)
-
-
-def to_decimal(value: object) -> Decimal:
-    if isinstance(value, Decimal):
-        return value
-    if value is None or value == "":
-        return Decimal(0)
-    try:
-        return Decimal(str(value))
-    except Exception:  # noqa: BLE001 - 脏数据按 0 处理，不阻断列表渲染
-        return Decimal(0)
-
-
-def fixed(value: Decimal, places: int) -> str:
-    quant = Decimal(1).scaleb(-places)
-    return str(value.quantize(quant, rounding=ROUND_HALF_UP))
 
 
 def money(value: Decimal) -> str:
@@ -68,11 +51,6 @@ def with_sign(value: Decimal) -> str:
     if value > 0:
         return "+" + text
     return text
-
-
-def to_wan(value: Decimal) -> Decimal:
-    """元 → 万元（新浪成交额榜口径，与腾讯的万元对齐）。"""
-    return value / _TEN_THOUSAND
 
 
 def yi_to_yuan(value: Decimal) -> Decimal:
