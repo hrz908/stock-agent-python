@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -20,8 +21,13 @@ from gateway.infra.deps import Runtime
 
 logger = logging.getLogger("stocka.gateway.agent_bridge")
 
-_ready = False
+_ready = False  # 预热完成（图/工具可用）
+_started = False  # startup() 已被调用过（决定收尾时要不要关池）
+_warm_task: asyncio.Task | None = None
 _cleanup_task: asyncio.Task | None = None
+# 主图建好即可服务（取数工具热身只影响首轮延迟），单独用事件标记，
+# 让重启后的首批提问能先等它，而不是被 run_timeout 直接判超时
+_graph_ready = asyncio.Event()
 
 
 def _redis_url(cfg: Any) -> str:
@@ -62,18 +68,38 @@ async def _cleanup_loop() -> None:
 
 
 async def startup(rt: Runtime) -> None:
-    """预热 agent 侧资源（图、checkpointer、tiktoken、工具集、会话表）。"""
+    """只做必须同步完成的最小工作，其余预热丢到后台。
+
+    单进程后 uvicorn 要等 lifespan 返回才开始 accept 连接。原先在这里同步跑
+    图 / checkpointer / tokenizer / 取数工具热身——生产实测从建表到就绪 128s，
+    等于每次重启都有两分钟 502。
+
+    现在只同步做「配置映射」这一步（agent/config.py 在导入期就读这些环境变量，
+    必须早于任何 agent 模块的 import），其余交给 `_warmup` 后台跑：
+    站点立刻可服务，首个提问会自动等图建好（get_graph / get_checkpointer 都带锁，
+    不会重复初始化）。
+    """
+    global _started, _warm_task
+
+    if _started:
+        return
+    _started = True
+    _sync_env(rt)
+    _warm_task = asyncio.create_task(_warmup(), name="agent-warmup")
+    logger.info("agent warmup scheduled in background")
+
+
+async def _warmup() -> None:
+    """后台预热：图（含 checkpointer 建表）、tokenizer、会话表、取数工具。"""
     global _ready, _cleanup_task
 
-    if _ready:
-        return
-    _sync_env(rt)
-
+    t0 = time.monotonic()
     from agent.core.graph import get_graph  # 预热图（内部会建 checkpointer 连接池）
     from agent.core.sessions import ensure_sessions_table
 
     try:
         await get_graph()
+        _graph_ready.set()
     except Exception as exc:  # noqa: BLE001 - 预热失败不阻断启动，首个请求会再试
         logger.warning("graph warmup failed: %s", exc)
 
@@ -90,6 +116,7 @@ async def startup(rt: Runtime) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("ensure chat_sessions failed: %s", exc)
 
+    # 取数工具热身要走 akshare/baostock，生产上这里是耗时大头（数十秒）
     try:
         from agent.subgraphs.stock import warm_tools
 
@@ -97,13 +124,22 @@ async def startup(rt: Runtime) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("tool warmup failed: %s", exc)
 
-    _cleanup_task = asyncio.create_task(_cleanup_loop())
+    _cleanup_task = asyncio.create_task(_cleanup_loop(), name="checkpoint-cleanup")
     _ready = True
-    logger.info("agent bridge ready")
+    logger.info("agent bridge ready (%.1fs)", time.monotonic() - t0)
 
 
 async def shutdown() -> None:
-    global _ready, _cleanup_task
+    global _ready, _started, _warm_task, _cleanup_task
+
+    # 预热可能还在跑（刚重启就被关停）：先取消，别让它在池子关掉之后再去建池/打网络
+    if _warm_task is not None:
+        _warm_task.cancel()
+        try:
+            await _warm_task
+        except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
+            logger.info("agent warmup cancelled: %s", exc)
+        _warm_task = None
 
     # 等所有后台任务先收口，再关连接池，防止还有任务在写库/写 Redis
     try:
@@ -120,16 +156,18 @@ async def shutdown() -> None:
             logger.info("checkpoint cleanup task stopped: %s", exc)
         _cleanup_task = None
 
-    if not _ready:
+    if not _started:
         return
 
+    # 模块名必须写全（agent.*）：这里是 __import__ 的字符串，包根改名时静态检查发现不了
+    #（src 布局改造后这里曾失效一整轮，表现为「关停时池子根本没关」）
     closer = (
-        ("core.checkpointer", "close_checkpointer"),
-        ("storage.read", "close_read_pool"),
-        ("storage.app", "close_app_pool"),
-        ("core.redis", "close_redis"),
-        ("tools", "close_http_client"),
-        ("rag.reranker", "close_rerank_client"),
+        ("agent.core.checkpointer", "close_checkpointer"),
+        ("agent.storage.read", "close_read_pool"),
+        ("agent.storage.app", "close_app_pool"),
+        ("agent.core.redis", "close_redis"),
+        ("agent.tools", "close_http_client"),
+        ("agent.rag.reranker", "close_rerank_client"),
     )
     for module_name, attr in closer:
         try:
@@ -138,6 +176,7 @@ async def shutdown() -> None:
         except Exception as exc:  # noqa: BLE001 - 收尾失败不影响进程退出
             logger.warning("close %s.%s failed: %s", module_name, attr, exc)
     _ready = False
+    _started = False
 
 
 # ---------------------------------------------------------------- 运行与事件流
@@ -155,6 +194,27 @@ async def stream_events(
 
     async for event in _stream(thread_id, query, user_id):
         yield event
+
+
+def is_ready() -> bool:
+    """主图与取数工具是否都已预热（仅供观测/测试使用）。"""
+    return _ready
+
+
+async def wait_graph_ready(max_wait: float) -> None:
+    """等主图建好，最长 max_wait 秒；超时或未启动预热时直接返回。
+
+    重启后有两分钟冷启动期：这段时间进来的提问如果照常开始计 run_timeout，
+    会被自己的超时判死。这里先把「建图」等掉，再开始计预算。
+    预热没被调度（如契约冒烟只跑网关）时立刻返回，不能把请求挂住。
+    """
+    if not _started or _graph_ready.is_set():
+        return
+    try:
+        await asyncio.wait_for(_graph_ready.wait(), max_wait)
+    except (TimeoutError, asyncio.CancelledError):
+        # 超时/取消都放行：请求自己会再触发一次 get_graph（带锁，不会重复建）
+        pass
 
 
 def track_task(coro: Any, *, name: str) -> asyncio.Task:

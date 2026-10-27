@@ -85,6 +85,9 @@ async def _sse_stream(
     thread_id = f"default:{user_id}:{session_id}"
 
     loop = asyncio.get_running_loop()
+    # 重启后的冷启动期（后台还在建图）先把这段等掉，再开始计 run_timeout，
+    # 否则首批提问会被自己的超时判死；预热未调度时这里立即返回
+    await agent_bridge.wait_graph_ready(min(run_timeout / 2, 60.0))
     deadline = loop.time() + run_timeout
     semaphore = _run_semaphore()
 

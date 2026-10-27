@@ -19,6 +19,7 @@ import asyncio
 import json
 import sys
 import tempfile
+import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -229,6 +230,22 @@ async def test_envelope_and_auth(app) -> None:
             resp.json()["code"] == 400 and resp.json()["data"] is None,
             resp.text,
         )
+
+
+async def test_warmup_contract() -> None:
+    """预热不能把启动拖住。
+
+    历史事故：startup() 在 lifespan 里同步跑图 + tokenizer + 取数工具热身，
+    生产实测 128s；uvicorn 在 lifespan 返回前不 accept 连接，等于每次重启
+    都有两分钟 502。现在预热在后台任务里跑，`wait_graph_ready` 只在真正
+    调度过预热时才等待——没调度时（本冒烟就是）必须立刻返回。
+    """
+    print("[0] 预热非阻塞")
+    t0 = time.monotonic()
+    await agent_bridge.wait_graph_ready(30)
+    elapsed = time.monotonic() - t0
+    check("未调度预热时不阻塞请求", elapsed < 1.0, f"{elapsed:.2f}s")
+    check("is_ready 初始为 False", agent_bridge.is_ready() is False)
 
 
 async def test_sse(app) -> None:
@@ -545,6 +562,7 @@ async def test_agent_limiter() -> None:
 
 async def main() -> None:
     await test_units()
+    await test_warmup_contract()
 
     cfg = make_config()
     cfg.ratelimit.ip_per_min = 10_000
