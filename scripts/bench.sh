@@ -51,6 +51,13 @@ usage() {
   BASE_URL=http://127.0.0.1:8080   CONC=4   USERS=4   TAG=baseline
   DURATION=45   STEPS=1,4,8,16   CONTAINER=stock-agent   SAMPLE_PG=1
   JUDGE_IDS=Q-01,Q-02 (只评这些 id)   JUDGE_SAMPLE=0.3 (评委抽样比例)
+
+长任务放后台（quality / judge / perf 十几分钟起，前台会一直占着终端）：
+  nohup bash scripts/bench.sh quality TAG=nightly </dev/null >>.bench.log 2>&1 &
+  echo $! > .bench.pid
+  tail -n 50 .bench.log     # 看进度；Ctrl+C 只退出 tail，不影响任务
+  kill "$(cat .bench.pid)"  # 需要中止时
+注意 </dev/null 不能省：只重定向 stdout 时，stdin 的管道会让调用方一直等到任务结束。
 EOF
 }
 

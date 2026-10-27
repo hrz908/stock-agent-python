@@ -40,6 +40,9 @@ export PYTHONPATH="$SRC_DIR${PYTHONPATH:+:$PYTHONPATH}"
 # Windows 的 venv 在 Scripts/，Unix 在 bin/
 VENV_PY="$ROOT/.venv/bin/python"
 [[ -x "$VENV_PY" ]] || VENV_PY="$ROOT/.venv/Scripts/python.exe"
+# 后台模式的状态文件：pid 用来 stop/status，日志用来看进度（*.log / *.pid 都已忽略）
+PID_FILE="$ROOT/.dev.pid"
+LOG_FILE="$ROOT/.dev.log"
 
 usage() {
   cat <<'EOF'
@@ -62,6 +65,12 @@ usage() {
   fmt           ruff format
   migrate       把 sql/migrations/*.sql 依次灌进库（新库初始化用）
 
+后台（长任务不占终端；日志落 .dev.log，pid 落 .dev.pid）
+  bg [dev|serve] 后台起服务（默认 dev），等端口就绪才返回
+  stop          停掉后台服务（--reload 的 worker 一起收，避免 8080 被孤儿占住）
+  status        进程是否在跑 + 端口是否可连
+  log [n|-f]    日志尾部（默认 50 行）；-f 实时跟随
+
 评测/压测
   bench [cmd]   评测与压测统一入口（bash scripts/dev.sh bench help）
 
@@ -70,6 +79,7 @@ usage() {
 
 提示
   psql / redis 是交互式命令：mintty 里自动套 winpty；没有 TTY（管道、CI）时直接报错退出。
+  bg 会把 stdin/stdout/stderr 全部重定向：少一个，调用方（终端/工具执行）就会一直等到任务结束。
 
 其它
   help          显示本帮助
@@ -156,6 +166,140 @@ cmd_serve() {
     --host 0.0.0.0 --port "${PORT:-8080}" --no-proxy-headers
 }
 
+# ===== 后台模式 =====
+# 后台的意义是「调用方立刻拿回控制权」，不只是命令末尾加个 &：子进程只要还持有一份
+# 继承来的 stdin/stdout/stderr，终端或工具执行就会一直等 EOF，看起来还是卡住。
+# 所以下面启动时三处全部重定向，进度统一从 .dev.log 看。
+
+# 只要 TCP 连得上就算被占：不需要健康检查通，404 也说明端口有人监听
+port_busy() {
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -s -o /dev/null -m 1 "http://127.0.0.1:${PORT:-8080}/" 2>/dev/null
+}
+
+# Git Bash 的 $! 是 MSYS 侧 pid，taskkill 认的是 Windows pid（/proc/<pid>/winpid 给映射）；
+# --reload 还会 fork 出 worker，必须整树结束，否则父进程没了、8080 仍被孤儿占着
+kill_tree() {
+  local pid="$1"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      local wpid=""
+      if [[ -r "/proc/$pid/winpid" ]]; then
+        wpid="$(cat "/proc/$pid/winpid" 2>/dev/null || true)"
+      fi
+      if [[ -n "$wpid" ]] && command -v taskkill >/dev/null 2>&1; then
+        taskkill //PID "$wpid" //T //F >/dev/null 2>&1 || true
+      else
+        kill "$pid" 2>/dev/null || true
+      fi
+      ;;
+    *)
+      kill -TERM "$pid" 2>/dev/null || true
+      ;;
+  esac
+}
+
+cmd_bg() {
+  local mode="${1:-dev}"
+  case "$mode" in
+    dev|serve) ;;
+    *) die "bg 只支持 dev / serve（收到：$mode）" ;;
+  esac
+  need_venv
+  [[ -f "$ENV_FILE" ]] || die "缺少 $ENV_FILE（被 git 忽略）"
+  set -a; . "$ENV_FILE"; set +a
+
+  if [[ -f "$PID_FILE" ]]; then
+    local old; old="$(cat "$PID_FILE")"
+    if kill -0 "$old" 2>/dev/null; then
+      # --reload 的父进程在子进程启动失败后不会退出，只在文件变化时重试，
+      # 所以「pid 活着」不等于「服务在跑」，要再看端口
+      if port_busy; then
+        die "已在后台运行（PID $old）：先 bash scripts/dev.sh stop"
+      fi
+      die "PID $old 还在但端口 ${PORT:-8080} 不通（多为启动失败后 reloader 空转）：先 bash scripts/dev.sh stop，或改完代码等它自动重试"
+    fi
+    rm -f "$PID_FILE"   # 上次异常退出留下的僵尸 pid
+  fi
+  if port_busy; then
+    die "端口 ${PORT:-8080} 已被占用：前台可能还开着 dev/serve，先停掉那个"
+  fi
+
+  # 复用前台分支而不是复制一份 uvicorn 参数：cmd_dev / cmd_serve 里是 exec，pid 不会多一层
+  nohup bash "$ROOT/scripts/dev.sh" "$mode" </dev/null >>"$LOG_FILE" 2>&1 &
+  echo $! > "$PID_FILE"
+
+  # 端口通了才算起成功：失败就把日志尾巴贴出来，省得再敲一次 log
+  local i
+  for i in {1..20}; do
+    if port_busy; then
+      echo "✓ 后台已就绪（PID $(cat "$PID_FILE")，模式 $mode）"
+      echo "  日志：bash scripts/dev.sh log    停止：bash scripts/dev.sh stop"
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "! 10 秒内端口没起来，最近日志：" >&2
+  tail -n 30 "$LOG_FILE" >&2 || true
+  echo "  --reload 的父进程会继续监听文件变化，改完代码自动重试；要放弃就 bash scripts/dev.sh stop" >&2
+  return 1
+}
+
+cmd_stop() {
+  [[ -f "$PID_FILE" ]] || die "没有后台服务在跑（缺 $PID_FILE）"
+  local pid; pid="$(cat "$PID_FILE")"
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill_tree "$pid"
+    # 端口释放要几百毫秒：不等确认就删 pid 文件，下次启动会撞在旧进程上
+    local i
+    for i in {1..10}; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.3
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      rm -f "$PID_FILE"
+      die "PID $pid 没退出，手动结束：kill -9 $pid（Windows 用任务管理器结束对应的 python.exe）"
+    fi
+  fi
+
+  rm -f "$PID_FILE"
+  echo "✓ 已停止后台服务"
+}
+
+cmd_status() {
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a; . "$ENV_FILE"; set +a
+  fi
+
+  local pid=""
+  if [[ -f "$PID_FILE" ]]; then
+    pid="$(cat "$PID_FILE")"
+  fi
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    echo "进程：运行中（PID $pid）"
+  else
+    echo "进程：未运行"
+  fi
+  if port_busy; then
+    echo "端口：${PORT:-8080} 可连接"
+  else
+    echo "端口：${PORT:-8080} 不通"
+  fi
+  if [[ -f "$LOG_FILE" ]]; then
+    echo "日志：$LOG_FILE（bash scripts/dev.sh log）"
+  fi
+}
+
+cmd_log() {
+  [[ -f "$LOG_FILE" ]] || die "还没有后台日志：$LOG_FILE（先 bash scripts/dev.sh bg）"
+  if [[ "${1:-}" == "-f" || "${1:-}" == "--follow" ]]; then
+    tail -n 50 -f "$LOG_FILE"
+  else
+    tail -n "${1:-50}" "$LOG_FILE"
+  fi
+}
+
 cmd_test() { need_venv; (cd "$ROOT" && "$VENV_PY" tests/contract/smoke_gateway.py); }
 cmd_lint() { need_venv; (cd "$ROOT" && "$VENV_PY" -m ruff check src tests scripts); }
 cmd_fmt() { need_venv; (cd "$ROOT" && "$VENV_PY" -m ruff format src tests scripts); }
@@ -225,6 +369,10 @@ case "$cmd" in
   setup|install)  cmd_setup ;;
   dev)            cmd_dev ;;
   serve)          cmd_serve ;;
+  bg|start)       shift; cmd_bg "$@" ;;
+  stop)           cmd_stop ;;
+  status)         cmd_status ;;
+  log)            shift; cmd_log "$@" ;;
   test|smoke)     cmd_test ;;
   lint)           cmd_lint ;;
   fmt)            cmd_fmt ;;

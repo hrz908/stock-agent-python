@@ -105,9 +105,11 @@ def _flatten(node: Any, prefix: str = "") -> dict[str, Any]:
 
 def _lookup(flat: dict[str, Any], key: str, default: Any) -> Any:
     env_key = key.upper().replace(".", "_")
-    if env_key in os.environ:
+    # 空串按「未配置」处理：.env 模板里 WECOM_AGENT_ID= 这类留空项若原样返回，
+    # _as_int / parse_duration 会在 import 阶段抛 ValueError，服务连启动都到不了
+    if os.environ.get(env_key, "").strip():
         return os.environ[env_key]
-    if key in flat:
+    if key in flat and str(flat[key]).strip():
         return flat[key]
     return default
 

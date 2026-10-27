@@ -64,6 +64,8 @@ agent/e2e_report.md
 
 # ===== 五、日志与临时文件 =====
 *.log
+# 后台任务（dev.sh bg / bench.sh 手册）写的 pid 文件，本机状态，不入库
+*.pid
 logs/
 *.tmp
 *.bak
