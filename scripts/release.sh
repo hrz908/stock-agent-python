@@ -75,7 +75,36 @@ resolve_target() {
     command -v ssh >/dev/null 2>&1 || die "未找到 ssh 客户端"
 }
 
-remote_git() { ssh "$SSH_TARGET" "git -C '$DEPLOY_DIR' $*"; }
+# 一次 SSH 拿两样东西：服务器 HEAD 与工作区状态。拆成两条 ssh 就多一次完整往返
+# （跨国链路 0.3~1.5s，且每次都要重新做 TCP+认证）。
+# 输出约定：第一行 SHA，其余行是 git status --porcelain 的内容。
+preflight_remote() {
+    local out
+    out=$(ssh "$SSH_TARGET" "cd '$DEPLOY_DIR' && git rev-parse HEAD && git status --porcelain" 2>/dev/null) \
+        || die "连不上 $SSH_TARGET 或 $DEPLOY_DIR 不是 git 仓库"
+    REMOTE_SHA=$(printf '%s\n' "$out" | head -1 | tr -d '\r')
+    local dirty
+    dirty=$(printf '%s\n' "$out" | tail -n +2 | tr -d '\r')
+    if [ -n "$dirty" ]; then
+        printf '%s\n' "$dirty" >&2
+        die "服务器 $DEPLOY_DIR 有未提交改动（见上），update 会拒绝执行：先在服务器上导出 diff 并回滚"
+    fi
+}
+
+# 发布末尾的「校验提交 + 探活」也合并成一次 SSH：
+#   remote_final_check health   先打印 SHA，再轮询 /healthz（30s 上限）
+#   remote_final_check nohealth 只打印 SHA（--skip-health）
+# 退出码：health 模式下 /healthz 未通过返回 1；SHA 始终通过 REMOTE_FINAL_SHA 带回。
+remote_final_check() {
+    local mode="${1:-health}" out rc=0
+    local script="cd '$DEPLOY_DIR' && echo SHA=\$(git rev-parse HEAD)"
+    if [ "$mode" = "health" ]; then
+        script="$script && for i in \$(seq 1 15); do curl -kfsS https://127.0.0.1/healthz >/dev/null 2>&1 && exit 0; sleep 2; done; exit 1"
+    fi
+    out=$(ssh "$SSH_TARGET" "$script" 2>/dev/null) || rc=$?
+    REMOTE_FINAL_SHA=$(printf '%s\n' "$out" | sed -n 's/^SHA=//p' | tr -d '\r')
+    return "$rc"
+}
 
 # 脏树不代提交：自动 commit 会把半成品（调试开关、临时日志）一起发到生产，
 # 而没有提交的改动又不可能通过 push 到达服务器。
@@ -102,19 +131,6 @@ sync_origin() {
     log "本地落后或已分叉，rebase 到 $ORIGIN/$BRANCH"
     if ! git rebase "$ORIGIN/$BRANCH"; then
         die "rebase 冲突：解决后 git rebase --continue，再重跑本脚本"
-    fi
-}
-
-# 服务器上有未提交改动时 deploy.sh update 会拒绝执行；这里提前一次 ssh 查出来，
-# 免得白等一轮构建（拉镜像/编译通常几分钟）。
-preflight_remote() {
-    REMOTE_SHA=$(remote_git rev-parse HEAD 2>/dev/null) \
-        || die "连不上 $SSH_TARGET 或 $DEPLOY_DIR 不是 git 仓库"
-    local dirty
-    dirty=$(remote_git status --porcelain 2>/dev/null || true)
-    if [ -n "$dirty" ]; then
-        printf '%s\n' "$dirty" >&2
-        die "服务器 $DEPLOY_DIR 有未提交改动（见上），update 会拒绝执行：先在服务器上导出 diff 并回滚"
     fi
 }
 
@@ -190,17 +206,18 @@ main() {
     fi
 
     local deployed
-    deployed=$(remote_git rev-parse HEAD 2>/dev/null || true)
-    if [ "$deployed" != "$local_sha" ]; then
-        die "服务器 HEAD 是 ${deployed:0:7}，本地是 $local_short：代码已推送但没部署到目标提交"
-    fi
-
     if [ "$SKIP_HEALTH" = "0" ]; then
-        log "探活 /healthz"
-        ssh "$SSH_TARGET" 'for i in $(seq 1 15); do curl -kfsS https://127.0.0.1/healthz >/dev/null 2>&1 && exit 0; sleep 2; done; exit 1' || {
+        log "校验提交并探活 /healthz"
+        remote_final_check health || {
             echo "  看后端日志：ssh $SSH_TARGET 'cd $DEPLOY_DIR && sudo bash scripts/deploy.sh logs server'" >&2
             die "30 秒内 /healthz 未通过"
         }
+    else
+        remote_final_check nohealth || die "取服务器 HEAD 失败，无法确认部署结果"
+    fi
+    deployed="${REMOTE_FINAL_SHA:-}"
+    if [ "$deployed" != "$local_sha" ]; then
+        die "服务器 HEAD 是 ${deployed:0:7}，本地是 $local_short：代码已推送但没部署到目标提交"
     fi
 
     log "发布完成：$remote_short → $local_short"

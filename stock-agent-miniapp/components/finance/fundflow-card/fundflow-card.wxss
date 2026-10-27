@@ -103,7 +103,7 @@
   flex: none;
   display: flex;
   gap: var(--space-md);
-  /* 不再写固定 width：列宽由两个 .lhb-vals text 的 min-width 决定，
+  /* 不再写固定 width：列宽由两个 .lhb-val 的 min-width 决定，
      写死 320rpx 会把内容顶出卡片右边（2026-10-26 修） */
 }
 
@@ -150,7 +150,9 @@
   gap: var(--space-md);
 }
 
-.lhb-vals text {
+/* 组件 wxss 里不能用标签选择器（`text` 会被工具判非法并整条失效），
+   所以列宽/不折行这组规则挂在 .lhb-val 上，由 WXML 显式加类。 */
+.lhb-val {
   flex: 1;
   min-width: 0;
   white-space: nowrap;           /* 金额不折行，单位不单独掉行 */

@@ -36,15 +36,15 @@
     <view class="lhb-head">
       <text class="lhb-seat">席位</text>
       <view class="lhb-vals">
-        <text>买入</text>
-        <text>卖出</text>
+        <text class="lhb-val">买入</text>
+        <text class="lhb-val">卖出</text>
       </view>
     </view>
     <view class="lhb-row" wx:for="{{lhbRows}}" wx:for-item="r" wx:key="seat">
       <text class="lhb-seat">{{r.seat}}</text>
       <view class="lhb-vals">
-        <text class="num up">{{r.buy}}</text>
-        <text class="num down">{{r.sell}}</text>
+        <text class="num up lhb-val">{{r.buy}}</text>
+        <text class="num down lhb-val">{{r.sell}}</text>
       </view>
     </view>
   </view>
