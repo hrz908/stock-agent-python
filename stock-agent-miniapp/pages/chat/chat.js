@@ -7,10 +7,7 @@
 // @swc/runtime/_interop_require_wildcard（本项目不存在），chat.js 加载即抛错、页面方法全丢
 //（表现为 WXML 正常渲染但点击全部无效）。session_id 走 agentSocket.freshSessionId()。
 import agentSocket from '../../services/agent';
-import { startRecognize, stopRecognize, abortRecognize } from '../../services/asr';
-import * as translator from '../../services/translate';
-import * as tts from '../../services/tts';
-import { takeStableSegment } from '../../utils/segment';
+import { startRecognize, stopRecognize, abortRecognize, warmupRecognize } from '../../services/asr';
 import {
   listSessions,
   createSession,
@@ -134,9 +131,8 @@ const KEYBOARD_GAP_RPX = 16;
 // 后端在正文流式结束后才下发，收到即追加到回复末尾（见 _placeCard），
 // 同类卡片一轮只落一张（见 _queueCard）。
 
-// ===== 语音输入（同声传译）=====
-// 点一下开始聆听：面板里边出原文边出译文，译文逐段补齐并自动播报；
-// 再点一下把**原文**发给 agent（译文只做展示与播报，不参与提问）。
+// ===== 语音输入 =====
+// 点一下开始聆听：面板里流式显示识别出的文字；再点一下把文字发给 agent。
 // 收尾有两条路：手动点停 = 立即发送；静音 1.5s 自动停 = 终稿停在面板，
 // 仍要再点一次才发（保留改口机会，见 DESIGN.md 对「松手即发」的否决）。
 const REC_MIN_MS = 1000;
@@ -150,18 +146,10 @@ const VOICE_TIP_LIVE = '再点发送';
 const VOICE_TIP_STOP = '正在转写…';
 const VOICE_TIP_HOLD = '点发送';
 // 中间结果的视图刷新间隔：识别回调远快于渲染需要，合批后只落最后一次
-// （150ms 是同传手感与 setData 次数之间的平衡点）
 const VOICE_TEXT_FLUSH_MS = 150;
-// 稳定片段：攒够 4 个字就送翻（与识别并行），长句切到 28 字
-const VOICE_SEG_MIN = 4;
-const VOICE_SEG_MAX = 28;
-// 播报队列上限：落后太多说明播放追不上识别，丢最旧的，别让耳朵追几分钟前的话
-const VOICE_SPEECH_MAX = 6;
-// 同传方向：源语言决定识别语言，目标语言决定译文与播报音色
-const VOICE_LANGS = {
-  zh2en: { from: 'zh_CN', to: 'en_US', asr: 'zh_CN', tts: 'en_US', label: '中 → EN' },
-  en2zh: { from: 'en_US', to: 'zh_CN', asr: 'en_US', tts: 'zh_CN', label: 'EN → 中' }
-};
+// 面板只显示最新的一截：三行文本框放不下整段，按原文顺序显示会把「刚说的话」裁在视口外。
+// 44 字在「超大」字号下也仍能落在三行内（见 chat.wxss 的 line-clamp 注释）
+const VOICE_TEXT_TAIL = 44;
 
 // 流式渲染节奏：逐字推进的帧间隔(ms)、追赶系数、单帧推进上限、
 // 滚动跟随的去抖间隔(ms)。
@@ -238,14 +226,6 @@ Page({
     voiceText: '',
     // 静音自动停录后，终稿停在面板上等用户点发送（此时 recording 为 false）
     voiceHolding: false,
-    // 译文：按稳定片段逐段补齐；voiceTranslating 控制「翻译中…」占位
-    voiceDst: '',
-    voiceTranslating: false,
-    voiceDstFailed: false,
-    // 同传方向（中→EN / EN→中）与播报开关
-    voiceDir: 'zh2en',
-    voiceLangLabel: VOICE_LANGS.zh2en.label,
-    voiceSpeak: true,
     // 空会话不铺问候气泡：首屏直接交给下方的引导问题
     messages: [],
     // 历史消息分片开关：hasEarlier 为真时列表顶部出现「查看更早」入口
@@ -296,11 +276,8 @@ Page({
     this._drawerClosed = true;
     // 本页挂在 agent 单例上的监听（event -> callback），onUnload 按引用精确摘除
     this._agentHandlers = {};
-    // 语音同传的播报队列：译文按片段到达，串行播，同一时刻只有一句在响
-    this._speechQueue = [];
-    this._speaking = false;
-    this._voiceDstParts = [];
-    this._tr = null;
+    // 麦克风是否已授权：授过就不再走一次异步 authorize，把这一步从按下的关键路径上拿掉
+    this._micGranted = false;
 
     let statusBarHeight = 44;
     let safeBottom = 0;
@@ -791,11 +768,10 @@ Page({
     this.setData(fontScalePatch());
   },
 
-  // 进后台 / 跳到子页面：别再占着麦克风，也别在后台继续播
+  // 进后台 / 跳到子页面：别再占着麦克风
   // （已停录待发的终稿保留，回来还能接着发）
   onHide() {
     if (this._recording) this.onVoiceCancel();
-    this.stopVoiceSpeech();
   },
 
   onReady() {
@@ -834,12 +810,6 @@ Page({
       clearTimeout(this._voiceTextTimer);
       this._voiceTextTimer = 0;
     }
-    // 同传：在途译文作废、播报停掉并销毁音频上下文（否则下次进入第一次播报没声音）
-    this._tr = null;
-    this._voiceDstParts = [];
-    this._speechQueue.length = 0;
-    this._speaking = false;
-    tts.release();
   },
 
   // sender-wrap 是绝对定位容器（自成 BFC，子元素外边距不会合并出去），
@@ -902,6 +872,9 @@ Page({
     }
 
     this.setData({ voiceMode: true, inputFocus: false, voiceTip: VOICE_TIP_IDLE });
+    // 预热识别插件：把 requirePlugin 的首次初始化挪到切模式这一刻，
+    // 按下麦克风时只剩 start()，少一段白等
+    warmupRecognize();
     // 组件移除后键盘并不会立刻收，这里显式收一次
     if (wx.hideKeyboard) wx.hideKeyboard();
     // 键盘高度事件不一定补发 0，手动归零，防止输入栏悬在半空
@@ -1061,8 +1034,8 @@ Page({
     this.scheduleMeasureSender();
   },
 
-  /* ===== 语音输入（同声传译）=====
-     点一下开始聆听（面板里原文 + 译文实时出字），再点一下把**原文**发给 agent；
+  /* ===== 语音输入 =====
+     点一下开始聆听（面板里流式出字），再点一下把识别结果发给 agent；
      静音自动停录只把终稿停在面板上，仍要再点一次才发。 */
 
   // 语音键的唯一入口：未开始就开录；聆听中点停并发送；已停录待发则直接发
@@ -1084,13 +1057,19 @@ Page({
   },
 
   // 开录前确认麦克风权限：之前拒绝过的话 authorize 会直接失败，
-  // 那时只能让用户去设置页打开，这里给个明确出口，别点了没反应
+  // 那时只能让用户去设置页打开，这里给个明确出口，别点了没反应。
+  // 已授权过就直接开录——省掉一次异步往返，按下即有反应
   beginVoice() {
+    if (this._micGranted) {
+      this.startRecord();
+      return;
+    }
     this._authorizing = true;
     wx.authorize({
       scope: 'scope.record',
       success: () => {
         this._authorizing = false;
+        this._micGranted = true;
         if (this._unloaded) return;
         this.startRecord();
       },
@@ -1118,35 +1097,23 @@ Page({
     stopRecognize();
   },
 
-  // 取消：丢弃本次结果（含已停录待发的终稿、滚动中的译文与播报）
+  // 取消：丢弃本次结果（含已停录待发的终稿）。
+  // abort 后插件迟到的终稿不会再回调（见 services/asr.js 的 aborted 判断），
+  // 所以这里不需要额外的「已取消」标记再在回调里判一次
   onVoiceCancel() {
     if (this._recording) {
-      // 先置 aborted 再 abort，否则插件迟到的终稿会把用户刚说的话发出去
-      this._recordCanceled = true;
       this._recording = false;
       this._stopping = false;
       abortRecognize();
     }
-    this._recordCanceled = false;
     this._heldVoiceText = '';
-    // 置 null 后迟到的译文回调直接丢弃，不会写回面板
-    this.resetVoiceTranslate();
-    this.stopVoiceSpeech();
-    this.setData({
-      recording: false,
-      voiceHolding: false,
-      voiceTip: VOICE_TIP_IDLE,
-      voiceDst: '',
-      voiceTranslating: false,
-      voiceDstFailed: false
-    });
+    this.setData({ recording: false, voiceHolding: false, voiceTip: VOICE_TIP_IDLE });
     this.clearVoiceText();
   },
 
   // 停录 / 到时长上限的统一收尾：手动停直接发，静音自动停只停在面板上
   onVoiceStop(res) {
     if (this._unloaded) return;
-    const canceled = this._recordCanceled;
     // 用户主动点停 = 现在就要发；静音 / 到时长上限 = 只把终稿交出来
     const manual = !!this._stopping;
     const text = String((res && res.text) || '').trim();
@@ -1154,25 +1121,15 @@ Page({
 
     this._recording = false;
     this._stopping = false;
-    this._recordCanceled = false;
     // 掐掉还没落的中间结果，否则它晚一步把终稿覆盖回「更短的旧文本」
     if (this._voiceTextTimer) {
       clearTimeout(this._voiceTextTimer);
       this._voiceTextTimer = 0;
     }
 
-    // 终稿可能比最后一个中间结果多几个字：补翻成最后一段
-    this.finalizeVoiceTranslate(text);
-
-    if (canceled) {
-      this.setData({ recording: false, voiceTip: VOICE_TIP_IDLE });
-      this.clearVoiceText();
-      return;
-    }
-
     if (!text) {
       // 空识别：静音自动停多半是没开口，不打扰；手动停才提示误触
-      this.setData({ recording: false, voiceTip: VOICE_TIP_IDLE, voiceDst: '', voiceTranslating: false });
+      this.setData({ recording: false, voiceTip: VOICE_TIP_IDLE });
       this.clearVoiceText();
       if (manual) this.toast(ms < REC_MIN_MS ? '说话时间太短' : '没听清，请再说一次', 1200);
       return;
@@ -1181,49 +1138,58 @@ Page({
     if (!manual) {
       // 静音自动停：终稿留在面板上，再点一次才发（保留改口机会）
       this._heldVoiceText = text;
-      this.setData({ recording: false, voiceHolding: true, voiceTip: VOICE_TIP_HOLD, voiceText: text });
+      this.setData({
+        recording: false,
+        voiceHolding: true,
+        voiceTip: VOICE_TIP_HOLD,
+        voiceText: this.voiceDisplay(text)
+      });
       return;
     }
 
     this.setData({ recording: false, voiceTip: VOICE_TIP_IDLE });
     this.clearVoiceText();
-    this.stopVoiceSpeech();
     this.sendVoiceText(text);
   },
 
   onVoiceError(message) {
     if (this._unloaded) return;
-    const canceled = this._recordCanceled;
 
     this._recording = false;
     this._stopping = false;
-    this._recordCanceled = false;
-    this.resetVoiceTranslate();
-    this.stopVoiceSpeech();
-    this.setData({
-      recording: false,
-      voiceHolding: false,
-      voiceTip: VOICE_TIP_IDLE,
-      voiceDst: '',
-      voiceTranslating: false,
-      voiceDstFailed: false
-    });
+    // 权限可能在系统设置里被撤销：下次点击重新走一次 authorize，
+    // 失败时才能给出「去设置」的出口，而不是一直报「识别不可用」
+    this._micGranted = false;
+    this.setData({ recording: false, voiceHolding: false, voiceTip: VOICE_TIP_IDLE });
     this.clearVoiceText();
-    if (canceled) return;
     this.toast(message || '没听清，请再说一次');
   },
 
-  // 中间结果：翻译请求跟着识别立刻发（不节流），只有视图刷新合批到 150ms
+  // 中间结果：只刷新预输入框，不碰输入框（终稿由 onVoiceStop 收尾）
   onVoicePartial(text) {
     if (this._unloaded) return;
-    this._voicePartial = String(text || '');
-    this.maybeTranslateVoice(this._voicePartial);
+    const next = String(text || '');
+    // 插件会把同一段文本反复回调：不比对就会白触发一次 setData
+    if (next === this._voicePartial) return;
+    this._voicePartial = next;
+    // 第一句不排队：面板还空着时立刻落字，别让「怎么没反应」多等一个节流周期
+    if (!this.data.voiceText) {
+      this.setData({ voiceText: this.voiceDisplay(next) });
+      return;
+    }
     if (this._voiceTextTimer) return;
     this._voiceTextTimer = setTimeout(() => {
       this._voiceTextTimer = 0;
       if (this._unloaded) return;
-      this.setData({ voiceText: this._voicePartial, voiceDst: this.dstText() });
+      this.setData({ voiceText: this.voiceDisplay(this._voicePartial) });
     }, VOICE_TEXT_FLUSH_MS);
+  },
+
+  // 面板只有三行：喂给它的必须是最新的一截，否则长句会把刚说的话裁在视口外
+  voiceDisplay(text) {
+    const s = String(text || '');
+    if (s.length <= VOICE_TEXT_TAIL) return s;
+    return '…' + s.slice(-VOICE_TEXT_TAIL);
   },
 
   clearVoiceText() {
@@ -1238,21 +1204,15 @@ Page({
   startRecord() {
     this._recording = true;
     this._stopping = false;
-    this._recordCanceled = false;
     this._recordStartAt = Date.now();
     this._voicePartial = '';
     this._heldVoiceText = '';
-    this.beginVoiceTranslate();
-    this.stopVoiceSpeech();
 
     this.setData({
       recording: true,
       voiceHolding: false,
       voiceTip: VOICE_TIP_LIVE,
-      voiceText: '',
-      voiceDst: '',
-      voiceTranslating: false,
-      voiceDstFailed: false
+      voiceText: ''
     });
 
     // 识别全程在插件侧完成：中间结果进预输入框，收尾后 onStop 带终稿回来。
@@ -1263,180 +1223,11 @@ Page({
         onFinal: (res) => this.onVoiceStop(res),
         onError: (message) => this.onVoiceError(message)
       },
-      {
-        duration: REC_MAX_MS,
-        silenceMs: VOICE_SILENCE_MS,
-        lang: this.voiceLang().asr
-      }
+      { duration: REC_MAX_MS, silenceMs: VOICE_SILENCE_MS }
     );
   },
 
-  /* ===== 同传：稳定片段翻译 ===== */
-
-  voiceLang() {
-    return VOICE_LANGS[this.data.voiceDir] || VOICE_LANGS.zh2en;
-  },
-
-  // 新一轮录音：清空已翻译片段，_tr 存在才允许派发
-  beginVoiceTranslate() {
-    this._tr = { dispatched: 0, translating: false, final: false, pendingTail: '' };
-    this._voiceDstParts = [];
-  },
-
-  // 作废本轮：迟到的译文回调看到 _tr 为 null 会直接丢弃
-  resetVoiceTranslate() {
-    this._tr = null;
-    this._voiceDstParts = [];
-  },
-
-  // 稳定片段判定：不正在翻译 + 新增部分够长，两条都满足才动配额
-  maybeTranslateVoice(cumulative) {
-    const tr = this._tr;
-    if (!tr || tr.final || tr.translating) return;
-    const take = takeStableSegment(cumulative, tr.dispatched, {
-      minLen: VOICE_SEG_MIN,
-      maxLen: VOICE_SEG_MAX
-    });
-    if (!take) return;
-    tr.dispatched += take.consumed;
-    this.dispatchVoiceChunk(take.segment);
-  },
-
-  dispatchVoiceChunk(segment) {
-    const text = String(segment || '').trim();
-    if (!text) return;
-    const tr = this._tr;
-    if (!tr) return;
-    const lang = this.voiceLang();
-    tr.translating = true;
-    this.setData({ voiceTranslating: true });
-
-    // 回调带上本轮对象：上一轮迟到的译文不能写进新一轮（会把 translating 误清零）
-    translator
-      .translate(text, { from: lang.from, to: lang.to })
-      .then((dst) => this.onVoiceChunkDone(tr, dst))
-      .catch(() => this.onVoiceChunkFail(tr));
-  },
-
-  onVoiceChunkDone(tr, dst) {
-    if (!tr || this._tr !== tr) return; // 已取消 / 已换一轮
-    tr.translating = false;
-
-    const out = String(dst || '').trim();
-    if (out) {
-      this._voiceDstParts.push(out);
-      // 译文一到就预取音频：上一条还在播时，这一条的音频已经落盘
-      this.enqueueVoiceSpeech(out);
-    }
-    if (this._unloaded) return;
-    // 一旦有一条翻成功，之前的失败提示就该收掉
-    this.setData({ voiceDst: this.dstText(), voiceTranslating: tr.translating, voiceDstFailed: false });
-
-    // 终稿尾巴排在这条后面：现在补发
-    this.flushVoiceTail();
-    // 识别还在继续：把刚攒下的下一段立刻送出去
-    this.maybeTranslateVoice(this._voicePartial || '');
-  },
-
-  onVoiceChunkFail(tr) {
-    if (!tr || this._tr !== tr) return;
-    tr.translating = false;
-    if (this._unloaded) return;
-    // 配额被限流时插件通常表现为超时 / 失败，这里给一句可解释的提示
-    this.setData({ voiceDstFailed: true, voiceTranslating: false });
-    this.flushVoiceTail();
-    this.maybeTranslateVoice(this._voicePartial || '');
-  },
-
-  // 终稿补尾巴：终稿通常比最后一个中间结果多几个字，这几个字也得翻
-  finalizeVoiceTranslate(text) {
-    const tr = this._tr;
-    if (!tr) return;
-    tr.final = true;
-    const full = String(text || '');
-    if (!full) return;
-    const rest = full.slice(Math.min(tr.dispatched, full.length)).trim();
-    if (!rest) return;
-    if (tr.translating) {
-      tr.pendingTail = rest;
-      return;
-    }
-    tr.dispatched = full.length;
-    this.dispatchVoiceChunk(rest);
-  },
-
-  flushVoiceTail() {
-    const tr = this._tr;
-    if (!tr || !tr.final || !tr.pendingTail) return;
-    const tail = tr.pendingTail;
-    tr.pendingTail = '';
-    tr.dispatched += tail.length;
-    this.dispatchVoiceChunk(tail);
-  },
-
-  // 译文拼接：中文目标直接相连，英文目标之间补空格
-  dstText() {
-    const lang = this.voiceLang();
-    return (this._voiceDstParts || []).join(lang.to === 'zh_CN' ? '' : ' ');
-  },
-
-  /* ===== 同传：播报 ===== */
-
-  enqueueVoiceSpeech(text) {
-    if (!this.data.voiceSpeak) return;
-    const content = String(text || '').trim();
-    if (!content) return;
-    const lang = this.voiceLang();
-    tts.prefetch(content, lang.tts);
-    // 落后太多说明播放追不上识别：丢最旧的，别让耳朵追几分钟前的话
-    if (this._speechQueue.length >= VOICE_SPEECH_MAX) this._speechQueue.shift();
-    this._speechQueue.push({ text: content, lang: lang.tts });
-    this.drainVoiceSpeech();
-  },
-
-  // 串行播：同一时刻只有一句在响，避免两句叠在一起听不清
-  drainVoiceSpeech() {
-    if (this._speaking || this._unloaded) return;
-    const next = this._speechQueue.shift();
-    if (!next) return;
-    this._speaking = true;
-    tts.speak(next.text, next.lang).then(() => {
-      this._speaking = false;
-      if (!this._unloaded) this.drainVoiceSpeech();
-    });
-  },
-
-  stopVoiceSpeech() {
-    if (this._speechQueue) this._speechQueue.length = 0;
-    tts.stop();
-  },
-
-  onVoiceToggleSpeak() {
-    const on = !this.data.voiceSpeak;
-    this.setData({ voiceSpeak: on });
-    // 关掉播报要立刻静音：队列里排着的也别再出声
-    if (!on) this.stopVoiceSpeech();
-  },
-
-  // 方向只在没在录、也没有待发终稿时能切：切了以后识别语言和译文都对不上
-  onVoiceSwapDir() {
-    if (this._recording || this.data.voiceHolding) {
-      this.toast('先发送或取消这一次');
-      return;
-    }
-    const next = this.data.voiceDir === 'zh2en' ? 'en2zh' : 'zh2en';
-    this.resetVoiceTranslate();
-    this.stopVoiceSpeech();
-    this.setData({
-      voiceDir: next,
-      voiceLangLabel: VOICE_LANGS[next].label,
-      voiceDst: '',
-      voiceTranslating: false,
-      voiceDstFailed: false
-    });
-  },
-
-  /* ===== 同传：发送（发原文，译文只做展示与播报）===== */
+  /* ===== 语音输入：发送 ===== */
 
   sendVoiceText(text) {
     // 上一轮还没答完：不吞掉这句话，落到输入框并切回键盘，让用户自己决定何时发
@@ -1455,7 +1246,6 @@ Page({
     this._heldVoiceText = '';
     this.setData({ voiceHolding: false, voiceTip: VOICE_TIP_IDLE });
     this.clearVoiceText();
-    this.stopVoiceSpeech();
     if (!text) return;
     this.sendVoiceText(text);
   },

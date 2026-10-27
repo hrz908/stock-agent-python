@@ -648,7 +648,9 @@
   50% { height: 28rpx; opacity: 1; }
 }
 
-/* 实时转写：最多三行，超出省略。空串时由 JS 给「请说话…」占位 */
+/* 实时转写：最多三行。JS 只喂最新的一截（见 VOICE_TEXT_TAIL），
+   所以这里裁掉的只是更早的字，不会把「刚说的话」藏起来。
+   空串时由 JS 给「请说话…」占位 */
 .voice-panel-text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -671,57 +673,6 @@
   height: var(--space-sm);
   border-radius: var(--radius-round);
   background: var(--text-disabled);
-}
-
-/* 同传方向：可点的小胶囊，点一下中英互换 */
-.voice-panel-lang {
-  flex: none;
-  padding: var(--space-xxs) var(--space-sm);
-  border: var(--hairline);
-  border-radius: var(--radius-round);
-  font-size: var(--font-xs);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-/* 播报开关：图标键，开启时提亮到正文字色；关闭态不能点出声 */
-.voice-panel-speak {
-  flex: none;
-  width: 72rpx;
-  height: 72rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-round);
-  color: var(--text-disabled);
-}
-
-.voice-panel-speak--on {
-  color: var(--text-primary);
-}
-
-/* 译文：与原文用虚线分开，字号小一档、颜色弱一档，最多三行 */
-.voice-panel-dst {
-  margin-top: var(--space-sm);
-  padding-top: var(--space-sm);
-  border-top: var(--hairline-dashed);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  font-size: var(--font-sm);
-  line-height: 1.6;
-  color: var(--text-secondary);
-  word-break: break-word;
-}
-
-.voice-panel-dst-wait {
-  color: var(--text-hint);
-}
-
-/* 失败提示用警告色：这是「为什么慢」的唯一可见线索（插件限流只表现为变慢） */
-.voice-panel-dst-fail {
-  color: var(--warning);
 }
 
 @keyframes voice-live-in {
@@ -956,14 +907,18 @@
 }
 
 /* 四个导航键：底色与抽屉底同一个令牌（base-popup 左抽屉也是 --bg-disabled），
-   两块看起来是一整片；不做白卡、不加投影——抽屉里只有历史会话行还是白卡 */
+   两块看起来是一整片；不做白卡、不加投影——抽屉里只有历史会话行还是白卡。
+   热区一路铺到抽屉两侧边缘：左右各吃掉 .drawer-nav 的 24rpx 内边距，
+   再用等量内边距（24+16=40）把文字与箭头留在原位，视觉上分毫不动 */
 .drawer-item {
   display: flex;
   align-items: center;
   gap: var(--space-md);
   min-height: 96rpx;
   margin-bottom: var(--space-xs);
-  padding: 0 var(--space-md);
+  margin-left: calc(-1 * var(--space-lg));
+  margin-right: calc(-1 * var(--space-lg));
+  padding: 0 calc(var(--space-lg) + var(--space-md));
   background: var(--bg-disabled);
   border-radius: var(--radius-sm);
 }

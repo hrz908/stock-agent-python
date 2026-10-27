@@ -159,24 +159,12 @@ function createChatPage(opts) {
 
   const modules = {
     '../../services/agent': { default: agent },
-    // 语音识别的替身：本套用例不触发录音，只保证模块导入时能取到三个动作
+    // 语音识别的替身：本套用例不触发录音，只保证模块导入时能取到这些动作
     '../../services/asr': {
       startRecognize: noop,
       stopRecognize: noop,
-      abortRecognize: noop
-    },
-    // 同传链路（翻译 / 播报 / 片段切分）：本套用例不触发语音输入，给最小替身
-    '../../services/translate': {
-      translate: () => Promise.resolve('')
-    },
-    '../../services/tts': {
-      prefetch: noop,
-      speak: () => Promise.resolve(),
-      stop: noop,
-      release: noop
-    },
-    '../../utils/segment': {
-      takeStableSegment: () => null
+      abortRecognize: noop,
+      warmupRecognize: noop
     },
     '../../services/sessions': {
       listSessions: () => {

@@ -1,11 +1,10 @@
 /**
- * 聊天页语音态（同声传译）的交互测试。
+ * 聊天页语音输入（语音转文字）的交互测试。
  *
  * 锁的是「什么时候发、什么时候只是停」这条最容易回归的分支：
- *   - 手动点停 = 立即发送原文
- *   - 静音自动停 = 终稿停在面板上，再点一次才发
- *   - 取消 = 原文与译文都丢弃
- *   - 聆听中不许切方向（切了识别语言和译文会对不上）
+ *   - 手动点停 = 立即发送识别出的文字
+ *   - 静音自动停 = 文字停在面板上，再点一次才发
+ *   - 取消 = 直接丢弃
  *
  * 运行：npm run test:voicechat
  */
@@ -38,6 +37,16 @@ test('手动点停：终稿直接发出，面板收起', () => {
   assert.strictEqual(page.data.voiceText, '');
 });
 
+test('长句中间结果：面板只显示最新一截（以刚说的话为准）', () => {
+  const { page } = setup();
+  page.startRecord();
+
+  page.onVoicePartial('一'.repeat(60) + '这句话是最新的');
+  assert.ok(page.data.voiceText.indexOf('这句话是最新的') !== -1, '最新的话必须看得见');
+  assert.ok(page.data.voiceText.length <= 45, '只保留最新一截，不把整段塞进三行框');
+  assert.strictEqual(page.data.voiceText.charAt(0), '…', '被截断时要有省略号');
+});
+
 test('静音自动停：只停在面板上，不发送；再点一次才发', () => {
   const { page, sent } = setup();
   page.startRecord();
@@ -63,7 +72,7 @@ test('待发态点发送键：同样发出终稿', () => {
   assert.strictEqual(page.data.voiceHolding, false);
 });
 
-test('取消：丢弃终稿与译文，不发送', () => {
+test('取消：丢弃终稿，不发送', () => {
   const { page, sent } = setup();
   page.startRecord();
   page.onVoiceStop({ text: '不该发出去', duration: 2000 });
@@ -72,27 +81,24 @@ test('取消：丢弃终稿与译文，不发送', () => {
   assert.deepStrictEqual(sent, []);
   assert.strictEqual(page.data.voiceHolding, false);
   assert.strictEqual(page.data.voiceText, '');
-  assert.strictEqual(page.data.voiceDst, '');
 });
 
-test('方向：聆听中不允许切换，空闲时可切并同步文案', () => {
-  const { page, calls } = setup();
+test('切回键盘：待发终稿一并丢弃，不误发', () => {
+  const { page, sent } = setup();
   page.startRecord();
-  page.onVoiceSwapDir();
-  assert.strictEqual(page.data.voiceDir, 'zh2en', '聆听中不应改方向');
-  assert.ok(calls.toast.indexOf('先发送或取消这一次') !== -1, '要给出不能切的原因');
+  page.onVoiceStop({ text: '别发这句', duration: 2000 });
 
-  page.onVoiceCancel();
-  page.onVoiceSwapDir();
-  assert.strictEqual(page.data.voiceDir, 'en2zh');
-  assert.strictEqual(page.data.voiceLangLabel, 'EN → 中');
+  page.onToggleInputMode();
+  assert.strictEqual(page.data.voiceMode, false);
+  assert.strictEqual(page.data.voiceHolding, false);
+  assert.deepStrictEqual(sent, []);
 });
 
 // ---------- 运行 ----------
 (async () => {
   let passed = 0;
   const failures = [];
-  console.log('\n[语音同传] 页面交互测试');
+  console.log('\n[语音转写] 页面交互测试');
   for (const c of cases) {
     try {
       await c.fn();

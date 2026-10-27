@@ -3,12 +3,14 @@
 // 前提有两步：小程序后台添加插件、app.json 的 plugins 里声明 provider（wx069ba97219f66d99）。
 // 管理器是插件级单例，回调只能属性赋值（manager.onStop = fn），
 // 而对话页允许压栈多个实例，所以这里统一接一次回调再分发给「当前会话」，
-// 页面只拿 start / stop / abort 三个动作。
+// 页面只拿 start / stop / abort / warmup 四个动作。
 const PLUGIN_ID = 'WechatSI';
 // 停录后等插件回调的兜底时限：插件异常时不回 onStop，
-// 不清会话会让之后每次录音都卡在排队里（表现为按住完全没反应）。
-// 不能给太短：长录音的终稿往往要几秒才回来，2s 会把正常识别误判成超时
+// 不清会话会让之后每次录音都卡在排队里（表现为点了麦克风完全没反应）。
+// 不能给太短：长录音的终稿往往要几秒才回来，2s 会把正常识别误判成超时。
+// 但一句都没识别出来时没有终稿要等，这时用短的一档，别让人对着「正在转写…」干等
 const STALE_RESET_MS = 6000;
+const STALE_RESET_QUICK_MS = 2500;
 
 let manager = null;
 let current = null; // 正在进行的识别会话
@@ -32,6 +34,8 @@ function clearReset() {
 
 function scheduleReset() {
   clearReset();
+  // 有中间结果 = 有终稿要等，给足时间；一个字都没出 = 多半是误触，快速收尾
+  const wait = current && current.heard ? STALE_RESET_MS : STALE_RESET_QUICK_MS;
   resetTimer = setTimeout(() => {
     resetTimer = 0;
     const s = current;
@@ -42,7 +46,7 @@ function scheduleReset() {
     // 取消过的不通知（页面已复位）；排队中的会话也要给个失败回调，否则视图停在录音态
     if (s && !s.aborted) s.onError('识别超时');
     if (p) p.handlers.onError('识别超时');
-  }, STALE_RESET_MS);
+  }, wait);
 }
 
 /* ===== 静音自动收尾 =====
@@ -192,4 +196,13 @@ export function abortRecognize() {
   scheduleReset();
 }
 
-export default { startRecognize, stopRecognize, abortRecognize };
+// 预热：requirePlugin + getRecordRecognitionManager 首次调用有初始化开销，
+// 页面上把这一步挪到「切到语音态」时做，别占按下麦克风的那一下
+export function warmupRecognize() {
+  try {
+    ensureManager();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}

@@ -139,8 +139,8 @@
        手势起点标记用 bind 而不是 catch：catch 会让子元素的点击全部失效，
        这里改成「起点在输入栏」的信号，由 onSwipeStart 判断后锁掉抽屉手势 -->
   <view class="sender-wrap" style="padding-bottom: {{senderPadBottom}}px; bottom: {{keyboardOffset}}px;" bindtouchstart="onSenderTouchStart" bindtouchend="onSenderTouchEnd" bindtouchcancel="onSenderTouchEnd">
-    <!-- 同传面板：点一下语音键后弹出，边说边出原文与译文，再点一下把原文发给 agent。
-         静音自动停录后面板不消失，转成「已停录」待发送态。
+    <!-- 预输入文字框：点一下语音键后弹出，边说边出字；静音自动停录后不消失，
+         转成「已停录」待发送态。再点一下语音键（或点发送键）把文字发给 agent。
          绝对定位（bottom:100%），不参与布局，不会挤压对话区 -->
     <view wx:if="{{recording || voiceHolding}}" class="voice-panel">
       <view class="voice-panel-hd">
@@ -150,28 +150,12 @@
           <view class="voice-wave-bar"></view>
         </view>
         <view wx:else class="voice-hold-dot"></view>
-        <text class="voice-panel-tip">{{recording ? '实时同传' : '已停录'}}</text>
-        <!-- 方向：切了以后识别语言、译文与播报音色一起换 -->
-        <view class="voice-panel-lang" catchtap="onVoiceSwapDir" aria-label="切换同传方向">{{voiceLangLabel}}</view>
-        <!-- 播报开关：默认开，公共场合可一键静音 -->
-        <view
-          class="voice-panel-speak {{voiceSpeak ? 'voice-panel-speak--on' : ''}}"
-          catchtap="onVoiceToggleSpeak"
-          aria-label="切换译文播报"
-        >
-          <base-icon type="AudioOutline" style="font-size:var(--icon-xs);" />
-        </view>
-        <!-- 误点了想收回：立刻丢弃这次识别与译文，不发出 -->
+        <text class="voice-panel-tip">{{recording ? '实时转写' : '已停录'}}</text>
+        <!-- 误点了想收回：立刻丢弃这次识别，不发出 -->
         <view class="voice-panel-cancel" catchtap="onVoiceCancel">取消</view>
       </view>
       <view class="voice-panel-text {{voiceText ? '' : 'voice-panel-text--empty'}}">
         {{voiceText || '请说话…'}}
-      </view>
-      <!-- 译文：逐段补齐；失败时给一句能解释「为什么慢」的提示（多半是接口限流） -->
-      <view wx:if="{{voiceDst || voiceTranslating || voiceDstFailed}}" class="voice-panel-dst">
-        <text wx:if="{{voiceDst}}">{{voiceDst}}</text>
-        <text wx:if="{{voiceTranslating}}" class="voice-panel-dst-wait">{{voiceDst ? ' …' : '翻译中…'}}</text>
-        <text wx:elif="{{voiceDstFailed && !voiceDst}}" class="voice-panel-dst-fail">翻译暂不可用，可能已触发接口限流</text>
       </view>
     </view>
     <view class="sender-bar">
