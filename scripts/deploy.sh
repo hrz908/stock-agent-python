@@ -70,6 +70,20 @@ compose() {
     docker compose --env-file "$DEPLOY_DIR/deploy/.env" -f "$COMPOSE_FILE" "${args[@]}" "$@"
 }
 
+# 采集镜像在 ashare profile 下：compose up 只处理默认服务，不会构建它。
+# 漏了这一步，改完采集代码 deploy 完镜像还是旧的，定时任务继续按旧代码跑，
+# 表现和「更新成功但功能没变」一样，极难排查。
+# 构建失败只告警：采集是旁路任务，不能因为它挡住主服务上线。
+build_ashare_image() {
+    log "构建采集镜像（ashare profile）..."
+    if ! compose --profile ashare build ashare; then
+        warn "ashare 镜像构建失败：定时采集会继续用旧镜像。修好后单独执行："
+        warn "  cd $DEPLOY_DIR/deploy && sudo docker compose --profile ashare build ashare"
+        return 0
+    fi
+    log "采集镜像已更新：deploy-ashare:latest"
+}
+
 # ---------------------------------------------------------------- swap
 # 4 vCPU / 3GB 内存同时跑 postgres + redis + Go + Python：没有任何余量，
 # 一次 embedding 或大查询抖动就 OOM 杀进程，表现为「容器莫名重启」而没有日志。
@@ -238,6 +252,7 @@ cmd_deploy() {
     log "构建并启动全部服务（首次约 5-15 分钟，主要在拉镜像和 pip 装依赖）..."
     cd "$DEPLOY_DIR/deploy"
     compose up -d --build
+    build_ashare_image
 
     # 单进程启动要等 agent 预热完（实测 2026-10-27：建表 0s → bridge ready 128s，
     # 主要是 akshare/baostock 取数工具热身 + 图与 tokenizer 预热）。
@@ -302,6 +317,8 @@ cmd_update() {
     log "重建并重启..."
     cd "$DEPLOY_DIR/deploy"
     compose up -d --build
+    # 采集镜像不在默认 profile 里，必须单独构建；放 prune 之前，旧层一次性清掉
+    build_ashare_image
     docker image prune -f
 
     log "更新完成。状态：sudo bash scripts/deploy.sh ps"
