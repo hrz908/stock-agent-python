@@ -14,7 +14,7 @@ httpx>=0.27.0
 tiktoken>=0.7.0
 # ===== 行情数据源（卡片数据，2026-10-23 起替代 Tushare REST）=====
 # akshare：东财/新浪公开接口（估值/资金流/财报/资讯/龙虎榜），免 token
-akshare>=1.17.0
+akshare>=1.20.0
 # baostock：历史日 K（自带复权），免 token；同步库，经线程池+锁串行调用
 baostock>=0.8.9
 # 两者共同依赖，显式声明锁定下限
