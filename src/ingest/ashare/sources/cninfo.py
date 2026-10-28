@@ -100,9 +100,11 @@ class CninfoAnnouncement(BaseSource):
                 cached = {}
         try:
             data = self.http.get_json(ORG_URL, headers={"Referer": "https://www.cninfo.com.cn/"})
+            # 接口实际返回 {"stockList": [...]}，直接当列表迭代会得到空结果且不报错
+            items = data.get("stockList") if isinstance(data, dict) else data
             orgs = {
                 str(item["code"]).zfill(6): str(item["orgId"])
-                for item in (data or [])
+                for item in (items or [])
                 if isinstance(item, dict) and item.get("code") and item.get("orgId")
             }
             if orgs:
