@@ -2,6 +2,7 @@
 // （选股 / 触发条件 / 阈值 / 基准周期 / 检查频率）。
 // 选股的模糊搜索直接复用 services/stock.js，与添加自选股是同一套接口和结果
 import { get, post, put, del } from '../utils/request';
+import { stockName } from '../utils/format';
 
 const API = '/api/v1';
 
@@ -54,11 +55,13 @@ export const THRESHOLD_CONFIG = {
   volume: { unit: '倍', placeholder: '如 1.5', min: 0.1, max: 100, maxText: '100' }
 };
 
-// 后端列表项 -> 页面渲染字段（下划线转驼峰，缺字段给默认值）
+// 后端列表项 -> 页面渲染字段（下划线转驼峰，缺字段给默认值）。
+// 股票名统一过 stockName：老数据里存的是行情源的补位写法（"万  科Ａ"），
+// 不去空白渲染出来字与字之间就有空格
 function toViewItem(item) {
   return {
     id: item.id,
-    name: item.stock_name || '',
+    name: stockName(item.stock_name || ''),
     code: item.stock_code || '',
     conditionType: CONDITION_FROM_API[item.condition_type] || item.condition_type,
     threshold: item.threshold,

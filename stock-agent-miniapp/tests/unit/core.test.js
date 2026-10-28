@@ -55,6 +55,15 @@ test('direction：>0 up / <0 down / 0 与空 flat', () => {
   assert.strictEqual(fmt.direction(null), 'flat');
 });
 
+test('stockName：去掉行情源补的空白，全角 ASCII 转半角', () => {
+  // 腾讯行情源原样："万  科Ａ"（补位空格 + 全角 A）
+  assert.strictEqual(fmt.stockName('万  科Ａ'), '万科A');
+  assert.strictEqual(fmt.stockName('平安银行'), '平安银行');
+  assert.strictEqual(fmt.stockName('ＴＣＬ科技'), 'TCL科技');
+  assert.strictEqual(fmt.stockName(null), '');
+  assert.strictEqual(fmt.stockName(undefined), '');
+});
+
 /* ===================== utils/markdown ===================== */
 const md = loadModule(path.join(ROOT, 'utils', 'markdown.js'), {
   marked: require('marked')
@@ -291,7 +300,9 @@ test('agent：null 数据不会让页面侧取字段时抛错', () => {
 
 /* ===================== pages/chat/cards 映射 ===================== */
 const cards = loadModule(path.join(ROOT, 'pages', 'chat', 'cards.js'), {
-  '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] }
+  '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] },
+  // 股票名清洗用真实实现（纯函数），与页面同一份规则
+  '../../utils/format': fmt
 });
 
 test('cards.quoteCard：字符串数字转 number，成交额万元→元', () => {

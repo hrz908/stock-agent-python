@@ -68,5 +68,25 @@ function direction(v) {
   return n > 0 ? 'up' : 'down';
 }
 
+// 股票名清洗：行情源（腾讯）按固定宽度给名字补空格，A 股名里还常带全角字母——
+// "万  科Ａ" 直接渲染就是「万科 Ａ」，中间凭空多出一个空格、字母还比中文宽一号。
+// 展示前去掉全部空白（\s 已含全角空格 U+3000），并把全角 ASCII 转回半角。
+// 名称只用于展示，不参与任何匹配 / 存储键，转换是安全的
+function stockName(v) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/\s+/g, '')
+    .replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+}
+
 // 全项目统一 ESM：页面、服务、组件一律 import，不再混用 require/module.exports
-export { toNum, fmtNum, fmtSign, fmtPct, fmtPctPlain, fmtAmount, fmtPrice, direction };
+export {
+  toNum,
+  fmtNum,
+  fmtSign,
+  fmtPct,
+  fmtPctPlain,
+  fmtAmount,
+  fmtPrice,
+  direction,
+  stockName
+};

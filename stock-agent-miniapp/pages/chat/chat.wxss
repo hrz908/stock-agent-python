@@ -710,10 +710,16 @@
 
 /* 占位文案：与输入文字同档。
    原先写在 textarea 的 placeholder-style 行内（36rpx），既不跟「字体大小」设置，
-   又比正文大 6rpx；改成 class 与全站其他输入框（.form-input-placeholder）一致 */
+   又比正文大 6rpx；改成 class 与全站其他输入框（.form-input-placeholder）一致。
+
+   line-height 必须显式写：原生 textarea 的占位符不继承输入区的行高，
+   各端退回自己的默认值（约 1.2 倍），单行占位符就贴不上垂直中线——
+   「问点什么…」看起来偏上。这里与 .bar-input 的 52rpx 保持一致，
+   占位符和真正输入的文字落在同一条基线上 */
 .bar-input-placeholder {
   color: var(--text-hint);
   font-size: var(--font-base);
+  line-height: 52rpx;
 }
 
 /* 语音键：和输入区同占中间剩余宽度。两态都在同一条白底输入栏里，

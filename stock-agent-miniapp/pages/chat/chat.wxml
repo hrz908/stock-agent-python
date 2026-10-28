@@ -198,7 +198,8 @@
     <view class="drawer-body" style="padding-top: {{drawerTop}}px; padding-bottom: {{padBottom}}px;">
       <!-- 品牌头部 -->
       <view class="drawer-head">
-        <image class="drawer-logo" src="/assets/logo-bull.png" mode="aspectFill" />
+        <!-- 头像：油画牛（2026-10-28 按需求从原 logo 换成这张，源图 1080px 压到 320px / 21KB） -->
+        <image class="drawer-logo" src="/assets/avatar-bull.jpg" mode="aspectFill" />
         <view class="drawer-title-col">
           <view class="drawer-title">溜来</view>
           <!-- 副标题原来是「AI 溜来」，和标题重复；换成实际定位 -->
@@ -244,7 +245,8 @@
         <!-- 内层 88rpx 与输入栏的 .bar-btn 同高，外层内边距与描边也照抄 .sender-bar，
              两个盒子用同一个公式算高度，不会因 rpx 换算差半像素 -->
         <view class="drawer-new-inner">
-          <base-icon wx:if="{{!newChatting}}" type="ChatAddOutline" style="font-size:var(--icon-sm);" />
+          <!-- 颜色与全站其它 base-icon 一致，显式写 var(--text-primary)，不靠继承 -->
+          <base-icon wx:if="{{!newChatting}}" type="ChatAddOutline" style="font-size:var(--icon-sm);color:var(--text-primary);" />
           <view wx:else class="drawer-new-spinner" />
           <text class="drawer-new-text">{{newChatting ? '创建中…' : '新对话'}}</text>
         </view>

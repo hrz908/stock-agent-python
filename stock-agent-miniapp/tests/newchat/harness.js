@@ -19,6 +19,7 @@ const { loadModule } = require('../unit/loader');
 const ROOT = path.resolve(__dirname, '..', '..');
 const CHAT_JS = path.join(ROOT, 'pages', 'chat', 'chat.js');
 const CARDS_JS = path.join(ROOT, 'pages', 'chat', 'cards.js');
+const FORMAT_JS = path.join(ROOT, 'utils', 'format.js');
 
 // ESM -> CJS：只处理 chat.js 的顶层 import（默认 / 命名 / 命名空间三种形态）。
 // 必须锚到行首且限定子句字符集：文件顶部的注释里出现过
@@ -228,7 +229,9 @@ function createChatPage(opts) {
     // 卡片映射用真实实现（纯函数，无 wx 依赖）：替身一旦与实现漂移，
     // 「历史会话渲染出几条消息」这类断言就失去意义
     './cards': loadModule(CARDS_JS, {
-      '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] }
+      '../../utils/markdown': { parseMarkdown: (t) => [{ type: 'text', text: t }] },
+      // 股票名清洗用真实实现：与页面同一份规则，替身漂移会让断言失去意义
+      '../../utils/format': loadModule(FORMAT_JS)
     }),
     // 登录：sendText 会先 await 一次 ensureLogin（冷启动无 token 时不空手发 SSE），
     // 这里永远给一个可用 token

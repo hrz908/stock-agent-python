@@ -152,9 +152,11 @@
   font-weight: 400;
 }
 
-/* 确认键：强调色收口里唯一的按键用法（黛青字），与取消键同描边、加字重 */
+/* 确认键：与取消键同描边，主次只靠字色与字重。
+   2026-10-28 起确认文字走正文墨色 --text-primary，
+   不再用强调蓝——弹窗里「确定 / 保存」属于正文级文案，不该是链接色 */
 .popup-btn--confirm {
-  color: var(--primary);
+  color: var(--text-primary);
   font-weight: var(--fw-medium);
 }
 

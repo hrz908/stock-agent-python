@@ -36,8 +36,10 @@ hex / rgba 只许出现在 `styles/token.wxss` 的令牌块里。
 | `--flat` | `var(--text-hint)` | 平 |
 
 **强调色收口**：全站只允许一个强调色 `--primary: #2363C7`（冷蓝），且仅用于
-**品牌签名 / 链接 / 焦点**（`md-link`、`nickname-link`、`src-link`、`evt-src`、弹窗确认文字）。
+**品牌签名 / 链接 / 焦点**（`md-link`、`nickname-link`、`src-link`、`evt-src`）。
 冷蓝与正文近黑是不同色相，链接不用下划线也认得出；但它不进正文、不做大面积底色。
+弹窗的「确定 / 保存」（`.popup-btn--confirm`）2026-10-28 起改走正文墨色
+`--text-primary` + 500 字重，不再用强调蓝——它属于正文级按键文案，不是链接。
 **按键与选中态都不用底色**：描边全站只有一个规格 `--hairline`（和输入框同一套），
 主次只靠字色与字重。用户提问是一块 `--bg-disabled` 浅底小块（唯一的浅底块，
 因为它是每轮都出现的内容块，不是按键）。强调色不做大面积底色、不做标签底、不做选中底。
@@ -59,11 +61,22 @@ hex / rgba 只许出现在 `styles/token.wxss` 的令牌块里。
 
 **2026-10-22 晚用户最终决策：只保留浅色，「太暗了」。** 当天曾短暂整站切到
 shadcn dark 并截图验收，随后改回浅色，以本文件为准。
-原先 `token.wxss` 里的 `page.dark` 变量块已删除，避免死代码误导。
-如将来重启深色课题：从 `style/shadcn` 分支历史取回变量，并先解决每个页面
-根节点 `theme` class 的注入方式（列表：chat / watchlist / alerts / settings +
-分包 kline）—— 不注入 class 变量不会生效；同时 `app.json` 窗口底色与
-canvas 侧 5 个 JS 文件的配色都要同步，只改一半会出现「页面浅、图表深」。
+
+**2026-10-28 又试了一版**（设置页开关 + `.page.theme--dark` 变量块 + `utils/theme.js`
++ JS 侧调色板 + 运行时窗口配色），当天按用户要求「完全移除深色模式」整块回退：
+`utils/theme.js` 已删、页面根节点的 `themeClass`、窗口配色调用、图表主题取色全部撤销。
+后续不要再从工作区残留找这套代码，一律以本文件为准。
+
+如将来重启深色课题，先解决三件事再动手：
+1. 每个页面根节点 `theme` class 的注入方式（chat / watchlist / alerts / settings + 分包 kline）
+   —— 不注入 class 变量不会生效；
+2. `app.json` 的 `window.backgroundColor` 是静态的，原生页面底色 / 转场 / 下拉回弹
+   需要在**每页 onShow** 用 `wx.setBackgroundColor` + `wx.setNavigationBarColor` 接管，
+   只在启动和切换时刷一次，从子页返回会在页面边缘闪白；
+3. JS 侧色值镜像（`utils/color.js`，K 线 / 迷你走势线的 SVG 颜色在编码时固化）
+   必须与 `token.wxss` 同改，图表还要在主题变化后重新出图，否则「页面深、图表浅」。
+另外：系统级 `darkmode: true` + `theme.json` 跟随的是系统主题，与应用内开关是两套机制，
+不能用来实现「用户自己选深色」。
 
 ## 字号
 
@@ -334,7 +347,13 @@ canvas 侧 5 个 JS 文件的配色都要同步，只改一半会出现「页面
    禁 `@media` / `rem` / `vh` / `vw`、单位统一 rpx（安全区对齐处除外）。
 4. **涨跌语义类**：涨跌平一律用 `.price-up` / `.price-down` / `.price-flat`，
    不要再按 `--up` / `--down` 逐处写 color。
-5. **输入栏的语音态**（chat）：输入栏不做整条变色，因此**不要**再引入
+5. **股票名一律去空白**：行情源（腾讯）会把名字按固定宽度补空格并混用全角字母
+   （`万  科Ａ`）。任何展示股票名的位置都必须先过 `utils/format.js` 的
+   `stockName()`（去全部空白 + 全角 ASCII 转半角）；接入点在接口层
+   （`services/stock.js` / `alert.js` / `quickAsk.js`）与 `pages/chat/cards.js`，
+   页面层不要再写第二套清洗。后端存量的 `stock_name` 仍可能是脏的，
+   所以渲染前清洗是必须的，不是可选项。
+6. **输入栏的语音态**（chat）：输入栏不做整条变色，因此**不要**再引入
    `.sender-bar::after` 那类全宽扫入层——它同色系叠在文字上会让「按住说话 / 聆听中」
    整片消失，且逼出一串 z-index 补丁。换内容（文字 + 图标）而不是换底色。
    左端模式键的两态内容**常驻 DOM**、用 opacity 交叉淡入（`wx:if` 换节点是销毁重建，

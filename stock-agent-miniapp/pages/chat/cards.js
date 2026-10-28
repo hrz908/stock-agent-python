@@ -9,6 +9,7 @@
 //   纯文本 { role, status:'complete', content:[{ type, data }], blocks? }
 //   卡片   { role, status:'complete', card:'quote'|..., content:[], <cardKey>: {...} }
 import { parseMarkdown } from '../../utils/markdown';
+import { stockName } from '../../utils/format';
 
 // ===== 基础消息 =====
 function assistantMsg(data) {
@@ -101,7 +102,8 @@ function quoteCard(q) {
     card: 'quote',
     content: [],
     quote: {
-      name: q.name,
+      // 名称统一过 stockName：工具返回的名字来自行情源，可能带补位空格 / 全角字母
+      name: stockName(q.name),
       code: q.code,
       status: statusTextOf(q.status),
       price: numOrNull(q.price),
@@ -171,7 +173,7 @@ function klineCard(rows, meta) {
     // 支撑 / 压力取区间内的最低 / 最高价（区间极值，不是预测位）
     klineSupport: lows.length ? Math.min.apply(null, lows) : null,
     klineResistance: highs.length ? Math.max.apply(null, highs) : null,
-    klineName: (meta && meta.name) || '',
+    klineName: stockName(meta && meta.name),
     klineCode: (meta && meta.code) || '',
     // 副标题按实际渲染的根数走：被截断时如实标出
     klineSub: '最近 ' + klines.length + ' 个交易日 · 前复权' + (all.length > klines.length ? '（共 ' + all.length + ' 根）' : ''),
@@ -253,7 +255,10 @@ function fundflowCard(payload) {
 // 同业对比卡：get_peer_compare 载荷 { items, ts_code }，维度全是当日快照
 function compareCard(payload) {
   const items = Array.isArray(payload && payload.items) ? payload.items : [];
-  const usable = items.filter((it) => it && it.name && !it.error);
+  // 名称同样先清洗，卡片表头不带补位空格
+  const usable = items
+    .filter((it) => it && it.name && !it.error)
+    .map((it) => Object.assign({}, it, { name: stockName(it.name) }));
   if (usable.length < 2) return null; // 对比至少要有两个标的，组件按空卡降级
   return {
     role: 'assistant',

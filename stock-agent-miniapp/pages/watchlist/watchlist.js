@@ -2,6 +2,7 @@ import * as api from '../../services/watchlist';
 import * as stockApi from '../../services/stock';
 import { isDev } from '../../config';
 import { fontScalePatch } from '../../utils/font-scale';
+import { stockName } from '../../utils/format';
 
 const FILTERS = [
   { key: 'all', label: '全部' },
@@ -27,12 +28,14 @@ function marketOf(code) {
 
 // 后端返回的列表项 → 页面渲染字段。
 // 价格与涨跌幅直接用后端格式化好的 *_text（千分位 / 正负号），
-// 前端不再自行拼装，避免两套格式对不上
+// 前端不再自行拼装，避免两套格式对不上。
+// 名称必须过一遍 stockName：行情源原样是「万  科Ａ」，不去空白就会在
+// 万科与 A 之间露一个空格（见 utils/format.js）
 function toViewItem(item) {
   return {
     id: item.id,
     stockCode: item.stock_code,
-    name: item.name,
+    name: stockName(item.name),
     code: item.code,
     price: item.price_text,
     pct: item.pct_text,
