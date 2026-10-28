@@ -3,11 +3,18 @@
 选巨潮而非东财公告列表的原因：东财列表只给详情页 HTML，正文还得再猜一次内嵌；
 巨潮的 hisAnnouncement/query 直接返回 adjunctUrl，拼接即得 static.cninfo.com.cn 上的 PDF，
 少一层解析就少一类失败。
+
+按股票过滤而不是翻全市场：不带 stock 参数时一次查询翻的是全市场公告（年报季单窗口
+几百页），既慢又脆——翻页中途返回空页就静默截断，实测 500 只回填漏掉 3/4 的年报。
+带上「code,orgId」后每批只回这几家公司的公告，一页打完，orgId 来自巨潮自带的代码表。
 """
+import json
 import logging
 import re
+import time
 from collections.abc import Iterable
 from datetime import datetime
+from pathlib import Path
 
 from ingest.ashare import clean, config
 from ingest.ashare.net import HttpClient
@@ -19,7 +26,12 @@ logger = logging.getLogger(__name__)
 
 QUERY_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 PDF_BASE = "https://static.cninfo.com.cn/"
+ORG_URL = "https://www.cninfo.com.cn/new/data/szse_stock.json"
 _CODE_RE = re.compile(r"^\d{6}$")
+_PAGE_SIZE = 30
+# 单批塞多少只股票：8 只 × 明文(年报+一季报+英文版+摘要) ≈ 30 条，基本一页打完
+_BATCH_SIZE = 8
+_ORG_TTL = 7 * 24 * 3600
 
 # 定期报告在巨潮上会拆成中文版、英文版、摘要、更正版多份：
 # 「贵州茅台2024年年度报告(英文版)」实测 1398 个向量块，是中文正文的三倍多，
@@ -48,14 +60,15 @@ class CninfoAnnouncement(BaseSource):
         # 分类过滤能少翻一个数量级的公告：五年回填不筛分类，光列表就要翻 200 多万条
         self.categories = config.CNINFO_CATEGORIES.strip()
 
-    def _query(self, page: int, se_date: str) -> dict:
+    def _query(self, page: int, se_date: str, stock: str = "") -> dict:
         data = {
             "pageNum": page,
-            "pageSize": 30,
+            "pageSize": _PAGE_SIZE,
             "column": config.CNINFO_COLUMN,
             "tabName": "fulltext",
             "plate": "",
-            "stock": "",
+            # 形如「600519,gssh0600519;000001,gssz0000001」：有它才是服务端按股票过滤
+            "stock": stock,
             "searchkey": "",
             "secid": "",
             "category": self.categories,
@@ -70,6 +83,62 @@ class CninfoAnnouncement(BaseSource):
             raise RuntimeError(f"巨潮返回结构异常：{type(payload)}")
         return payload
 
+    def _org_map(self) -> dict[str, str]:
+        """代码 -> 巨潮 orgId（stock 参数必须要它），带 7 天本地缓存。
+
+        取不到时返回空字典，调用方退化成「不带 stock 的全市场翻页」——慢但不会漏采。
+        """
+        path = Path(config.DATA_DIR) / "cninfo_orgs.json"
+        cached: dict[str, str] = {}
+        if path.exists():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                cached = {str(k): str(v) for k, v in (payload.get("orgs") or {}).items()}
+                if cached and time.time() - float(payload.get("ts", 0)) < _ORG_TTL:
+                    return cached
+            except (ValueError, OSError):
+                cached = {}
+        try:
+            data = self.http.get_json(ORG_URL, headers={"Referer": "https://www.cninfo.com.cn/"})
+            orgs = {
+                str(item["code"]).zfill(6): str(item["orgId"])
+                for item in (data or [])
+                if isinstance(item, dict) and item.get("code") and item.get("orgId")
+            }
+            if orgs:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix(".tmp")
+                tmp.write_text(json.dumps({"ts": time.time(), "orgs": orgs}, ensure_ascii=False),
+                               encoding="utf-8")
+                tmp.replace(path)
+                logger.info("巨潮代码表已刷新：%d 条 orgId", len(orgs))
+                return orgs
+        except Exception as exc:  # noqa: BLE001 - 拿不到就退回全市场翻页
+            logger.warning("巨潮 orgId 表获取失败，退化为全市场翻页：%s", exc)
+        return cached
+
+    def _stock_batches(self, code_filter: set[str] | None) -> list[str]:
+        """把股票列表切成若干批 stock 参数。
+
+        不带 stock 时一次查询翻的是**全市场**：年报季单窗口几百页、十几分钟，
+        翻页一断就静默少采一批（实测 500 只回填漏掉 3/4 的年报）。
+        带上 code+orgId 后每批只回这一批公司的定期报告，一页就完。
+        """
+        if not code_filter:
+            return [""]
+        orgs = self._org_map()
+        paired = [(c, orgs[c]) for c in sorted(code_filter) if c in orgs]
+        if len(paired) < len(code_filter):
+            missing = sorted(set(code_filter) - {c for c, _ in paired})
+            logger.warning("巨潮代码表缺 %d 只的 orgId，本轮跳过：%s",
+                           len(missing), ",".join(missing[:10]))
+        batches = [
+            ";".join(f"{c},{org}" for c, org in paired[i:i + _BATCH_SIZE])
+            for i in range(0, len(paired), _BATCH_SIZE)
+        ]
+        # 一只都配不上时退回旧行为，宁可慢也别把窗口跑成空的
+        return batches or [""]
+
     def fetch(
         self,
         since: datetime,
@@ -80,35 +149,39 @@ class CninfoAnnouncement(BaseSource):
         code_filter = {str(c).zfill(6) for c in (codes or []) if str(c).strip()} or None
         se_date = f"{since.astimezone(CN_TZ):%Y-%m-%d}~{until.astimezone(CN_TZ):%Y-%m-%d}"
         yielded = 0
-        page = 1
 
-        while page <= config.CNINFO_MAX_PAGES:
-            payload = self._query(page, se_date)
-            items = payload.get("announcements") or []
-            if not items:
-                break
+        for stock in self._stock_batches(code_filter):
+            page = 1
+            while page <= config.CNINFO_MAX_PAGES:
+                payload = self._query(page, se_date, stock)
+                items = payload.get("announcements") or []
+                if not items:
+                    break
 
-            for item in items:
-                doc = self._to_doc(item)
-                if doc is None:
-                    continue
-                # 公告的 announcementTime 多数是「当天 00:00」，按时间戳过滤会漏掉当日增量，
-                # 因此只比日期；重复项由 source_id/指纹挡掉
-                if doc.pub_time and doc.pub_time.date() < since.date():
-                    continue
-                if code_filter and not (set(doc.stock_codes) & code_filter):
-                    continue
-                yield doc
-                yielded += 1
-                if limit and yielded >= limit:
-                    return
+                for item in items:
+                    doc = self._to_doc(item)
+                    if doc is None:
+                        continue
+                    # 公告的 announcementTime 多数是「当天 00:00」，按时间戳过滤会漏掉当日增量，
+                    # 因此只比日期；重复项由 source_id/指纹挡掉
+                    if doc.pub_time and doc.pub_time.date() < since.date():
+                        continue
+                    if code_filter and not (set(doc.stock_codes) & code_filter):
+                        continue
+                    yield doc
+                    yielded += 1
+                    if limit and yielded >= limit:
+                        return
 
-            total_pages = int(payload.get("totalpages") or 0)
-            if total_pages and page >= total_pages:
-                break
-            if not payload.get("hasMore", True):
-                break
-            page += 1
+                total_pages = int(payload.get("totalpages") or 0)
+                if total_pages and page >= total_pages:
+                    break
+                if not payload.get("hasMore", True):
+                    break
+                # 带 stock 过滤时 totalpages 常是 0，用「本页没填满」判断已经到底
+                if len(items) < _PAGE_SIZE:
+                    break
+                page += 1
 
         logger.info("巨潮窗口 %s 抓取 %d 条", se_date, yielded)
 
