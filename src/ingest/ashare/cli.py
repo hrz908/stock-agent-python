@@ -273,8 +273,10 @@ def cmd_backfill(args) -> int:
                     codes=codes,
                     advance_watermark=False,
                 )
-                # 源级中断（网络/封禁）也记成 failed：下次重跑该窗口，而不是静默跳过
-                status = "failed" if stats.failed and not stats.written else "done"
+                # 只要有一条没入库就标 failed，下次重跑补上：
+                # 已入库的条目靠 source_hash 直接跳过，重跑代价只是一次翻页。
+                # 原判据「有失败但已写入」会把「缺一篇年报」的窗口也标成 done，永久漏采
+                status = "failed" if (stats.failed or stats.error) else "done"
                 store.mark_backfill(name, scope, start, end, status=status,
                                     docs=stats.written, chunks=stats.chunks)
                 total_docs += stats.written

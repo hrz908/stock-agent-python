@@ -86,15 +86,23 @@ class Pipeline:
                     if raw.pub_time and (stats.last_pub is None or raw.pub_time > stats.last_pub):
                         stats.last_pub = raw.pub_time
                 except SkipDoc as exc:
-                    stats.skipped += 1
+                    # 定期报告的 PDF 下载/解析失败不是「不需要」，而是「这次没拿到」：
+                    # 记成 failed 才能让窗口标 failed 并重跑。记成 skip 会被当成已完成，
+                    # 静默缺掉一篇年报（实测：茅台 2025 年报就是这么丢的）
+                    if str(exc).startswith("pdf_"):
+                        stats.failed += 1
+                        logger.warning("PDF 未入库（%s）：%s", exc, raw.title[:40])
+                    else:
+                        stats.skipped += 1
+                        logger.debug("跳过（%s）：%s", exc, raw.title[:50])
                     if raw.pub_time and (stats.last_pub is None or raw.pub_time > stats.last_pub):
                         stats.last_pub = raw.pub_time
-                    logger.debug("跳过（%s）：%s", exc, raw.title[:50])
                 except Exception:  # 单条失败不能拖垮整源
                     stats.failed += 1
                     logger.exception("处理失败：%s", raw.title[:50])
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
+            stats.error = error
             logger.error("采集源 %s 中断：%s", source.name, error)
         finally:
             if self.store and not dry_run:

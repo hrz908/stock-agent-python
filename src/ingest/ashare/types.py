@@ -65,6 +65,9 @@ class RunStats:
     failed: int = 0
     chunks: int = 0
     last_pub: datetime | None = None
+    # 源级中断（网络/封禁/结构异常）：单条失败靠 failed 表达，整源挂掉只能靠这个，
+    # 否则「什么都没抓到」会被当成「这个窗口本来就没有数据」而标成 done
+    error: str = ""
 
     def merge(self, other: "RunStats") -> None:
         self.fetched += other.fetched
