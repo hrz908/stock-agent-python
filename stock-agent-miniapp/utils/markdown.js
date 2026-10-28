@@ -2,11 +2,11 @@
 // 背景：后端把结构化数据（行情卡 / K 线表）走独立 WS 事件，token 流里只有散文，
 // 因此这里只覆盖回答文本的实用子集：标题 / 段落 / 列表 / 引用 / 代码块 /
 // 分割线 / 表格 / 行内样式（粗体、斜体、行内代码、链接、删除线）。
-// 与 TDesign chat-markdown 同一思路：marked 的 Lexer 只负责切 token，
+// marked 的 Lexer 只负责切 token，
 // 渲染结构自绘（WXML 侧按 tag 分发，见 chat.wxml 的 md-* 类名）。
 import { Lexer } from 'marked';
 
-// 与 TDesign chat-markdown 默认选项保持一致：breaks: true 让单换行也换行。
+// breaks: true 让单换行也换行。
 // 注意：Lexer 实例带状态（tokens 会累积到实例上，复用会让第二次解析
 // 返回第一次的结果），因此每次解析都要新建，不能提成模块级单例
 const LEXER_OPTIONS = { gfm: true, pedantic: false, breaks: true };

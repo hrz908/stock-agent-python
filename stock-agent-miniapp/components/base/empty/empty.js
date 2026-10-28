@@ -1,4 +1,4 @@
-// 空状态（替代 t-empty）：字体图标 + 文案，零本地图片/SVG 依赖
+// 空状态：字体图标 + 文案，零本地图片/SVG 依赖
 Component({
   externalClasses: ['empty-class'],
   properties: {

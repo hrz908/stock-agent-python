@@ -295,7 +295,7 @@ Page({
       });
   },
 
-  // 轻提示：自研 base-toast（替代 TDesign toast）
+  // 轻提示：自研 base-toast
   toast(message) {
     const toast = this.selectComponent('#base-toast');
     if (toast) toast.show(message);

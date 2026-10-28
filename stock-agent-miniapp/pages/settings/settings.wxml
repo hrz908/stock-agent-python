@@ -1,4 +1,4 @@
-<!-- 页面骨架：自研 navbar + 自绘卡片（替代 TDesign cell-group 体系）。
+<!-- 页面骨架：自研 navbar + 自绘卡片。
      浅色专业金融视觉：--bg-card 卡片 / --border 描边 / --text-primary 文字层级。 -->
 <view class="page {{fontScaleClass}}">
   <base-navbar left-arrow="{{true}}" bind:back="goBack" />
@@ -104,7 +104,7 @@
           bindnicknamereview="onNicknameReview"
         />
 
-        <!-- 超长提示行：空串不渲染（原 t-input tips 的位置，改为自绘） -->
+        <!-- 超长提示行：空串不渲染 -->
         <view wx:if="{{nicknameTip}}" class="edit-tip">{{nicknameTip}}</view>
 
         <view class="nickname-action">

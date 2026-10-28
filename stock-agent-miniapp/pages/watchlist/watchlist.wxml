@@ -99,7 +99,7 @@
         <view class="form-label">持股数量</view>
         <input class="form-input" type="number" value="{{addQty}}" placeholder="股" placeholder-class="form-input-placeholder" bindinput="onAddQty" />
       </view>
-      <!-- 行内报错（替代 t-input 的 status/tips） -->
+      <!-- 行内报错：自绘提示，跟着输入框下方走 -->
       <view wx:if="{{codeError}}" class="form-error">{{codeError}}</view>
       <view class="add-note">
         <view class="note-title">支持这些交易所的代码前缀</view>

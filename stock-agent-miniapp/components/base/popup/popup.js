@@ -1,7 +1,7 @@
-// 自研弹层：center 对话框 / left 抽屉 / bottom 底部面板（替代 t-popup + t-dialog）
+// 自研弹层：center 对话框 / left 抽屉 / bottom 底部面板
 // 设计取舍：
 // - center 模式只做淡入淡出，不加 transform：原生 input 在父容器 transform 期间
-//   会错位（placeholder 下坠），TDesign 时代已踩过，见 watchlist 弹窗注释
+//   会错位（placeholder 下坠），见 watchlist 弹窗注释
 // - 抽屉 / 底部面板内没有原生输入框，才用位移动画
 // - 开合由页面 visible 驱动；确认/取消只发事件不自动关（校验失败要能留在原地）
 Component({

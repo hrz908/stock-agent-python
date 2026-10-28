@@ -216,7 +216,7 @@ Page({
         const inner = res && res[1];
         if (!box) return;
 
-        // 空态时 .stock-inner 里只有 t-empty，高度很小，自然不会开滚动
+        // 空态时 .stock-inner 里只有空状态组件，高度很小，自然不会开滚动
         const contentH = inner ? inner.height : 0;
         // 留 1px 容差：避免浮点误差让两者刚好相等时来回抖动
         const scrollable = contentH > box.height + 1;
@@ -374,7 +374,7 @@ Page({
     });
   },
 
-  // 轻提示：自研 base-toast（替代 TDesign toast）
+  // 轻提示：自研 base-toast
   toast(message) {
     const toast = this.selectComponent('#base-toast');
     if (toast) toast.show(message);

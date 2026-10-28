@@ -113,7 +113,7 @@ Page({
     wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/chat/chat' }) });
   },
 
-  // 轻提示：自研 base-toast（替代 TDesign toast / wx.showToast 默认样式）
+  // 轻提示：自研 base-toast（绕开 wx.showToast 的固定样式）
   toast(message) {
     const toast = this.selectComponent('#base-toast');
     if (toast) toast.show(message);

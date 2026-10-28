@@ -493,8 +493,8 @@ curl -s -X DELETE http://localhost:8080/api/v1/alerts/1 -H "Authorization: Beare
 ### 首次 clone 后必做：构建 npm
 
 `miniprogram_npm/` 是开发者工具「构建 npm」的产物，**属于构建结果、没有入库**，
-所以刚 clone 下来时它是空的。少了这个目录小程序会**白屏**
-（TDesign 组件一个都找不到），必须先补上这一步：
+所以刚 clone 下来时它是空的。少了这个目录，`utils/markdown.js` 里
+`import { Lexer } from 'marked'` 会解析失败，AI 回答渲染不出来，必须先补上这一步：
 
 ```bash
 cd stock-agent-miniapp
@@ -503,9 +503,10 @@ npm install
 
 然后回到开发者工具：**工具 → 构建 npm**。
 
-看到 `miniprogram_npm/tdesign-miniprogram/` 出现就可以了，再点编译即能正常渲染。
+看到 `miniprogram_npm/marked/` 出现就可以了，再点编译即能正常渲染。
 
 > 同理，`.gitignore` 里也忽略了 `node_modules/`，换机器都要先 `npm install`。
+> 小程序 UI 全部是自研 `components/base/*` 组件，没有第三方组件库要装。
 > 后端无需额外准备，`go run .` 会自动跑迁移建表。
 
 **请求基地址**：`stock-agent-miniapp/config.js`。
