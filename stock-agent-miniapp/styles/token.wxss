@@ -3,9 +3,9 @@
    750rpx 设计稿 · 正文 32rpx 锚点 · 8 点网格
 
    规则：
-   - 字号六档 24/28/32/36/40/48；行高只用倍率；字重 400/500/600/700
-   - 间距八档 4/8/12/16/24/32/48/64；页面左右 32
-   - 圆角六档 4/8/12/16/24/999；按钮与输入框 8
+   - 字号七档 24/28/32/36/40/48/64；行高只用倍率；字重 400/500/600/700
+   - 间距九档 4/8/12/16/24/32/48/64/96；页面左右 32
+   - 圆角六档 12/16/24/28/32/999；按钮与输入框 24，卡片 32
    - 阴影三档只给浮起元素，卡片靠描边分层
    - 颜色一律引用变量，业务样式里禁止裸 hex / 裸 rpx 字号
    - 按钮用 flex 居中 + padding 撑高，禁止写死 height
@@ -14,15 +14,17 @@
    不加 --color- 前缀、不建兼容别名：组件只能引用本节列出的令牌。
    ============================================================= */
 page {
-  /* ---- 字号六档：相邻差 4rpx ---- */
+  /* ---- 字号七档：相邻差 4rpx；64 只给结果页 / 营销数字，一屏一个 ---- */
   --font-xs: 24rpx;
   --font-sm: 28rpx;
   --font-base: 32rpx;
   --font-lg: 36rpx;
   --font-xl: 40rpx;
   --font-2xl: 48rpx;
+  --font-3xl: 64rpx;
 
   /* ---- 行高：一律倍率，禁止写死 rpx ---- */
+  --lh-tight: 1.25;
   --lh-xs: 1.4;
   --lh-sm: 1.45;
   --lh-base: 1.5;
@@ -44,7 +46,7 @@ page {
   --fw-semibold: 600;
   --fw-bold: 700;
 
-  /* ---- 间距八档（8 点网格） ---- */
+  /* ---- 间距九档（8 点网格；96 只给空状态巨型留白） ---- */
   --space-xxs: 4rpx;
   --space-xs: 8rpx;
   --space-sm: 12rpx;
@@ -53,11 +55,12 @@ page {
   --space-xl: 32rpx;
   --space-2xl: 48rpx;
   --space-3xl: 64rpx;
+  --space-4xl: 96rpx;
 
   /* ---- 内边距组合（垂直 × 水平） ---- */
   --pad-compact: var(--space-xs) var(--space-sm);
   --pad-normal: var(--space-sm) var(--space-md);
-  --pad-comfy: 20rpx var(--space-lg);
+  --pad-comfortable: var(--space-md) var(--space-lg);
   --pad-page: 0 var(--space-xl);
 
   /* ---- 外边距（以 32rpx 正文为锚） ---- */
@@ -76,13 +79,15 @@ page {
   --icon-xl: calc(var(--font-xl) * 1.2);
   --icon-touch: 88rpx;
 
-  /* ---- 圆角六档 ---- */
-  --radius-xs: 4rpx;
-  --radius-sm: 8rpx;
-  --radius-md: 12rpx;
-  --radius-lg: 16rpx;
-  --radius-xl: 24rpx;
-  --radius-round: 999rpx;
+  /* ---- 圆角六档：按控件角色分档，按钮与输入框同档 ----
+     嵌套一律满足「外圆角 = 内圆角 + 间距」：
+     卡片 32 + 内边距 16 → 内块 16；段控 24 + 内边距 8 → 内项 16 */
+  --radius-sm: 12rpx;      /* 徽章 · 小标签 · 行内小底 */
+  --radius-md: 16rpx;      /* 内块 · 气泡 · 代码块 · 列表行 */
+  --radius-control: 24rpx; /* 按钮 · 输入框 · 段控 · 浮层 */
+  --radius-cta: 28rpx;     /* 主 CTA · 底部主行动点 */
+  --radius-card: 32rpx;    /* 卡片 · 弹窗面板 · 抽屉 */
+  --radius-full: 999rpx;   /* 胶囊 · 圆形控件 · 头像 */
 
   /* ---- 阴影三档：只给浮起元素 ----
      阴影取文字深色的 RGB（#09090B），带一点冷调；纯黑阴影在白面上会发脏 */
@@ -158,7 +163,7 @@ page {
 
 /* =============================================================
    字号辅助档位（设置页「字体大小」，系统级可读性开关）
-   标准档严格走上面六档；「大 / 超大」整体上移 4 / 8rpx。
+   标准档严格走上面七档；「大 / 超大」整体上移 4 / 8rpx。
    ============================================================= */
 .page.font-scale--large {
   --font-xs: 28rpx;
@@ -167,6 +172,7 @@ page {
   --font-lg: 40rpx;
   --font-xl: 44rpx;
   --font-2xl: 52rpx;
+  --font-3xl: 68rpx;
 }
 
 .page.font-scale--xlarge {
@@ -176,6 +182,7 @@ page {
   --font-lg: 44rpx;
   --font-xl: 48rpx;
   --font-2xl: 56rpx;
+  --font-3xl: 72rpx;
 }
 
 /* =============================================================
@@ -199,12 +206,12 @@ page {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* 卡片：白面 + 1rpx 描边 + 12rpx 圆角 + 最轻一档投影。
+/* 卡片：白面 + 1rpx 描边 + 32rpx 圆角 + 最轻一档投影。
    页面底同为纯白，只靠描边划块会显得干，投影是分层的另一半 */
 .card {
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   padding: var(--pad-normal);
   box-shadow: var(--shadow-sm);
 }

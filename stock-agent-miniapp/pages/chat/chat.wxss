@@ -151,7 +151,7 @@
   padding: var(--space-md) var(--space-lg);
   background: var(--bg-disabled);
   border: var(--hairline);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -204,7 +204,7 @@
 .md-table {
   margin: var(--space-md) 0;
   border: var(--hairline);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -334,7 +334,7 @@
 .ai-load-dot {
   width: 12rpx;
   height: 12rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   background-color: var(--text-primary);
   animation: ai-load-blink 1.4s infinite ease-in-out;
 }
@@ -431,7 +431,7 @@
   justify-content: center;
   min-height: var(--icon-touch);
   margin-bottom: var(--space-lg);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   font-size: var(--font-sm);
   color: var(--text-secondary);
 }
@@ -461,7 +461,7 @@
   min-height: 80rpx;
   padding: var(--space-md) var(--space-lg);
   background: var(--bg-disabled);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
 }
 
 /* 维度标签（盘面 / 资金 / 基本面…）：纯文字 + 一条发丝分隔线，
@@ -529,7 +529,8 @@
   box-sizing: border-box;
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-md);
 }
 
 /* 模式键（语音 / 键盘）：无底灰图标 / 灰字，两态一致，只换内容。
@@ -541,7 +542,7 @@
   width: var(--icon-touch);
   height: var(--icon-touch);
   box-sizing: border-box;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   color: var(--text-primary);
   -webkit-tap-highlight-color: transparent;
 }
@@ -588,7 +589,7 @@
   padding: 0 var(--space-lg) var(--space-lg);
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   animation: voice-live-in 160ms ease both;
   box-shadow: var(--shadow-md);
 }
@@ -630,7 +631,7 @@
 .voice-wave-bar {
   width: var(--space-xs);
   height: var(--space-xs);
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   background: var(--text-primary);
   animation: voice-wave 900ms ease-in-out infinite;
 }
@@ -671,7 +672,7 @@
   flex: none;
   width: var(--space-sm);
   height: var(--space-sm);
-  border-radius: var(--radius-round);
+  border-radius: var(--radius-full);
   background: var(--text-disabled);
 }
 
@@ -733,6 +734,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 语音键单独浮起一层：无底灰、只靠圆角 + 最轻一档投影与输入栏分开 */
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
   color: var(--text-primary);
@@ -748,7 +752,7 @@
   flex: none;
   width: var(--icon-touch);
   height: var(--icon-touch);
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--text-primary);
   display: flex;
@@ -775,7 +779,7 @@
 .bar-send-stop {
   width: var(--space-lg);
   height: var(--space-lg);
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   background: var(--text-primary);
 }
 
@@ -819,7 +823,7 @@
   flex: none;
   width: 112rpx;   /* 2026-10-26：头像放大一号（原 96） */
   height: 112rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   overflow: hidden;
   background: var(--bg-disabled);
 }
@@ -859,7 +863,8 @@
   /* 抽屉里唯一的主动作：无填充、--hairline 描边（按键与输入栏同一套语言） */
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-cta);
+  box-shadow: var(--shadow-md);
 }
 
 /* 88rpx = .sender-bar 里 .bar-btn 的高度，撑起与输入栏一致的高度 */
@@ -891,7 +896,7 @@
   box-sizing: border-box;
   border: 4rpx solid var(--text-primary);
   border-top-color: transparent;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   animation: drawer-new-spin 0.8s linear infinite;
 }
 
@@ -926,7 +931,7 @@
   margin-right: calc(-1 * var(--space-lg));
   padding: 0 calc(var(--space-lg) + var(--space-md));
   background: var(--bg-disabled);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 
 /* 文字吃满剩余宽度，右侧箭头自然贴边。
@@ -983,7 +988,7 @@
   margin-bottom: var(--space-md);
   padding: 0 var(--space-xs) 0 var(--space-md);
   background: var(--bg-disabled);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 
 .history-item-main {

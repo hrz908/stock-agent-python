@@ -26,7 +26,7 @@
   padding: var(--space-lg) var(--space-lg) var(--space-lg) var(--space-lg);
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-sm);
 }
 
@@ -34,7 +34,7 @@
   flex: none;
   width: 128rpx;   /* 2026-10-26：头像再放大一号（原 112） */
   height: 128rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   overflow: hidden;
   background: var(--bg-disabled);
 }
@@ -76,14 +76,15 @@
   right: var(--space-2xl);
 }
 
-/* 底部按钮：无填充、8rpx 圆角，描边与输入框同款（--hairline） */
+/* 底部按钮：无填充、28rpx 圆角（主 CTA 档），描边与输入框同款（--hairline） */
 .footer-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: var(--icon-touch);
   padding: 16rpx 32rpx;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-cta);
+  box-shadow: var(--shadow-md);
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
   line-height: var(--lh-base);
@@ -116,15 +117,15 @@
   text-decoration: underline;
 }
 
-/* ===== 直角框体（本页复用） =====
-   字体大小段控与隐私说明入口共用同一套外形：白面 + --hairline + 12rpx 圆角，
-   96rpx 等高、四角直角（border-radius: 0，不跟随 --radius-lg / --radius-sm）。
+/* ===== 行式框体（本页复用） =====
+   字体大小段控与隐私说明入口共用同一套外形：白面 + --hairline + 24rpx 圆角
+   （与按钮 / 输入框同档）。
    两块上下叠放，除内部分布外不允许各自改描边 / 投影 / 高度。 */
 .panel-flat {
   height: 96rpx;
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   box-shadow: var(--shadow-sm);
 }
 
@@ -192,7 +193,7 @@
   padding: 0;
   width: 160rpx;
   height: 160rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   background: transparent;
   line-height: var(--lh-base);
 }
@@ -205,9 +206,10 @@
 .edit-avatar {
   width: 160rpx;
   height: 160rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   background: var(--bg-disabled);
   border: var(--hairline);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 空头像：与个人资料页的空头像同一套（次级面底 + user 图标） */
@@ -232,7 +234,8 @@
   color: var(--text-primary);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-sm);
 }
 
 .edit-input-placeholder {
@@ -259,7 +262,7 @@
   font-size: var(--font-sm);
   /* 强调色收口：链接走 --primary（黛青），与涨跌红绿区分 */
   color: var(--primary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center; min-height: 88rpx;
 }
 

@@ -1,7 +1,7 @@
 /* 金融卡共享外壳：8 张卡共用（各卡 wxss 用 @import 引入，
    避免每张卡重复一遍基础样式）。
    视觉规格对齐设计稿与 HTML 预览：--bg-card 卡面 / --border 描边 /
-   --shadow-sm 投影 / --radius-lg 圆角 / --space-lg 内边距；
+   --shadow-sm 投影 / --radius-card 圆角 / --space-lg 内边距；
    数字一律配 .num 等宽（styles/base.wxss）。
    页面底同为纯白，卡面靠「描边 + 最轻投影」这一套浮起（DESIGN.md · 形状） */
 .fcard {
@@ -10,7 +10,7 @@
   padding: var(--space-lg);
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-sm);
 }
 

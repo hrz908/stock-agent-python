@@ -35,7 +35,7 @@
   box-sizing: border-box;
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-control);
 }
 
 /* 周期 chip 的文字：标签统一走全局小号 */
@@ -71,7 +71,7 @@
   justify-content: center;
   box-sizing: border-box;
   border: var(--hairline-dashed);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   font-size: var(--font-base);   /* 图区占位（搜索并选择股票后展示 / 暂无数据）：标准 */
   color: var(--text-hint);
 }

@@ -36,7 +36,7 @@
   box-sizing: border-box;
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
 }
 
 .search-input {
@@ -60,7 +60,7 @@
   justify-content: center;
   width: 56rpx;
   height: 56rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
 }
 
 /* 联想结果：浮层，左对齐搜索框、宽度贴合（左右 0），从搜索框底边向下展开 */
@@ -73,7 +73,7 @@
   z-index: 10;
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   overflow: hidden;
   box-shadow: var(--shadow-md);
 }

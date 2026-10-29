@@ -37,9 +37,8 @@
   flex-direction: column;
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-card);
   overflow: hidden;
-  box-shadow: var(--shadow-lg);
 }
 
 /* ===== 左侧抽屉 ===== */
@@ -73,10 +72,9 @@
   flex-direction: column;
   background: var(--bg-card);
   border-top: var(--hairline);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-card);
   padding-bottom: env(safe-area-inset-bottom);
   animation: popup-bottom-in 240ms cubic-bezier(0.25, 0.8, 0.35, 1) both;
-  box-shadow: var(--shadow-lg);
 }
 
 .popup--leaving .popup-panel--bottom {
@@ -128,7 +126,8 @@
   border-top: var(--hairline);
 }
 
-/* 弹窗按钮：与底部主按钮同一套 —— 无填充、--hairline 描边，主次只靠字色与字重 */
+/* 弹窗按钮：与底部主按钮同一套 —— 无填充、--hairline 描边 + 最轻一档投影，
+   主次只靠字色与字重。面板本身不投影，浮起感由面板内的控件承担 */
 .popup-btn {
   flex: 1;
   min-height: var(--icon-touch);
@@ -139,10 +138,11 @@
   line-height: var(--lh-base);
   background: transparent;
   border: var(--hairline);
+  box-shadow: var(--shadow-sm);
   color: var(--text-primary);
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   /* 数字与中文混排时按钮文案不抖 */
   font-variant-numeric: tabular-nums;
 }

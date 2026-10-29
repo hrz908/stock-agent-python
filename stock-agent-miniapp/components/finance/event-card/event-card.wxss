@@ -42,7 +42,7 @@
   flex: none;
   width: 16rpx;
   height: 16rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
   margin-top: var(--space-xs);
 }
 
@@ -80,7 +80,7 @@
   display: inline-block;
   margin-right: var(--space-xs);
   padding: var(--space-xs) var(--space-xs);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   border: var(--hairline);
   background: var(--bg-disabled);
   font-size: var(--font-sm);

@@ -23,7 +23,7 @@
   display: flex;
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
@@ -87,7 +87,7 @@
   padding: 0 var(--space-lg) var(--space-lg);
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
@@ -199,7 +199,8 @@
   gap: var(--space-xs);
   min-height: var(--icon-touch);
   padding: 16rpx 32rpx;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-cta);
+  box-shadow: var(--shadow-md);
   background: transparent;
   border: var(--hairline);
   line-height: var(--lh-base);
@@ -236,7 +237,8 @@
   color: var(--text-primary);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 带尾部单位时给右侧留位 */
@@ -260,7 +262,7 @@
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-full);
 }
 
 .form-input-placeholder {
@@ -279,7 +281,8 @@
   padding: var(--space-md) var(--space-lg);
   background: transparent;
   border: var(--hairline);
-  border-radius: 0;
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-sm);
 }
 
 .selected-stock-text {
@@ -298,7 +301,8 @@
   padding: var(--space-md) var(--space-lg);
   background: transparent;
   border: var(--hairline);
-  border-radius: 0;
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 原生 picker 触发区（按压态按需求取消，不再有 --hover 变暗） */
@@ -341,7 +345,7 @@
   margin-top: var(--space-xs);
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   overflow: hidden;
   z-index: 10;
   box-shadow: var(--shadow-md);

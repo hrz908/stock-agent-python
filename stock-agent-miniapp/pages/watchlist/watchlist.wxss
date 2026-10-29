@@ -22,7 +22,7 @@
   padding: var(--space-lg);
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-sm);
 }
 
@@ -54,7 +54,7 @@
    计数用正文字号：再小一档在长数字下读不清 */
 .mini-tag {
   padding: var(--space-xs) var(--space-xs);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   border: var(--hairline);
   font-size: var(--font-base);
   background: var(--bg-disabled);
@@ -143,13 +143,14 @@
 }
 
 /* ===== 筛选：占满整行的段式单选（radio） =====
-   无槽底色、无滑动黑块：整条只有一个 8rpx 圆角轮廓，选中项靠字重与字色区分 */
+   无槽底色、无滑动黑块：整条只有一个 24rpx 圆角轮廓，选中项降一档到 16rpx，
+   选中项靠字重与字色区分 */
 .filter-radio {
   display: flex;
   margin-top: var(--space-lg);
   padding: var(--space-xs);
   background: var(--bg-disabled);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
 }
 .filter-radio__item {
   flex: 1;
@@ -158,7 +159,7 @@
   padding: var(--space-xs) 0;
   font-size: var(--font-lg);   /* 全部 / 涨幅榜 / 跌幅榜：大号 */
   color: var(--text-primary);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   transition: color .2s;
 }
 .filter-radio__item--on {
@@ -185,7 +186,7 @@
 .stock-list {
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
@@ -305,7 +306,8 @@
   gap: var(--space-xs);
   min-height: var(--icon-touch);
   padding: 16rpx 32rpx;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-cta);
+  box-shadow: var(--shadow-md);
   background: transparent;
   border: var(--hairline);
   line-height: var(--lh-base);
@@ -342,7 +344,8 @@
   color: var(--text-primary);
   background: transparent;
   border: var(--hairline);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-sm);
 }
 
 .form-input-placeholder {
@@ -369,7 +372,7 @@
   margin-top: var(--space-xs);
   background: var(--bg-card);
   border: var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   overflow: hidden;
   z-index: 10;
   box-shadow: var(--shadow-md);

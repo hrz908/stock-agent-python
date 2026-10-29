@@ -15,7 +15,7 @@
   box-sizing: border-box;
 }
 
-/* 左侧按钮：88rpx(=44px) 触摸目标，圆角与 --radius-lg 对齐。
+/* 左侧按钮：88rpx(=44px) 触摸目标，无背景面故取结构性直角（border-radius: 0）。
    不再写负 margin：返回键要和主页抽屉键（slot left，起点是容器 padding）
    在同一条竖线上，负 margin 会让它比抽屉键更靠左 24rpx。 */
 .nav-btn {

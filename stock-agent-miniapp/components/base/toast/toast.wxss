@@ -10,7 +10,7 @@
   max-width: 70%;
   padding: var(--space-md) var(--space-lg);
   background: var(--text-primary);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   animation: toast-in 180ms ease both;
   box-shadow: var(--shadow-md);
 }
