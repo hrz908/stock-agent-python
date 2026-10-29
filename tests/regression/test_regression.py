@@ -22,6 +22,9 @@
 2026-10-28 新增：
   P21 池外语料覆盖闸（点名标的没有语料时出固定话术，不升级取数硬答）
 
+2026-10-29 新增：
+  P22 覆盖闸降级（问当下状态的池外标的降级取数，问原文 / 无工具口径的仍出话术）
+
 用法：python tests/regression/test_regression.py
 """
 import os
@@ -895,6 +898,50 @@ def test_rag_coverage_gate():
         rag_mod.coverage.detail = orig_cov
 
 
+def test_rag_coverage_downgrade():
+    print("\n[P22] 覆盖闸降级：问当下状态走取数，问原文仍出话术")
+    import asyncio
+
+    from agent.subgraphs import rag as rag_mod
+
+    orig_mentions = rag_mod.entity_mentions
+    orig_cov = rag_mod.coverage.detail
+
+    async def _mentions(_q):
+        return ["920025"]
+
+    def _cov(has_docs: bool, in_pool: bool):
+        async def _f(_codes):
+            return {"920025": (has_docs, in_pool)}
+
+        return _f
+
+    try:
+        rag_mod.entity_mentions = _mentions
+        rag_mod.coverage.detail = _cov(False, False)
+
+        # 问「现在怎么样」：行情 / 资金 / 快讯还能答，降级取数而不是甩话术
+        out = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": [], "query": "920025 现在怎么样"}))
+        check("问当下状态 -> 降级取数", out.get("intent") == "stock_agent", str(out))
+        check("降级仍带 corpus_miss", out.get("corpus_miss") == ["920025"], str(out))
+        check("降级路由到 escalate", rag_mod.route_after_check(out) == "escalate", str(out))
+
+        # 问原文：取数工具没有这个口径，降级只会白跑一轮 tool_call
+        out2 = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": [], "query": "920025 的年报讲了什么"}))
+        check("问原文 -> 不降级", "intent" not in out2, str(out2))
+        check("问原文 -> 出话术", rag_mod.route_after_check(out2) == "not_covered", str(out2))
+
+        # 没有工具口径的内容（业务构成 / 竞争格局）：同样不降级
+        out3 = asyncio.run(rag_mod.sufficiency_check(
+            {"retrieved": [], "query": "920025 的业务构成"}))
+        check("无工具口径 -> 不降级", "intent" not in out3, str(out3))
+    finally:
+        rag_mod.entity_mentions = orig_mentions
+        rag_mod.coverage.detail = orig_cov
+
+
 def test_intent_taxonomy():
     print("\n[P5] 意图三分与漏斗口径")
     import asyncio
@@ -1682,6 +1729,7 @@ def main():
     test_off_topic_refusal()
     test_rag_judge_fallback()
     test_rag_coverage_gate()
+    test_rag_coverage_downgrade()
     test_intent_taxonomy()
     test_direct_tools()
     test_rewrite_into_toolcall()

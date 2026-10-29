@@ -2,11 +2,14 @@ r"""RAG 混合检索子图（RAG 漏斗）。
 
 流程: hybrid_retrieve -> sufficiency_check --(命中)--> generate_with_citations -> END
                                          |--(不足)--> escalate(概念->chat，其余->stock_agent) -> END
-                                         \--(点名标的无语料)--> answer_not_covered -> END
+                                         |--(点名标的无语料·问原文)--> answer_not_covered -> END
+                                         \--(点名标的无语料·问当下状态)--> escalate -> stock_agent
 
 sufficiency_check 判定顺序：
-1) 覆盖闸（最前）：问题点名的标的在语料库里一条文档都没有 -> 固定话术说明采集范围，
-   既不生成也不取数。这一步必须排在阈值闸之前：池外标的的检索结果本来就是一堆别家的
+1) 覆盖闸（最前）：问题点名的标的在语料库里一条文档都没有 -> 问原文（年报 / 公告正文）
+   或问没有工具口径的内容时出固定话术，不生成、不取数；问「现在怎么样」的一类
+   降级到取数子图，corpus_miss 一并带过去，由 stock 子图在合成时说明语料边界。
+   这一步必须排在阈值闸之前：池外标的的检索结果本来就是一堆别家的
    高分片段，靠分数判不出来，只有查库能确定「它在不在范围内」。
 2) 阈值闸（重排分 < RERANK_THRESHOLD 或有效片段 < 2 即未命中；重排关闭时回退
    余弦相似度 < RAG_THRESHOLD）；
@@ -64,25 +67,54 @@ def _get_retriever():
 # 已在 _fallback._DATA_KEYWORDS 里覆盖，这里只补它漏掉的词。
 _TOOL_SERVABLE = ("研报", "研究报告", "新闻", "资讯")
 
+# 只能靠语料原文的问句：没有语料就是没有答案，取数工具也补不上，
+# 降级只会白跑一轮 tool_call（8~16s）再回一句「没有数据」。
+_DOC_TEXT_ONLY = (
+    "年报", "半年报", "一季报", "三季报", "定期报告", "公告原文", "公告正文",
+    "原文", "招股书", "招股说明书", "募集说明书", "财报原文",
+)
+
+# 「这只票现在什么情况」这类问句：命中覆盖闸时仍有行情 / 资金 / 快讯可答，
+# 降级到取数子图比甩一句「不在范围内」有用。判据只认「当下状态」语义——
+# 业务构成 / 竞争格局 / 公司战略这类没有工具口径的问题不在其中，仍出话术。
+_OBSERVABLE_STATE = (
+    "现在", "今天", "今日", "目前", "当下", "最近", "近况", "走势", "表现",
+    "情况", "怎么样", "怎样", "如何", "进展", "动态", "状态", "近几天",
+)
+
 _NOT_COVERED_TEXT = {
     # 不在池内：说清范围，别让用户以为资料丢了
     "out_of_scope": (
         "关于 {subject}：{unit}不在当前的文本语料范围内（覆盖成交额前 300 只）。"
         "库里没有它的年报、公告或研报原文，我不凭印象下结论。\n\n"
-        "能实时取到的是行情、估值、财务指标、研报列表和新闻，这些可以直接问；"
+        "实时数据不受影响，可以这样问：「{subject} 现在什么价」"
+        "「{subject} 最新一期财报的营收和净利润」「{subject} 最近有哪些机构研报」，"
         "也可以换一只标的。"
     ),
     # 在池内但还没采到：回填期间这是常态，说「稍等」比说「不在范围」准确
     "pending": (
         "关于 {subject}：{unit}的文本资料还没入库（历史语料正在补齐）。"
         "现在只有实时数据，年报、公告正文要等采集跑到这里。\n\n"
-        "期间可以问行情、估值、财务指标、研报列表和新闻。"
+        "期间可以这样问：「{subject} 现在什么价」"
+        "「{subject} 最新一期财报的营收和净利润」「{subject} 最近有哪些机构研报」。"
     ),
 }
 
 # 固定话术按打字机节奏发，前端呈现自然的流式效果（与 refuse 节点一致）
 _CHUNK = 16
 _CHUNK_INTERVAL = 0.02
+
+
+def _asks_current_state(state: dict) -> bool:
+    """问句问的是这只票当下的状态：行情 / 资金 / 快讯能部分作答。"""
+    text = (state.get("query") or "") + " " + (state.get("rewritten") or "")
+    return any(k in text for k in _OBSERVABLE_STATE)
+
+
+def _wants_document_text(state: dict) -> bool:
+    """问句要的是原文（年报 / 公告正文）：这类内容取数工具没有口径。"""
+    text = (state.get("query") or "") + " " + (state.get("rewritten") or "")
+    return any(k in text for k in _DOC_TEXT_ONLY)
 
 
 def _wants_tool_data(state: dict) -> bool:
@@ -232,12 +264,19 @@ async def sufficiency_check(state: dict) -> dict:
         # info 为空 = 判定不可用（库抖动/表未建），fail-open 交回常规检索
         if info and not any(has_docs for has_docs, _ in info.values()):
             reason = "pending" if any(pool for _, pool in info.values()) else "out_of_scope"
-            logger.info("点名标的无语料（%s），按未覆盖回答：%s", reason, mentions)
-            return {
+            patch = {
                 "corpus_miss": mentions,
                 "corpus_miss_reason": reason,
                 "timings": {"sufficiency_ms": int((time.monotonic() - t0) * 1000)},
             }
+            # 问原文 / 问没有工具口径的内容：没有语料就是没有答案，出话术。
+            # 问「现在怎么样」的一类还有行情 / 资金 / 快讯可答，降级到取数子图
+            # （corpus_miss 一并带过去，由 stock 子图在合成时说明边界）。
+            if _wants_document_text(state) or not _asks_current_state(state):
+                logger.info("点名标的无语料（%s），出未覆盖话术：%s", reason, mentions)
+                return patch
+            logger.info("点名标的无语料（%s），降级取数：%s", reason, mentions)
+            return {**patch, "intent": "stock_agent"}
     has_rerank = any(r.get("rerank_score") is not None for r in retrieved)
     if has_rerank:
         top_score = max((r.get("rerank_score") or 0.0 for r in retrieved), default=0.0)
@@ -284,8 +323,15 @@ async def sufficiency_check(state: dict) -> dict:
 
 
 def route_after_check(state: dict) -> Literal["escalate", "generate", "not_covered"]:
-    # 点名标的无语料：sufficiency_check 只写 corpus_miss、不改 intent，单独走固定话术
-    if state.get("corpus_miss"):
+    """覆盖闸命中且没被降级 -> 固定话术；其余按 intent 分派。
+
+    点名标的无语料有两种去向：问原文 / 问没有工具口径的内容，intent 保持 stock，
+    走 not_covered；问当下状态，sufficiency_check 会把 intent 改成 stock_agent，
+    这里按普通升级走 escalate，由主图重路由到取数子图。
+    判「有没有被降级」而不是判 intent == 'stock'：节点返回的只是增量 patch，
+    存量 intent 不一定在里面。
+    """
+    if state.get("corpus_miss") and state.get("intent") != "stock_agent":
         return "not_covered"
     # 未命中时 sufficiency_check 会把 intent 改成 stock_agent（取数）或 chat（概念通用回答）
     return "generate" if state.get("intent") == "stock" else "escalate"

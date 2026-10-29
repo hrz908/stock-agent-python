@@ -484,6 +484,21 @@ async def synthesize(state: dict) -> dict:
     reason = _failure_reason(tool_results)
     if reason:
         tr_text = f"【数据获取失败说明】{reason}\n{tr_text}"
+    # 覆盖闸降级过来的：标的没有文本语料，边界必须先讲清，否则模型会拿通用知识
+    # 把年报 / 公告内容补出来（stock.xml 规则 11 允许概念题用通用知识，个股事实不行）
+    miss = state.get("corpus_miss") or []
+    if miss:
+        miss_reason = state.get("corpus_miss_reason") or "out_of_scope"
+        scope = (
+            "不在当前文本语料采集范围（覆盖成交额前 300 只）"
+            if miss_reason == "out_of_scope"
+            else "文本语料还没入库（历史语料正在补齐）"
+        )
+        tr_text = (
+            f"【语料边界】{'、'.join(miss)}{scope}，库里没有它的年报、公告或研报原文。"
+            "只依据下列工具数据回答；工具数据里没有的内容直接说「没有相关资料」，"
+            "不要用通用投资知识推测这家公司的具体事实。\n" + tr_text
+        )
     query = state.get("rewritten") or state.get("query", "") or ""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     prompt = render("stock.xml", now=now, query=query, tool_results=tr_text,
