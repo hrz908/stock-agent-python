@@ -7,6 +7,9 @@
 新闻热度、板块资金流、龙虎榜、北向持仓在网关没有数据源，权重不按 0 计入，
 而是把剩余权重按比例摊给可用信号——否则整池分数被系统性压平，
 「热度加权」会退化成「接近均匀随机」。
+
+进池后再按「有没有文本语料」收一道：推荐出去的问题要能被答出来，
+用户点开建议才不会撞上「不在当前的文本语料范围内」那句话术。
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from gateway.adapters.quote.batch import fetch_details
 from gateway.domain.stockcode import market_of, normalize_code
 from gateway.infra.deps import runtime
 from gateway.services.quickask.models import Candidate, MarketMeta
+from gateway.services.quickask.template import digits_of
 
 logger = logging.getLogger("stocka.gateway.quickask.pool")
 
@@ -34,6 +38,9 @@ ASK_HEAT_TTL = 7 * 24 * 3600
 
 MAX_POOL_SIZE = 200  # 候选池上限：再大就会混进没人认识的冷门票
 MAX_UNIVERSE = 200  # 参与打分的股票上限：200 只 ≈ 10 次批量行情请求
+# 语料过滤后至少留下这么多只：少于这个数更可能是语料库还没铺开，
+# 而不是这批票不行，退回未过滤的池子——候选池宁可宽，也不能空。
+CORPUS_MIN_KEEP = 40
 
 WEIGHT_CHANGE_PCT = 0.25
 WEIGHT_AMOUNT = 0.20
@@ -210,9 +217,63 @@ async def build_pool() -> list[Candidate]:
         candidate.sector = (candidate.sector or "").strip()
         scored.append(candidate)
 
+    scored = keep_answerable(
+        scored, await load_corpus_codes([digits_of(c.code) for c in scored])
+    )
+
     score_pool(scored)
     scored.sort(key=lambda c: (-c.score, c.code))
     return scored[:MAX_POOL_SIZE]
+
+
+async def load_corpus_codes(codes: list[str]) -> set[str] | None:
+    """返回这批裸码里「有已入库文档」的子集；判定不可用时返回 None。
+
+    口径必须与 Agent 侧的覆盖闸一致：按 ashare_documents 里真有文档判（has_docs），
+    不按 ashare_universe（in_pool）——后者会把「进了采集名单但还没采到」的票误判成
+    没语料，反而把能答的问题挡掉。
+    查询失败返回 None 而不是空集：空集等于「全部没语料」，一次库抖动就能清空首屏。
+    """
+    if not codes:
+        return set()
+    try:
+        async with runtime().pg.pool.connection() as conn:
+            cursor = await conn.execute(
+                """
+                SELECT t.code
+                FROM unnest(%s::text[]) AS t(code)
+                WHERE EXISTS (
+                    SELECT 1 FROM ashare_documents a
+                     WHERE a.stock_codes && ARRAY[t.code]::text[]
+                )
+                """,
+                (list(dict.fromkeys(codes)),),
+            )
+            rows = await cursor.fetchall()
+    except Exception as exc:  # noqa: BLE001 - 语料表缺失 / 库抖动都不该让建池失败
+        logger.info("load corpus codes failed: %s", exc)
+        return None
+    return {str(row[0]) for row in rows}
+
+
+def keep_answerable(pool: list[Candidate], covered: set[str] | None) -> list[Candidate]:
+    """给候选打上 corpus 标记，并尽量只保留有语料的那些。
+
+    候选池是按成交额榜实时建的，语料库是每天收盘后按另一份 Top 300 名单采的，
+    两者并不重合（盘中突然放量的票、北交所小票都可能没有语料）。
+    留着标记而不是只留过滤结果：过滤会触发保底（见 CORPUS_MIN_KEEP），
+    保底放回来的那些票仍然知道自己没语料，模板层会避开答不了的问句。
+    """
+    for candidate in pool:
+        candidate.corpus = covered is None or digits_of(candidate.code) in covered
+    answerable = [candidate for candidate in pool if candidate.corpus]
+    if len(answerable) >= CORPUS_MIN_KEEP:
+        return answerable
+    logger.info(
+        "corpus filter skipped: answerable=%d < %d, keep whole pool=%d",
+        len(answerable), CORPUS_MIN_KEEP, len(pool),
+    )
+    return pool
 
 
 async def load_universe() -> tuple[list[Candidate], dict[str, float]]:

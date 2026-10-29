@@ -41,31 +41,38 @@ def phase_at(now: datetime) -> Phase:
 
 
 # 盘中异动（涨跌幅超 5%）：只问当下就能答的盘面
+# needs_corpus=False：这几句的 ask 里带行情类口径词（涨跌幅 / 价格 / 走势 / 行情），
+# 会被判定为「要取数」，标的没语料也不会撞语料范围话术。
 SNAPSHOT_TEMPLATES: list[Template] = [
     Template(
         "盘面",
         "{name}现在什么价？",
         "{name}（{code}）现在什么价？涨跌幅、成交额和换手率分别是多少",
+        needs_corpus=False,
     ),
     Template(
         "盘面",
         "{name}今天这波涨跌是什么原因？",
         "{name}（{code}）今天这波涨跌是什么原因？结合量价和今日消息说",
+        needs_corpus=False,
     ),
     Template(
         "盘面",
         "{name}今天的最高价和最低价到过多少？",
-        "{name}（{code}）今天的开盘价、最高价和最低价分别是多少",
+        "{name}（{code}）今天的开盘价、最高价和最低价分别是多少？全天走势如何",
+        needs_corpus=False,
     ),
     Template(
         "盘面",
         "{name}今天的成交额和换手率是多少？",
-        "{name}（{code}）今天的成交额、换手率和量比分别是多少",
+        "{name}（{code}）今天的最新行情怎么样？成交额、换手率和量比分别是多少",
+        needs_corpus=False,
     ),
     Template(
         "盘面",
         "{name}现在的总市值是多少？",
         "{name}（{code}）现在的最新价、涨跌幅和总市值分别是多少",
+        needs_corpus=False,
     ),
 ]
 
@@ -75,44 +82,54 @@ CLOSED_SNAPSHOT_TEMPLATES: list[Template] = [
         "盘面",
         "复盘一下{name}最近的走势",
         "{name}（{code}）最近10个交易日的走势和量能怎么样",
+        needs_corpus=False,
     ),
     Template(
         "盘面",
         "{name}现在离近期高点还有多远？",
-        "{name}（{code}）近15个交易日的最高价和最低价是多少？现在处在区间什么位置",
+        "{name}（{code}）近15个交易日的价格区间是多少？最高价和最低价分别是多少，"
+        "现在处在区间什么位置",
+        needs_corpus=False,
     ),
     Template(
         "盘面",
         "{name}最近成交量的变化怎么样？",
-        "{name}（{code}）最近10个交易日的成交量有什么变化",
+        "{name}（{code}）最近10个交易日的成交量和走势有什么变化",
+        needs_corpus=False,
     ),
     Template(
         "盘面",
         "{name}最近有没有放量？",
-        "{name}（{code}）最近几个交易日有放量吗？量比和换手率是什么水平",
+        "{name}（{code}）最近几个交易日有放量吗？量比、换手率和近期走势是什么水平",
+        needs_corpus=False,
     ),
 ]
 
+# 资金同样是实时工具口径（资金流向 / 龙虎榜），没有语料也能答
 CAPITAL_TEMPLATES: list[Template] = [
     Template(
         "资金",
         "{name}最近主力资金在流入还是流出？",
         "{name}（{code}）最近5个交易日主力资金净流入情况怎么样",
+        needs_corpus=False,
     ),
     Template(
         "资金",
         "{name}最近的超大单和大单在做什么？",
         "{name}（{code}）最新一个交易日的超大单、大单、中单、小单分别净流入多少",
+        needs_corpus=False,
     ),
     Template(
         "资金",
         "{name}最近上过龙虎榜吗？",
         "{name}（{code}）最近上过龙虎榜吗？上榜的话席位买卖情况怎么样",
+        needs_corpus=False,
     ),
     Template(
         "资金",
         "{name}的主力资金是连续流入吗？",
         "{name}（{code}）最近主力资金是连续净流入还是流出？连续了几天",
+        needs_corpus=False,
     ),
 ]
 
@@ -121,16 +138,19 @@ FUNDAMENTAL_TEMPLATES: list[Template] = [
         "基本面",
         "{name}最新财报的营收和净利润是多少？",
         "{name}（{code}）最新一期财报的营业收入和净利润分别是多少？同比变化如何",
+        needs_corpus=False,
     ),
     Template(
         "基本面",
         "{name}的毛利率和ROE是什么水平？",
         "{name}（{code}）最新的毛利率、净利率和ROE分别是多少",
+        needs_corpus=False,
     ),
     Template(
         "基本面",
         "{name}最近有机构研报吗？",
         "{name}（{code}）最近有哪些机构研报？评级和目标价是多少",
+        needs_corpus=False,
     ),
 ]
 
@@ -138,12 +158,14 @@ TECHNICAL_TEMPLATES: list[Template] = [
     Template(
         "技术",
         "{name}现在的关键支撑位和阻力位在哪？",
-        "{name}（{code}）现在的关键支撑位和阻力位在哪？结合最近10个交易日的量价说",
+        "{name}（{code}）现在的关键支撑位和阻力位在哪？结合最近10个交易日的走势说",
+        needs_corpus=False,
     ),
     Template(
         "技术",
         "{name}最近15个交易日的日K线怎么走的？",
         "{name}（{code}）最近15个交易日的日K线怎么走的？量能有什么变化",
+        needs_corpus=False,
     ),
 ]
 
@@ -152,11 +174,13 @@ RISK_TEMPLATES: list[Template] = [
         "风险",
         "{name}最近有哪些需要留意的风险？",
         "{name}（{code}）从最近的消息和财务数据看，有哪些需要留意的风险",
+        needs_corpus=False,
     ),
     Template(
         "风险",
         "{name}最近的股价波动主要受什么影响？",
         "{name}（{code}）最近股价波动主要受什么影响？资金面和消息面各说一点",
+        needs_corpus=False,
     ),
 ]
 
@@ -165,11 +189,15 @@ WATCH_TEMPLATES: list[Template] = [
         "观察",
         "{name}最近有哪些值得关注的信号？",
         "{name}（{code}）最近有哪些值得关注的信号？量价、资金和消息面各说一句",
+        needs_corpus=False,
     ),
     Template(
         "观察",
         "{name}最近有需要跟踪的公告或事件吗？",
         "{name}（{code}）最近有需要跟踪的公告或事件吗？有的话说清是什么",
+        # 唯一一条必须靠语料的模板：公告正文 / 报告期后事项只有文本里有，
+        # 问句里也没有任何取数口径词，没语料时一定回「不在范围内」。
+        needs_corpus=True,
     ),
 ]
 
@@ -186,9 +214,24 @@ def _tpl_key(template: Template) -> str:
 
 
 def eligible_dims(candidate: Candidate, phase: Phase) -> list[list[Template]]:
-    """先看股票状态，再看市场阶段，给出此刻可用的维度（顺序即优先级）。
+    """此刻可用的维度（顺序即优先级）。先看状态与阶段，再按语料情况收一道。
 
-    状态决定「问什么」：大涨大跌问盘面、放量问资金、盘后问基本面，
+    收一道的理由：标的没有文本语料时，「最近有需要跟踪的公告或事件吗」这种问题
+    一定回「不在当前的文本语料范围内」——推荐出去就是让用户点一次闭门羹。
+    这里把 needs_corpus=True 的模板摘掉，只留取数工具答得出口的问句。
+    """
+    dims = _base_dims(candidate, phase)
+    if candidate.corpus:
+        return dims
+    answerable = [[tpl for tpl in group if not tpl.needs_corpus] for group in dims]
+    # 整组被摘空的直接丢掉：空组会让后面的抽样 random 撞上 randrange(0)
+    answerable = [group for group in answerable if group]
+    # 全被摘空就退回原样：宁可偶尔撞一次话术，也不能一条问句都给不出
+    return answerable if answerable else dims
+
+
+def _base_dims(candidate: Candidate, phase: Phase) -> list[list[Template]]:
+    """先看股票状态，再看市场阶段：大涨大跌问盘面、放量问资金、盘后问基本面，
     横盘才轮到技术 / 观察 / 风险这类没有时效性的维度。
     """
     if abs(candidate.change_pct) > 5:
