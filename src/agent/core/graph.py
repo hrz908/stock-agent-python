@@ -32,7 +32,11 @@ from typing import Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
-from agent.core.keywords import is_concept_question, is_structured_data_question
+from agent.core.keywords import (
+    is_concept_question,
+    is_consult_question,
+    is_structured_data_question,
+)
 from agent.core.state import AgentState
 from agent.nodes import clarify, guardrail, post, refuse, supervisor
 from agent.subgraphs.chat import build_chat_subgraph
@@ -65,6 +69,10 @@ def route_by_intent(
         text = state.get('rewritten') or state.get('query', '') or ''
         if is_structured_data_question(text) and not is_concept_question(text):
             return 'stock_agent'
+        # 工具 / 入门咨询（"新手该用哪个炒股软件"）：语料库没有这类文档，进 RAG 只会
+        # 白跑一次检索再降级。判据保守，带代码或要标的的问句不受影响。
+        if is_consult_question(text):
+            return 'chat'
     return intent
 
 

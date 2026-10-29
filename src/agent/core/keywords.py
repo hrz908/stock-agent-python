@@ -77,6 +77,37 @@ def hit_data_keyword(query: str) -> bool:
     return bool(DATA_KEYWORDS_WORD.search(q))
 
 
+# 工具 / 入门类咨询的强特征词：语料库里没有「炒股软件对比」「开户流程」这类文档，
+# 进 RAG 只会白跑一次检索（线上实测一次超时 20s）再降级，直接给通用回答更好。
+# 只收强特征：孤立的「软件 / 平台 / 券商」不收——"东方财富这个软件怎么样"是问个股。
+CONSULT_KEYWORDS = (
+    "新手", "入门", "开户", "佣金", "手续费", "印花税",
+    "炒股软件", "股票软件", "交易软件", "哪个软件", "什么软件", "用什么软件",
+    "哪个券商", "哪家券商", "哪个平台",
+)
+
+# 要具体标的的问句：即使带「新手 / 入门」也要走投研链路，不能被当成纯咨询送进闲聊
+_STOCK_PICK_KEYWORDS = (
+    "买什么", "哪只", "哪支", "几只", "标的", "推荐股", "荐股", "选股", "买入",
+)
+# 「个股」不能按裸子串匹配：「哪一个股票软件」里的「个股票」会被误伤（实测）
+_STOCK_PICK_RE = re.compile(r"个股(?!票)")
+
+
+def is_consult_question(text: str) -> bool:
+    """工具 / 入门类咨询（不指向具体标的）-> True。
+
+    判据刻意保守：带 6 位代码、或含「买什么 / 哪只 / 几只」这类要标的的词，一律不算，
+    交给后面的链路按投研问题处理。
+    """
+    q = (text or "").lower()
+    if not q or re.search(r"\d{6}", q):
+        return False
+    if any(k in q for k in _STOCK_PICK_KEYWORDS) or _STOCK_PICK_RE.search(q):
+        return False
+    return any(k in q for k in CONSULT_KEYWORDS)
+
+
 def is_document_question(text: str) -> bool:
     """问题指向年报/公告/研报等内容 -> True（仍走 RAG）。"""
     q = (text or "").lower()

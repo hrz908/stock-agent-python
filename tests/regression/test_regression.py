@@ -1069,6 +1069,33 @@ def test_supervisor_merge():
         post_mod.entity_mentions = orig_ent
 
 
+def test_consult_routing():
+    print("\n[P24] 工具/入门咨询前置分流：不进 RAG")
+    from agent.core.graph import route_by_intent
+    from agent.core.keywords import is_consult_question
+
+    cases = [
+        ("我是新手的话 推荐用哪一个股票软件交易", True),
+        ("A股开户流程是怎样的", True),
+        ("哪家券商佣金低", True),
+        ("东财这个软件怎么样", False),          # 问个股，不能被当成工具咨询
+        ("推荐几只能买的股票", False),          # 要标的
+        ("600519 开户需要多少钱", False),       # 带代码
+        ("中国石油现在什么价", False),
+    ]
+    for text, expect in cases:
+        check(f"咨询判定：{text}", is_consult_question(text) is expect, f"expect={expect}")
+
+    check("咨询 -> chat",
+          route_by_intent({"intent": "stock",
+                           "rewritten": "我是新手的话 推荐用哪一个股票软件交易"}) == "chat")
+    check("个股 -> 仍走 RAG",
+          route_by_intent({"intent": "stock", "rewritten": "东财这个软件怎么样"}) == "stock")
+    check("结构化数据优先 -> 取数",
+          route_by_intent({"intent": "stock", "rewritten": "宁德时代主要财务指标"})
+          == "stock_agent")
+
+
 def test_intent_taxonomy():
     print("\n[P5] 意图三分与漏斗口径")
     import asyncio
@@ -1858,6 +1885,7 @@ def main():
     test_rag_coverage_gate()
     test_rag_coverage_downgrade()
     test_supervisor_merge()
+    test_consult_routing()
     test_intent_taxonomy()
     test_direct_tools()
     test_rewrite_into_toolcall()
