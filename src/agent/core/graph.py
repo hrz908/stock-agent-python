@@ -1,7 +1,7 @@
 """主图组装。
 
-START -> guardrail -> [error? clarify : rewrite -> classify -> route_by_intent]
-route_by_intent -> {stock, chat, off_topic, clarify}
+START -> guardrail -> [error? clarify : supervisor -> route_by_intent]
+route_by_intent -> {stock, stock_agent, chat, off_topic, clarify}
   - stock     -> rag 漏斗子图
                  命中 -> post
                  未命中 -> (intent 改写 stock_agent) -> stock_agent 子图 -> post
@@ -12,11 +12,16 @@ post -> END
 
 route_by_intent 是纯函数，仅读取 state["intent"]，异常/未知一律回退 clarify。
 
+supervisor（nodes/supervisor.py）一次小模型调用同时产出改写与意图，替代原来的
+rewrite → classify 两跳；上下文三层（最近轮次 / 滚动摘要 / 上一轮结构化 ctx）都在
+那一个节点里拼好，下游子图只认 rewritten 与 intent。
+
 意图口径：
 - stock      : 文档型股票问题，统一先进 RAG 漏斗，命中带引用直接作答；
-- stock_agent: 内部意图，两个来源：
-               1) classify 命中实时数据词，直接进取数子图（跳过 RAG）；
-               2) rag 两级判定（阈值 + LLM 判读）未命中，升级到取数子图；
+- stock_agent: 内部意图，三个来源：
+               1) supervisor 命中实时数据词，直接进取数子图（跳过 RAG）；
+               2) rag 阈值 / 判读未命中，升级到取数子图；
+               3) rag 覆盖闸命中且问的是「当下状态」，降级取数（rag.py）；
 - chat       : 闲聊，直接陪聊，不挂工具；
 - off_topic  : 与股票无关的正经话题，固定话术婉拒（nodes/refuse.py）；
 - clarify    : 含糊 / 低置信度 / 护栏拦截，反问或安全降级。
@@ -29,7 +34,7 @@ from langgraph.types import RetryPolicy
 
 from agent.core.keywords import is_concept_question, is_structured_data_question
 from agent.core.state import AgentState
-from agent.nodes import clarify, classify, guardrail, post, refuse, rewrite
+from agent.nodes import clarify, guardrail, post, refuse, supervisor
 from agent.subgraphs.chat import build_chat_subgraph
 from agent.subgraphs.rag import build_rag_subgraph
 from agent.subgraphs.stock import build_stock_subgraph
@@ -39,9 +44,9 @@ from agent.subgraphs.stock import build_stock_subgraph
 _CLASSIFY_INTENTS = {'stock', 'stock_agent', 'chat', 'off_topic', 'clarify'}
 
 
-def route_after_guardrail(state: dict) -> Literal['clarify', 'rewrite']:
-    """护栏命中 -> 降级澄清；否则进入改写。"""
-    return 'clarify' if state.get('error') else 'rewrite'
+def route_after_guardrail(state: dict) -> Literal['clarify', 'supervisor']:
+    """护栏命中 -> 降级澄清；否则交给 supervisor 做改写与路由。"""
+    return 'clarify' if state.get('error') else 'supervisor'
 
 
 def route_by_intent(
@@ -86,8 +91,8 @@ def build_graph(checkpointer=None):
 
     # 节点
     g.add_node('guardrail', guardrail)
-    g.add_node('rewrite', rewrite, retry_policy=small_retry)
-    g.add_node('classify', classify, retry_policy=small_retry)
+    # 改写与路由合并成一次小模型调用（原 rewrite -> classify 两跳）
+    g.add_node('supervisor', supervisor, retry_policy=small_retry)
     g.add_node('clarify', clarify)
     g.add_node('refuse', refuse)
     g.add_node('post', post)
@@ -99,10 +104,9 @@ def build_graph(checkpointer=None):
     g.add_edge(START, 'guardrail')
     g.add_conditional_edges('guardrail', route_after_guardrail, {
         'clarify': 'clarify',
-        'rewrite': 'rewrite',
+        'supervisor': 'supervisor',
     })
-    g.add_edge('rewrite', 'classify')
-    g.add_conditional_edges('classify', route_by_intent, {
+    g.add_conditional_edges('supervisor', route_by_intent, {
         'stock': 'rag',
         'stock_agent': 'stock_agent',
         'chat': 'chat',

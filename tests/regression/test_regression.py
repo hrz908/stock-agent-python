@@ -24,6 +24,7 @@
 
 2026-10-29 新增：
   P22 覆盖闸降级（问当下状态的池外标的降级取数，问原文 / 无工具口径的仍出话术）
+  P23 supervisor 合并改写 + 路由（单轮一次调用、结构化上下文注入、快路径短路）
 
 用法：python tests/regression/test_regression.py
 """
@@ -942,6 +943,132 @@ def test_rag_coverage_downgrade():
         rag_mod.coverage.detail = orig_cov
 
 
+def test_supervisor_merge():
+    print("\n[P23] supervisor：一次调用完成改写 + 路由（含上下文补全）")
+    import asyncio
+    import importlib
+
+    # 走 importlib 取模块：agent.nodes.__init__ 把同名函数导出到包属性上，
+    # `from agent.nodes import supervisor` 拿到的是函数而不是模块
+    post_mod = importlib.import_module("agent.nodes.post")
+    sup = importlib.import_module("agent.nodes.supervisor")
+
+    class _Decision:
+        rewritten = "贵州茅台现在什么价"
+        intent = "stock_agent"
+        confidence = 0.9
+        reason = ""
+        symbol = "贵州茅台"
+        market = "SH"
+        date_range = ""
+
+    class _Runnable:
+        def __init__(self):
+            self.calls = 0
+            self.prompts: list[str] = []
+            self.boom = False
+
+        async def ainvoke(self, msgs):
+            self.calls += 1
+            self.prompts.append(str(msgs[-1].content))
+            if self.boom:
+                raise RuntimeError("structured output failed")
+            return _Decision
+
+    runnable = _Runnable()
+    orig_llm = sup.get_small_llm
+    orig_runnable = sup._runnable
+    orig_ctx = sup.load_context
+    orig_summary = sup._get_summary
+    sup._runnable = runnable
+    sup.get_small_llm = lambda **_kw: runnable
+
+    async def _empty_summary(_tid):
+        return ""
+
+    sup._get_summary = _empty_summary
+
+    try:
+        # 1) 单轮、无历史：一次调用同时产出改写与意图（原链路要 rewrite + classify 两次）
+        #    用不含数据词的追问，确保不会走关键词快路径
+        out = asyncio.run(sup.supervisor({"query": "它后续怎么看", "messages": []}))
+        check("单轮也走一次合并调用", runnable.calls == 1, str(runnable.calls))
+        check("产出改写结果", out.get("rewritten") == "贵州茅台现在什么价", str(out))
+        check("产出意图", out.get("intent") == "stock_agent", str(out))
+        check("计时记在 supervisor_ms",
+              "supervisor_ms" in (out.get("timings") or {}), str(out.get("timings")))
+
+        # 2) 上一轮结构化上下文：拼进 prompt，卡片轮次之后的「它」也能接上
+        async def _ctx(_tid):
+            return {"symbols": "600519", "rewritten": "贵州茅台现在什么价",
+                    "subgraph": "stock_agent"}
+
+        sup.load_context = _ctx
+        asyncio.run(sup.supervisor(
+            {"query": "这个票后续怎么看", "messages": [], "thread_id": "t1"}))
+        check("上下文注入 prompt", "上一轮标的：600519" in runnable.prompts[-1],
+              runnable.prompts[-1][-160:])
+
+        # 3) 快路径：命中实时数据词不再惊动小模型
+        before = runnable.calls
+        fast = asyncio.run(sup.supervisor({"query": "SH600519最新行情", "messages": []}))
+        check("快路径不调小模型", runnable.calls == before, str(runnable.calls))
+        check("快路径判取数", fast.get("intent") == "stock_agent", str(fast))
+
+        # 4) 上游已给意图：透传，不重复调用
+        passthrough = asyncio.run(sup.supervisor({"query": "任意", "intent": "stock"}))
+        check("已有意图透传", "intent" not in passthrough, str(passthrough))
+
+        # 5) 结构化输出失败：回退 XML 也不可用时按澄清处理，不乱答
+        runnable.boom = True
+        fb = asyncio.run(sup.supervisor({"query": "茅台业务构成", "messages": []}))
+        check("两条路径都失败 -> clarify", fb.get("intent") == "clarify", str(fb))
+    finally:
+        sup.get_small_llm = orig_llm
+        sup._runnable = orig_runnable
+        sup.load_context = orig_ctx
+        sup._get_summary = orig_summary
+
+    # 6) post 写入结构化上下文：有标的才写
+    class _Redis:
+        def __init__(self):
+            self.data: dict = {}
+
+        async def hset(self, key, mapping=None):
+            self.data[key] = mapping or {}
+
+        async def expire(self, key, ttl):
+            return None
+
+    fake = _Redis()
+    orig_get = post_mod.get_redis
+    orig_ent = post_mod.entity_mentions
+    post_mod.get_redis = lambda: fake
+
+    async def _entities(_text):
+        return ["600519"]
+
+    post_mod.entity_mentions = _entities
+    try:
+        asyncio.run(post_mod._remember_context({
+            "thread_id": "t1", "rewritten": "贵州茅台现在什么价", "intent": "stock_agent"}))
+        got = fake.data.get("agent:ctx:t1") or {}
+        check("上下文写入标的", got.get("symbols") == "600519", str(got))
+        check("上下文写入链路", got.get("subgraph") == "stock_agent", str(got))
+
+        async def _none(_text):
+            return []
+
+        post_mod.entity_mentions = _none
+        fake.data.clear()
+        asyncio.run(post_mod._remember_context(
+            {"thread_id": "t2", "query": "随便问问", "messages": []}))
+        check("无标的不写上下文", not fake.data, str(fake.data))
+    finally:
+        post_mod.get_redis = orig_get
+        post_mod.entity_mentions = orig_ent
+
+
 def test_intent_taxonomy():
     print("\n[P5] 意图三分与漏斗口径")
     import asyncio
@@ -1730,6 +1857,7 @@ def main():
     test_rag_judge_fallback()
     test_rag_coverage_gate()
     test_rag_coverage_downgrade()
+    test_supervisor_merge()
     test_intent_taxonomy()
     test_direct_tools()
     test_rewrite_into_toolcall()

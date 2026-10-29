@@ -1,5 +1,10 @@
 """分类节点：意图路由。
 
+主图已改用 nodes/supervisor.py（改写 + 路由合并成一次调用）。本模块的
+`_is_vague_reference` / `_RouteDecision` 仍被 supervisor 复用，`classify` 函数
+保留给回退路径与单测（P5/P19/P21），改意图口径时两处要一起看。
+
+
 用 small_llm + prompts/router.xml 输出意图与置信度：优先 with_structured_output，
 失败回退 XML + parse_route；confidence < 0.6 强制降级 clarify（宁可反问，不可乱答），
 解析失败一律 clarify。

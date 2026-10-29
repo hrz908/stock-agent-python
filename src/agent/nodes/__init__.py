@@ -5,5 +5,15 @@ from agent.nodes.guardrail import guardrail
 from agent.nodes.post import log_agent_run, post
 from agent.nodes.refuse import refuse
 from agent.nodes.rewrite import rewrite
+from agent.nodes.supervisor import supervisor
 
-__all__ = ["guardrail", "rewrite", "classify", "clarify", "refuse", "post", "log_agent_run"]
+__all__ = [
+    "guardrail",
+    "rewrite",
+    "classify",
+    "supervisor",
+    "clarify",
+    "refuse",
+    "post",
+    "log_agent_run",
+]

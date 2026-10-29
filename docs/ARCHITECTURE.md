@@ -15,7 +15,7 @@ FastAPI 单进程 (src/gateway)  ── JWT 鉴权 / 限流 / CORS / 访问日�
         │  同进程函数调用（src/gateway/adapters/agent_bridge.py）
         ▼
 LangGraph 主图 (src/agent)  ── 与本进程同生共死
-   ├─ 意图路由：guardrail → rewrite → classify → route_by_intent
+   ├─ 意图路由：guardrail → supervisor（一次调用完成改写 + 路由）→ route_by_intent
    ├─ 子图：rag（RAG 漏斗）/ stock（进程内工具取数）/ chat
    ├─ 工具层 tools/：行情/搜索/主数据(同业)/财务/资金流/龙虎榜/资讯/历史K线/研报
    │    （@tool **直调 gateway 的业务函数**，不再 HTTP 回调 + 服务 token）

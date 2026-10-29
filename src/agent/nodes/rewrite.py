@@ -1,5 +1,10 @@
 """改写节点：指代消解，把「依赖上下文的问题」改写成独立完整的问题。
 
+主图已改用 nodes/supervisor.py（一次小模型调用同时完成改写 + 路由）。本模块的
+`_history_text` / `_get_summary` / `_MERGE_SYSTEM` / `_MERGE_RULE` 仍被 supervisor
+复用，`rewrite` 函数保留给回退路径与单测（P17/P23），改口径时两处要一起看。
+
+
 例：历史在聊贵州茅台，用户问「那它的市盈率呢」→「贵州茅台的市盈率是多少」。
 用 small_llm（温度 0）；若 Redis 有该 thread 的滚动摘要（post 节点写入），
 则拼入 prompt 作为对话背景，与最近历史共同构成完整上下文。
