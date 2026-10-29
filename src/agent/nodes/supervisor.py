@@ -32,6 +32,7 @@ from agent.nodes.rewrite import (
     _history_text,
     _needs_rewrite,
 )
+from agent.rag.entity import entity_mentions
 
 # 与 classify / rewrite 的低置信度口径保持一致
 _CONF_MIN = 0.6
@@ -191,7 +192,14 @@ async def supervisor(state: dict) -> dict:
     # 指代不明且完全没有上文（无结构化 ctx、也无对话历史）：反问澄清，不让模型猜。
     # 有历史时交给合并调用消解——「这个板块怎么样」上文刚聊过茅台，应改写成
     # 「贵州茅台所属的食品饮料板块怎么样」，而不是直接打回（探针 B4 实测）。
-    if _is_vague_reference(query) and not ctx.get("symbols") and not history:
+    # 另外问句里已经点名了标的（「东方财富这个软件怎么样」）也不算含糊：指代词在这里
+    # 是指示而不是指代，澄清只会把明确的问题打回去（批量探针实测）。
+    if (
+        _is_vague_reference(query)
+        and not ctx.get("symbols")
+        and not history
+        and not await entity_mentions(query)
+    ):
         return done({
             "rewritten": query, "intent": "clarify", "confidence": 0.9, "entities": {},
         })

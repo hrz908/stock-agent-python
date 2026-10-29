@@ -1009,6 +1009,21 @@ def test_supervisor_merge():
         check("上下文注入 prompt", "上一轮标的：600519" in runnable.prompts[-1],
               runnable.prompts[-1][-160:])
 
+        # 2.5) 带明确标的的「这个」问句不算含糊：这里的「这个」是指示，不是指代
+        sup.load_context = orig_ctx
+
+        async def _mentions(_q):
+            return ["300059"]
+
+        orig_sup_ent = sup.entity_mentions
+        sup.entity_mentions = _mentions
+        try:
+            vague = asyncio.run(sup.supervisor(
+                {"query": "东方财富这个软件怎么样", "messages": []}))
+            check("问句已有明确标的不判澄清", vague.get("intent") != "clarify", str(vague))
+        finally:
+            sup.entity_mentions = orig_sup_ent
+
         # 3) 快路径：命中实时数据词不再惊动小模型
         before = runnable.calls
         fast = asyncio.run(sup.supervisor({"query": "SH600519最新行情", "messages": []}))
