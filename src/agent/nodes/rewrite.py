@@ -149,7 +149,9 @@ async def _needs_rewrite(query: str) -> bool:
     if _CODE_RE.search(q):
         return False
     if len(q) < 8:
-        return True
+        # 短句通常依赖上下文，但已经点名标的的短句（「东财的市盈率」）本身是完整的，
+        # 再让模型改写一遍只是多花 1.8s
+        return not await entity_mentions(q)
     if not hit_data_keyword(q):
         return False
     return not await entity_mentions(q)
