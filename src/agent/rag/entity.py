@@ -18,6 +18,14 @@ from agent.storage.read import get_read_pool
 
 _CODE_RE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
 _NAME_TTL = 600.0
+# 主数据里存在「五 粮 液」这种带空格的官方简称（新浪源），用户从来不会带空格输入，
+# 不归一化就永远匹配不上：实体识别为空 -> 覆盖闸不生效、快路径失效、每轮多调一次小模型
+_SPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_name(text: str) -> str:
+    """去掉名称里的空白字符。"""
+    return _SPACE_RE.sub("", text or "")
 
 _names_cache: list[tuple[str, str]] = []
 _names_at = 0.0
@@ -44,7 +52,8 @@ async def _stock_names() -> list[tuple[str, str]]:
                 )
                 rows = await cur.fetchall()
         _names_cache = sorted(
-            ((str(n), str(c)) for c, n in rows if n), key=lambda x: -len(x[0])
+            ((_normalize_name(str(n)), str(c)) for c, n in rows if n),
+            key=lambda x: -len(x[0]),
         )
         _names_at = time.monotonic()
     except Exception:  # noqa: BLE001 - 名称表不可用时不做实体校验
@@ -65,8 +74,13 @@ async def entity_mentions(query: str) -> list[str]:
     if hit and now - hit[0] < _MENTION_TTL:
         return list(hit[1])
     hits = [(m.start(), m.group(1)) for m in _CODE_RE.finditer(q)]
+    # 名称表已去空格；问句这边先按原样找（位置才准），找不到再去掉空格找一次：
+    # 用户可能写「五粮液」，也可能照抄成「五 粮 液」
+    qn = _normalize_name(q)
     for name, code in await _stock_names():
         idx = q.find(name)
+        if idx < 0:
+            idx = qn.find(name)
         if idx >= 0:
             hits.append((idx, code))
     hits.sort(key=lambda x: x[0])

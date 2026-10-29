@@ -1069,6 +1069,33 @@ def test_supervisor_merge():
         post_mod.entity_mentions = orig_ent
 
 
+def test_entity_space_name():
+    print("\n[P25] 名称带空格的标的也能识别（五 粮 液）")
+    import asyncio
+    import importlib
+
+    ent = importlib.import_module("agent.rag.entity")
+
+    check("名称归一化去空格", ent._normalize_name("五 粮 液") == "五粮液",
+          ent._normalize_name("五 粮 液"))
+
+    orig = ent._stock_names
+
+    async def _names():
+        return [("五粮液", "000858"), ("贵州茅台", "600519")]
+
+    ent._stock_names = _names
+    ent._mentions_cache.clear()
+    try:
+        check("带空格名称的标可识别（用户写紧凑名）",
+              asyncio.run(ent.entity_mentions("五粮液现在什么价？")) == ["000858"])
+        check("用户照抄带空格的名字也可识别",
+              asyncio.run(ent.entity_mentions("五 粮 液现在什么价？")) == ["000858"])
+    finally:
+        ent._stock_names = orig
+        ent._mentions_cache.clear()
+
+
 def test_consult_routing():
     print("\n[P24] 工具/入门咨询前置分流：不进 RAG")
     from agent.core.graph import route_by_intent
@@ -1885,6 +1912,7 @@ def main():
     test_rag_coverage_gate()
     test_rag_coverage_downgrade()
     test_supervisor_merge()
+    test_entity_space_name()
     test_consult_routing()
     test_intent_taxonomy()
     test_direct_tools()
