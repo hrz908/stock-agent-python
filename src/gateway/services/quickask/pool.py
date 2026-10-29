@@ -114,23 +114,33 @@ def evergreen_pool() -> list[Candidate]:
 # ---------------------------------------------------------------- 池子读写
 
 
-async def read_pool() -> list[Candidate]:
+async def read_pool() -> tuple[list[Candidate], int]:
+    """读候选池，并数出其中「旧格式成员」（缺 corpus 段）的条数。
+
+    旧格式是加语料标记之前写进去的池子（TTL 10 分钟）。数它而不是直接判定，
+    是因为部署后这一批成员还会被读到；调用方据此决定要不要就地补标。
+    """
     if not _redis_ready():
-        return []
+        return [], 0
     try:
         rows = await runtime().redis.zrange(
             POOL_KEY, 0, MAX_POOL_SIZE - 1, desc=True, withscores=True
         )
     except Exception as exc:  # noqa: BLE001 - Redis 抖动不该让首屏建议整体消失
         logger.info("read hot pool failed: %s", exc)
-        return []
+        return [], 0
 
     out: list[Candidate] = []
+    legacy = 0
     for member, score in rows:
-        candidate = Candidate.decode(str(member), float(score))
+        text = str(member)
+        # 名称与板块保证不含竖线：5 段=旧成员，6 段=带 corpus 标记
+        if text.count("|") < 5:
+            legacy += 1
+        candidate = Candidate.decode(text, float(score))
         if candidate is not None:
             out.append(candidate)
-    return out
+    return out, legacy
 
 
 async def write_pool(pool: list[Candidate]) -> None:
@@ -165,13 +175,17 @@ async def load_pool() -> tuple[list[Candidate], str]:
     """
     global _mem_pool, _mem_at
 
-    pool = await read_pool()
+    pool, legacy = await read_pool()
     if pool:
+        # 旧格式成员：部署后不必手工清池，读到的这一轮就把它补齐回写
+        if legacy and (refreshed := await refresh_corpus_flags(pool)):
+            await write_pool(refreshed)
+            return refreshed, "redis"
         return pool, "redis"
 
     async with _build_lock:
         # 等锁期间别的请求可能已经建好，再读一次，避免同一轮重复打上游
-        pool = await read_pool()
+        pool, legacy = await read_pool()
         if pool:
             return pool, "redis"
 
@@ -274,6 +288,22 @@ def keep_answerable(pool: list[Candidate], covered: set[str] | None) -> list[Can
         len(answerable), CORPUS_MIN_KEEP, len(pool),
     )
     return pool
+
+
+async def refresh_corpus_flags(pool: list[Candidate]) -> list[Candidate] | None:
+    """给旧格式池子补一层 corpus 标记，返回待回写的池子；补不了返回 None。
+
+    新逻辑能不能立刻生效取决于池成员带不带 corpus 段：旧池要等 10 分钟 TTL 自然重建，
+    期间一直按「有语料」答，等于这次改动白上。手工删 key 能立刻生效，但会把刚建好的
+    热度池一起丢掉——那意味着这一轮首屏重新打上游排行榜，站内点击热度也跟着清零。
+    补标只多一次覆盖查询，成员与分数原样保留，是代价最小的一种。
+
+    语料判定不可用（load_corpus_codes 返回 None）时不动池子，下一个请求自然会再试一次。
+    """
+    covered = await load_corpus_codes([digits_of(c.code) for c in pool])
+    if covered is None:
+        return None
+    return keep_answerable(pool, covered)
 
 
 async def load_universe() -> tuple[list[Candidate], dict[str, float]]:
