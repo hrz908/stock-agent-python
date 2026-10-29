@@ -1085,7 +1085,7 @@ def test_supervisor_merge():
 
 
 def test_entity_space_name():
-    print("\n[P25] 名称带空格的标的也能识别（五 粮 液）")
+    print("\n[P25] 名称归一化与简称识别（五 粮 液 / 茅台 / 招行）")
     import asyncio
     import importlib
 
@@ -1094,18 +1094,39 @@ def test_entity_space_name():
     check("名称归一化去空格", ent._normalize_name("五 粮 液") == "五粮液",
           ent._normalize_name("五 粮 液"))
 
+    rows = [
+        ("600519", "贵州茅台"), ("601857", "中国石油"), ("600028", "中国石化"),
+        ("600036", "招商银行"), ("300059", "东方财富"), ("000858", "五 粮 液"),
+        ("688981", "中芯国际"), ("603758", "隆基机械"), ("601012", "隆基绿能"),
+        ("600584", "长电科技"), ("600900", "长江电力"),
+    ]
+    index = ent.build_name_index(rows)
+    names = {name: code for name, code in index}
+
+    check("简称可识别：茅台", names.get("茅台") == "600519", str(names.get("茅台")))
+    check("简称可识别：招行 / 东财",
+          names.get("招行") == "600036" and names.get("东财") == "300059", str(names))
+    check("通用词不做别名（石油 / 石化）", "石油" not in names and "石化" not in names,
+          "石油" in names)
+    check("别家全名前缀不做别名（隆基 / 长电）",
+          "隆基" not in names and "长电" not in names, f"{'隆基' in names}/{'长电' in names}")
+    check("唯一前缀仍可做别名（中芯）", names.get("中芯") == "688981", str(names.get("中芯")))
+    check("带空格的名称已归一化", names.get("五粮液") == "000858", str(names.get("五粮液")))
+
     orig = ent._stock_names
 
     async def _names():
-        return [("五粮液", "000858"), ("贵州茅台", "600519")]
+        return index
 
     ent._stock_names = _names
     ent._mentions_cache.clear()
     try:
-        check("带空格名称的标可识别（用户写紧凑名）",
+        check("带空格名称可识别（用户写紧凑名）",
               asyncio.run(ent.entity_mentions("五粮液现在什么价？")) == ["000858"])
         check("用户照抄带空格的名字也可识别",
               asyncio.run(ent.entity_mentions("五 粮 液现在什么价？")) == ["000858"])
+        check("简称走实体识别", asyncio.run(ent.entity_mentions("茅台现在什么价？")) == ["600519"])
+        check("歧义名称只认全名", asyncio.run(ent.entity_mentions("长电科技怎么样")) == ["600584"])
     finally:
         ent._stock_names = orig
         ent._mentions_cache.clear()
