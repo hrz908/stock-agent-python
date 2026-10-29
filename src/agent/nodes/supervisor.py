@@ -25,7 +25,13 @@ from agent.core.llm import get_small_llm
 from agent.core.redis import get_redis
 from agent.core.template import load_template, parse_route, render
 from agent.nodes.classify import _is_vague_reference
-from agent.nodes.rewrite import _MERGE_RULE, _MERGE_SYSTEM, _get_summary, _history_text
+from agent.nodes.rewrite import (
+    _MERGE_RULE,
+    _MERGE_SYSTEM,
+    _get_summary,
+    _history_text,
+    _needs_rewrite,
+)
 
 # 与 classify / rewrite 的低置信度口径保持一致
 _CONF_MIN = 0.6
@@ -91,10 +97,15 @@ def _format_context(ctx: dict) -> str:
 
 
 def _clean_rewritten(text: str, query: str, symbol: str) -> str:
-    """改写结果清洗：只取首行、剥引号；合并模型常把指代留在句里、只填 symbol。"""
+    """改写结果清洗：只取首行、剥引号；仅在改写丢了实体时用 symbol 兜底补全。
+
+    两种情形不能拼：原问句本身已经点名（「茅台和五粮液哪个好」），以及模型把多个
+    标的塞进 symbol（含顿号 / 逗号 / 「和」）。硬拼会把前缀污染进问句。
+    """
     first = (text or "").strip().strip('"').strip().splitlines()
     rewritten = (first[0].strip() if first else "") or query
-    if symbol and symbol not in rewritten:
+    multi = any(sep in symbol for sep in ("、", "，", ",", "/", "和"))
+    if symbol and not multi and symbol not in rewritten and symbol not in query:
         rewritten = f"{symbol} {rewritten}".strip()
     return rewritten
 
@@ -160,9 +171,11 @@ async def supervisor(state: dict) -> dict:
 
     query = state.get("query", "") or ""
 
-    # 关键词兜底先行：确定性判定比小模型快一个量级，也防模型把取数问句判回 RAG
+    # 关键词快路径只定意图，不能连带跳过改写：「那它的毛利率呢」命中「毛利」就直接
+    # 返回原文，指代消解被整个吃掉，下游拿不到标的（探针 B1 实测）。所以问题本身
+    # 依赖上下文时仍走一次合并调用，只是意图以确定性判定为准（_merge_decision 兜住）。
     fast = fast_intent(query)
-    if fast:
+    if fast and not await _needs_rewrite(query):
         return done({"rewritten": query, "intent": fast, "confidence": 1.0, "entities": {}})
     if fast_chat(query):
         return done({"rewritten": query, "intent": "chat", "confidence": 1.0, "entities": {}})
@@ -173,14 +186,16 @@ async def supervisor(state: dict) -> dict:
 
     thread_id = state.get("thread_id", "")
     ctx = await load_context(thread_id)
+    history = _history_text(state)
 
-    # 指代不明且上下文里没有标的：反问澄清，不让模型猜
-    if _is_vague_reference(query) and not ctx.get("symbols"):
+    # 指代不明且完全没有上文（无结构化 ctx、也无对话历史）：反问澄清，不让模型猜。
+    # 有历史时交给合并调用消解——「这个板块怎么样」上文刚聊过茅台，应改写成
+    # 「贵州茅台所属的食品饮料板块怎么样」，而不是直接打回（探针 B4 实测）。
+    if _is_vague_reference(query) and not ctx.get("symbols") and not history:
         return done({
             "rewritten": query, "intent": "clarify", "confidence": 0.9, "entities": {},
         })
 
-    history = _history_text(state)
     summary = await _get_summary(thread_id)
     ctx_text = _format_context(ctx)
     # 结构化上下文排在历史前面：卡片轮次没有文本可查，这一行就是唯一线索
