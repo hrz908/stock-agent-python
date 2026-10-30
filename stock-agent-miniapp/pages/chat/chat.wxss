@@ -530,7 +530,7 @@
   background: var(--bg-card);
   border: var(--hairline);
   border-radius: var(--radius-control);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 模式键（语音 / 键盘）：无底灰图标 / 灰字，两态一致，只换内容。
@@ -734,9 +734,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 语音键单独浮起一层：无底灰、只靠圆角 + 最轻一档投影与输入栏分开 */
+  /* 语音键不投影（2026-10-31）：它是输入栏里的一段文案，不是独立浮起面；
+     给投影会在白底上糊出一圈灰边，和输入栏的描边抢层次 */
   border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
   color: var(--text-primary);
@@ -864,7 +864,7 @@
   background: transparent;
   border: var(--hairline);
   border-radius: var(--radius-cta);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 88rpx = .sender-bar 里 .bar-btn 的高度，撑起与输入栏一致的高度 */

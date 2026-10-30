@@ -200,7 +200,7 @@
   min-height: var(--icon-touch);
   padding: 16rpx 32rpx;
   border-radius: var(--radius-cta);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
   background: transparent;
   border: var(--hairline);
   line-height: var(--lh-base);

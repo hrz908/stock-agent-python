@@ -84,7 +84,7 @@
   min-height: var(--icon-touch);
   padding: 16rpx 32rpx;
   border-radius: var(--radius-cta);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
   font-size: var(--font-lg);
   font-weight: var(--fw-medium);
   line-height: var(--lh-base);
