@@ -25,6 +25,7 @@
 2026-10-29 新增：
   P22 覆盖闸降级（问当下状态的池外标的降级取数，问原文 / 无工具口径的仍出话术）
   P23 supervisor 合并改写 + 路由（单轮一次调用、结构化上下文注入、快路径短路）
+  P25 回答不带过程说明（提示词禁令 + 流式层整行丢弃知识库超时 / 数据缺口等交代）
 
 用法：python tests/regression/test_regression.py
 """
@@ -208,7 +209,9 @@ def test_no_data_fallback():
           + _tool_results("get_valuation", False, "访问频率超限"))
     out = _no_data_fallback(st, tr)
     check("触发兜底", bool(out), repr(out))
-    check("兜底里带真实原因", "频率" in out, out)
+    check("兜底只陈述没有", "没有" in out, out)
+    check("兜底不交代失败原因", "频率" not in out and "超时" not in out, out)
+    check("兜底不建议重试", "稍后" not in out and "重试" not in out, out)
     check("兜底不编造「每小时」", "每小时" not in out, out)
 
     # 有数据拿到时不能兜底（否则会盖掉正常回答）
@@ -1279,17 +1282,21 @@ def test_graceful_empty_fallback():
     print("\n[P8] 兜底文案区分「客观无数据」与「取数失败」")
     from agent.subgraphs.stock._fallback import _all_failures_graceful_empty
 
-    # 未上榜：客观结论，不应套「请稍后重试」
+    # 未上榜：客观结论直接转述
     tr_lhb = _tool_results("get_top_list", False, "近期未上榜或暂无龙虎榜数据")
     st = {"query": "查一下三花智控最近的龙虎榜席位明细", "rewritten": ""}
     out = _no_data_fallback(st, tr_lhb)
-    check("未上榜走客观结论文案", "并非系统故障" in out and "稍后重试" not in out, out)
+    check("未上榜直接转述结论", "未上榜" in out, out)
+    check("未上榜不解释系统状态",
+          "系统" not in out and "稍后" not in out and "重试" not in out, out)
     check("未上榜判定为客观无数据", _all_failures_graceful_empty(tr_lhb))
 
-    # 连接失败：仍走重试文案
+    # 连接失败：只陈述没有，不交代原因也不建议重试
     tr_conn = _tool_results("get_money_flow", False, "ConnectionError: RemoteDisconnected")
     out2 = _no_data_fallback(st, tr_conn)
-    check("连接失败仍提示重试", "稍后重试" in out2, out2)
+    check("连接失败只说没有", "没有" in out2, out2)
+    check("连接失败不交代原因", "连接" not in out2 and "失败" not in out2, out2)
+    check("连接失败不建议重试", "稍后" not in out2 and "重试" not in out2, out2)
     check("连接失败不是客观无数据", not _all_failures_graceful_empty(tr_conn))
 
     # 混合失败（一条未上榜 + 一条连接失败）按取数失败处理，不轻言「无数据」
@@ -1712,13 +1719,13 @@ def test_stream_cleaner_strips_prompt_leak():
     # 按线上真实的增量边界喂（闭合标签被拆成 "</" / "user" / "_query" / ">"）
     deltas = ["<", "user", "_query", ">\n襄阳", "轴承", "</", "user", "_query", ">\n\n",
               "<", "system", "_context", ">\n内部推理", "</", "system", "_context", ">\n\n",
-              "<", "assistant", "_response", ">\n抱歉，这轮没取到。", "</", "assistant",
+              "<", "assistant", "_response", ">\n贵州茅台最新价 1338 元。", "</", "assistant",
               "_response", ">"]
     c = StreamCleaner()
     out = "".join(c.feed(d) for d in deltas) + c.flush()
     check("问句块被整块丢弃", "襄阳轴承" not in out, repr(out))
     check("推理块被整块丢弃", "内部推理" not in out, repr(out))
-    check("答案正文保留", out.strip() == "抱歉，这轮没取到。", repr(out))
+    check("答案正文保留", out.strip() == "贵州茅台最新价 1338 元。", repr(out))
     check("没有残留标签", "<" not in out and ">" not in out, repr(out))
     # 正常回答零改动（逐字喂也一样）
     normal = "贵州茅台（SH600519）最新价 1338 元。\n\n- 今开 1325.4 元"
@@ -1729,6 +1736,85 @@ def test_stream_cleaner_strips_prompt_leak():
     c3 = StreamCleaner()
     got3 = "".join(c3.feed(s) for s in ["若 PE ", "<", " 10 则低估"]) + c3.flush()
     check("普通尖括号保留", got3 == "若 PE < 10 则低估", repr(got3))
+
+
+# ===== P25：回答不带过程说明（2026-10-29）=====
+def test_meta_narration_filtered():
+    print("\n[P25] 过程说明整行丢弃、正文原样保留")
+    # 线上截图 1：知识库超时 + 改用通用知识
+    text1 = ("知识库暂时超时不可用，我先按通用常识说明几类工具的差别\n\n"
+             "交易软件分两类，账户归属决定你在哪下单。\n"
+             "- 券商官方 APP：开在哪家就在哪家下单")
+    c = StreamCleaner()
+    out = "".join(c.feed(text1[i:i + 3]) for i in range(0, len(text1), 3)) + c.flush()
+    check("知识库超时整行丢弃", "知识库" not in out and "通用常识" not in out, repr(out))
+    check("正文保留", "交易软件分两类" in out and "券商官方 APP" in out, repr(out))
+
+    # 线上截图 2：本轮工具只返回新闻 + 数据缺口分点
+    text2 = ("本轮工具只返回了中国银行的近期新闻，没有返回财务数据，以下仅就消息面提示\n"
+             "- 板块位置：四大行总市值首破 10 万亿\n"
+             "- 数据缺口：本轮未获取到不良率、净息差等财务数据")
+    c2 = StreamCleaner()
+    out2 = "".join(c2.feed(text2[i:i + 5]) for i in range(0, len(text2), 5)) + c2.flush()
+    check("工具交代整行丢弃", "本轮工具" not in out2 and "以下仅就" not in out2, repr(out2))
+    check("数据缺口分点丢弃", "数据缺口" not in out2 and "净息差" not in out2, repr(out2))
+    check("有数据的分点保留", "板块位置" in out2, repr(out2))
+
+    # 免责声明 / 资料缺失说明同样按行去掉，正常数据保留
+    c3 = StreamCleaner()
+    out3 = "".join(c3.feed(s) for s in [
+        "以上仅为研报观点梳理，不构成投资建议\n",
+        "资料中未提及目标价测算\n",
+        "净息差 1.6%，同比收窄 3bp。",
+    ]) + c3.flush()
+    check("免责声明丢弃", "不构成投资建议" not in out3, repr(out3))
+    check("资料缺失说明丢弃", "资料中未提及" not in out3, repr(out3))
+    check("正常数据保留", "净息差 1.6%" in out3, repr(out3))
+
+    # 正文里的同一个词不能误杀（用户问的可能就是知识库）
+    c4 = StreamCleaner()
+    keep = "知识库是企业内部资料的集合，常见于投研检索。"
+    got4 = "".join(c4.feed(keep[i:i + 2]) for i in range(0, len(keep), 2)) + c4.flush()
+    check("正文中间的知识库不误杀", got4 == keep, repr(got4))
+
+    # 以「知识库检索」开头的正常解释也不能误杀
+    c7 = StreamCleaner()
+    keep7 = "知识库检索是投研助手常用的补充手段。"
+    got7 = "".join(c7.feed(keep7[i:i + 3]) for i in range(0, len(keep7), 3)) + c7.flush()
+    check("知识库检索开头的正文不误杀", got7 == keep7, repr(got7))
+
+    # 客观结论不是过程说明，必须保留
+    c5 = StreamCleaner()
+    got5 = c5.feed("今日未上榜。") + c5.flush()
+    check("客观结论不被过滤", got5 == "今日未上榜。", repr(got5))
+
+    # 整条只剩说明时：不输出（宁可不答，也不交代）
+    c6 = StreamCleaner()
+    got6 = c6.feed("抱歉，这轮没取到数据。") + c6.flush()
+    check("整条只剩说明时不输出", got6 == "", repr(got6))
+
+
+def test_prompt_no_process_narration():
+    print("\n[P25] 三个提示词都不交代取数过程")
+    from agent.core.template import load_template, render
+
+    stock = render("stock.xml", now="2026-10-29", query="q", tool_results="[]",
+                   examples=load_template("stock_examples.xml"))
+    check("stock.xml 禁止过程说明", "不出现任何过程说明" in stock)
+    check("stock.xml 不再要求交代数据缺失", "数据缺失就如实说明" not in stock)
+    check("stock.xml 不再要求标注来源",
+          "可引用其定性观点并注明" not in stock and "注明「据通用投资知识」" not in stock)
+
+    chat = render("chat.xml", now="2026-10-29", query="q")
+    check("chat.xml 禁止过程说明", "不解释调用 / 检索过程" in chat)
+
+    rag = render("rag.xml", now="2026-10-29", query="q", contexts="（无检索资料）")
+    check("rag.xml 不再要求「资料中未提及」", "明确说明「资料中未提及」" not in rag)
+    check("rag.xml 禁止来源与免责交代", "不写「据知识库」" in rag)
+
+    ex = load_template("stock_examples.xml")
+    check("示例不再示范来源标注", "据通用投资知识" not in ex)
+    check("示例示范「没数据的部分不提」", "消息面上需要留意的点" in ex)
 
 
 def test_event_card_desc_clean():
@@ -1966,6 +2052,8 @@ def main():
     test_entity_codes()
     test_concept_not_swallowing_live_quote()
     test_stream_cleaner_strips_prompt_leak()
+    test_meta_narration_filtered()
+    test_prompt_no_process_narration()
     test_event_card_desc_clean()
     test_fast_plan_and_chat_shortcut()
     test_reply_dedup_and_card_order()

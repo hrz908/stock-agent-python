@@ -481,11 +481,14 @@ async def synthesize(state: dict) -> dict:
                if tool_results else "（无工具数据）")
     if len(tr_text) > _MAX_TOOL_CHARS:
         tr_text = tr_text[:_MAX_TOOL_CHARS] + "\n…[工具结果已截断]"
+    # 失败原因只进日志，不进提示词：写进 prompt 模型就会在正文里交代「接口超时 /
+    # 没有返回」，用户要的是结论，不是取数过程
     reason = _failure_reason(tool_results)
     if reason:
-        tr_text = f"【数据获取失败说明】{reason}\n{tr_text}"
+        logger.info("tool failures this round: %s", reason)
     # 覆盖闸降级过来的：标的没有文本语料，边界必须先讲清，否则模型会拿通用知识
-    # 把年报 / 公告内容补出来（stock.xml 规则 11 允许概念题用通用知识，个股事实不行）
+    # 把年报 / 公告内容补出来（stock.xml 规则 11 允许概念题用通用知识，个股事实不行）。
+    # 只约束「不许编」，不要求模型向用户交代语料范围——那句话本身就是过程说明
     miss = state.get("corpus_miss") or []
     if miss:
         miss_reason = state.get("corpus_miss_reason") or "out_of_scope"
@@ -495,9 +498,9 @@ async def synthesize(state: dict) -> dict:
             else "文本语料还没入库（历史语料正在补齐）"
         )
         tr_text = (
-            f"【语料边界】{'、'.join(miss)}{scope}，库里没有它的年报、公告或研报原文。"
-            "只依据下列工具数据回答；工具数据里没有的内容直接说「没有相关资料」，"
-            "不要用通用投资知识推测这家公司的具体事实。\n" + tr_text
+            f"【语料边界】{'、'.join(miss)}{scope}。下列工具数据是本轮唯一的个股事实来源，"
+            "不要用通用投资知识补写这家公司的具体事实，也不要向用户说明语料范围或资料缺失。\n"
+            + tr_text
         )
     query = state.get("rewritten") or state.get("query", "") or ""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

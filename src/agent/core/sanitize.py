@@ -1,4 +1,4 @@
-"""流式输出净化：剥掉模型漏出的提示词标签。
+"""流式输出净化：剥掉模型漏出的提示词标签 + 丢弃「过程说明」整行。
 
 背景（2026-10-26 线上实测）：闲聊子图只发 SystemMessage，问句只嵌在 system
 提示的 <user_query> 标签里，模型会把整份提示词当成「待补全的文档」续写，
@@ -16,6 +16,11 @@ subgraphs/chat.py 与 prompts/chat.xml），但提示词约束拦不住所有模
 
 只做流式增量，不改变已生成内容：正常回答（不含标签）零改动、零延迟——
 缓冲为空且本段没有 '<' 时整段直接透传。
+
+第二层（2026-10-29 线上截图）：模型会在正文前后交代「知识库暂时超时不可用」
+「本轮工具只返回了新闻」「数据缺口：未获取到财务数据」这类过程说明。提示词
+已明令禁止，但拦不住所有模型版本，这里再按行首特征整行丢弃；正文中间出现
+同一个词不动——用户可能问的就是它。
 """
 import re
 
@@ -65,6 +70,129 @@ def dedupe_answer_text(text: str) -> str:
     return "\n\n".join(kept)
 
 
+# 「过程说明」行首特征：取数 / 检索状态、数据缺口、语料覆盖、来源与免责交代。
+# 只认行首：这些词出现在正文中间时往往是用户问的主题（「知识库是什么」），
+# 宁可漏杀不可误杀，模型层面的约束由 prompts 负责。
+_META_LINE_OPENERS = (
+    # 检索 / 取数状态
+    "知识库暂时", "知识库超时", "知识库不可用", "知识库没有", "知识库未",
+    "知识库检索失败", "知识库检索超时", "知识库检索不到",
+    "本轮工具", "本轮数据", "本轮检索", "本轮没有", "本轮未",
+    "调用失败", "接口超时", "检索超时", "检索失败", "工具调用失败", "工具返回",
+    # 数据缺口交代
+    "数据缺口", "数据缺失", "数据未获取", "未获取到", "未取到", "没有取到",
+    "未返回", "没有返回",
+    # 语料 / 资料覆盖交代
+    "资料中未", "资料未提及", "资料未覆盖", "资料中没有",
+    "语料库里", "语料库中", "语料范围", "语料边界",
+    # 免责声明
+    "以上仅为", "以上内容仅", "以上均仅", "以上只是",
+    "不构成投资建议", "仅供参考",
+    # 自述式开场
+    "我先按", "抱歉，这轮", "抱歉，本次",
+)
+
+# 分点前缀：判定前先剥掉，否则「- 数据缺口：…」会逃过行首匹配
+_LINE_BULLETS = ("- ", "* ", "· ", "• ", "— ")
+
+
+def _classify_line(line: str) -> str:
+    """'meta' 说明行 / 'maybe' 还判断不出 / 'normal' 正常正文。"""
+    head = line.lstrip(" \t")
+    for bullet in _LINE_BULLETS:
+        # 分点符号可能被拆到两块里：先只收到「-」时判不出下一行是不是说明行
+        if head == bullet.strip():
+            return "maybe"
+        if head.startswith(bullet):
+            head = head[len(bullet):]
+            break
+    head = head.lstrip(" \t")
+    if not head:
+        return "maybe"
+    for opener in _META_LINE_OPENERS:
+        if head.startswith(opener):
+            return "meta"
+    for opener in _META_LINE_OPENERS:
+        if opener.startswith(head):
+            return "maybe"
+    return "normal"
+
+
+class _MetaLineFilter:
+    """按行丢弃「过程说明」，其余文本原样透传。
+
+    背景（2026-10-29 线上截图）：模型会在正文前交代「知识库暂时超时不可用，我先按
+    通用常识说明」，或在末尾补一条「数据缺口：本轮未获取到财务数据」。这类话术
+    独立成行，整行丢弃既不伤到有数据的那部分，也不用在句子中间切一刀。
+
+    流式约束：只在行首判定，且只有「还可能命中」时才缓冲——正常回答第一个字就
+    放行，不压首字延迟；命中后吞到该行结束。
+    """
+
+    def __init__(self) -> None:
+        self._buf = ""
+        # 当前行已判定为正常：后续字符直通，只盯着换行
+        self._inline = False
+        # 已判定为说明行：吞到换行为止
+        self._dropping = False
+
+    def feed(self, chunk: str) -> str:
+        if not chunk:
+            return ""
+        if self._dropping:
+            nl = chunk.find("\n")
+            if nl < 0:
+                return ""
+            self._dropping = False
+            self._inline = False
+            return self.feed(chunk[nl + 1:])
+        if self._inline:
+            nl = chunk.find("\n")
+            if nl < 0:
+                return chunk
+            self._inline = False
+            return chunk[:nl + 1] + self.feed(chunk[nl + 1:])
+        self._buf += chunk
+        return self._drain()
+
+    def flush(self) -> str:
+        if self._dropping:
+            self._buf = ""
+            self._dropping = False
+            return ""
+        if _classify_line(self._buf) == "meta":
+            self._buf = ""
+            return ""
+        out, self._buf = self._buf, ""
+        return out
+
+    def _drain(self) -> str:
+        out: list[str] = []
+        while self._buf:
+            nl = self._buf.find("\n")
+            line = self._buf if nl < 0 else self._buf[:nl]
+            kind = _classify_line(line)
+            if kind == "meta":
+                if nl < 0:
+                    # 说明行还没写完：先整行吞掉，等换行确认边界
+                    self._buf = ""
+                    self._dropping = True
+                    break
+                self._buf = self._buf[nl + 1:]
+                continue
+            if kind == "maybe" and nl < 0:
+                # 如只收到「知识」：攒够能判定再放行
+                break
+            if nl < 0:
+                out.append(self._buf)
+                self._buf = ""
+                self._inline = True
+                break
+            out.append(self._buf[:nl + 1])
+            self._buf = self._buf[nl + 1:]
+        return "".join(out)
+
+
 class StreamCleaner:
     """把 token 增量喂进来，返回该下发给前端的文本。"""
 
@@ -76,15 +204,18 @@ class StreamCleaner:
         self._closing = False
         # 还没输出过正文：开头因剥标签留下的空白一并裁掉
         self._started = False
+        # 过程说明按行丢弃；必须在 _emit 之前跑，否则说明行会让 _started
+        # 提前置位，丢弃后留下的空行就裁不掉了
+        self._meta = _MetaLineFilter()
 
     def feed(self, chunk: str) -> str:
         if not chunk:
             return ""
-        # 快路径：无残留、无跳过态、本段无 '<'，原样返回（绝大多数 token 走这里）
+        # 快路径：无残留、无跳过态、本段无 '<'，直接过说明行过滤（绝大多数 token 走这里）
         if not self._buf and not self._skip_name and "<" not in chunk:
-            return self._emit(chunk)
+            return self._emit(self._meta.feed(chunk))
         self._buf += chunk
-        return self._emit(self._drain())
+        return self._emit(self._meta.feed(self._drain()))
 
     def flush(self) -> str:
         """流结束：把残留缓冲按「像不像半个标签」决定去留。"""
@@ -93,17 +224,15 @@ class StreamCleaner:
             self._buf = ""
             self._skip_name = ""
             self._closing = False
-            return ""
+            return self._emit(self._meta.flush())
         tail = self._buf
         self._buf = ""
-        if not tail:
-            return ""
         if tail.startswith("<"):
             # 只有「像半个已知标签」才丢；「若 PE < 10」这类正文必须原样保留
             name = _tag_name(tail[1:].split(">")[0].strip())
             if name and any(t.startswith(name) for t in _TAGS):
-                return ""
-        return self._emit(tail)
+                tail = ""
+        return self._emit(self._meta.feed(tail) + self._meta.flush())
 
     def _emit(self, text: str) -> str:
         if not text:

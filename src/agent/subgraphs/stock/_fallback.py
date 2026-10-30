@@ -103,22 +103,11 @@ def _failure_reason(tool_results: list) -> str:
     return ""
 
 
-def _subject(state: dict) -> str:
-    """兜底文案里回显问题主体（改写后优先）。
-
-    不写死示例标的：多轮追问「最近成交量有放大吗」在改写后已经带上「比亚迪」，
-    回显它才能让用户确认问的是哪只票；写死「000568」会把上下文彻底丢掉。
-    """
-    text = re.sub(r"\s+", " ", (state.get("rewritten") or state.get("query") or "")).strip()
-    if not text:
-        return ""
-    return text[:30] + ("…" if len(text) > 30 else "")
-
-
 def _no_data_fallback(state: dict, tool_results: list) -> str:
     """本轮没有取到任何行情数据、且用户就是要数据时，返回固定兜底文案。
 
-    宁可说「没取到」，也不给过期/编造的数字。
+    只陈述「没有」这一事实：失败原因（超时 / 限频 / 权限）、重试建议、本轮取了什么
+    都不写。用户要的是数据，过程说明只会让人以为系统坏了；宁可短，也不交代。
     """
     # 有任一取数类工具成功 -> 数据到手，交给模型作答
     if any(
@@ -127,22 +116,17 @@ def _no_data_fallback(state: dict, tool_results: list) -> str:
     ):
         return ""
     # 模型调过取数类工具却全部失败 -> 用户问的就是数据，必然要兜底
-    called_data_tool = any(item.get("tool") in DATA_TOOLS for item in tool_results)
-    if called_data_tool:
-        reason = _failure_reason(tool_results)
+    if any(item.get("tool") in DATA_TOOLS for item in tool_results):
         if _all_failures_graceful_empty(tool_results):
-            return (f"查询完成：{reason or '暂无相关数据'}。"
-                    "这是数据源当前的客观情况，并非系统故障；可以换个标的或时间范围再试。")
-        head = f"关于「{_subject(state)}」，这一轮没有取到所需的数据，我无法给出你要的数字。"
-        if reason:
-            head += reason + "。"
-        return head + "请稍后重试；也可以带上股票代码再问，例如「000568 最近15个交易日的日K」。"
+            # 未上榜 / 当日暂无是数据源的客观结论，直接转述即可
+            reason = _failure_reason(tool_results).rstrip("。")
+            return (reason or "暂无相关数据") + "。"
+        return "暂时没有查到相关数据。"
     # 没调取数工具：可能是知识型问题，兜底会误伤能答好的回答
     if _is_concept_question(state):
         return ""
     if _asked_for_data(state):
-        return (f"关于「{_subject(state)}」，这一轮没有取到所需的数据，我无法给出你要的数字。"
-                "请稍后重试；也可以带上股票代码再问，例如「000568 最近15个交易日的日K」。")
+        return "暂时没有查到相关数据。"
     return ""
 
 
