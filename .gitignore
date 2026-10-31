@@ -96,3 +96,7 @@ Desktop.ini
 stock-agent-miniapp/.restyle-shots/
 
 .codebuddy
+
+# ===== 八、AI 工具本机配置 =====
+# MCP 服务器配置：含本机绝对路径（Windows 用户名）与数据库连接串，每台机器不同，不入库
+.mcp.json
