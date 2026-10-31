@@ -214,7 +214,10 @@ def _iter_windows(since, until, days: int):
 
 
 def cmd_backfill(args) -> int:
-    """按窗口回填历史语料（默认五年），断点记录在 ashare_backfill_progress。
+    """按窗口回填历史语料，断点记录在 ashare_backfill_progress。
+
+    覆盖年限由 --years 决定，默认取 config.BACKFILL_YEARS（ASHARE_BACKFILL_YEARS，
+    默认 1 年）——不是「五年」。历史文案写五年时实际只跑一年，容易高估语料的时间跨度。
 
     不推 ashare_sync_state 水位：回填是按窗口从早到晚跑的，推水位会让日常增量
     误以为「已经采到最新」，而实际上中间还有窗口没跑完。
@@ -575,9 +578,10 @@ def build_parser() -> argparse.ArgumentParser:
     uni.add_argument("--top", type=int, default=config.UNIVERSE_TOP_N)
     uni.set_defaults(func=cmd_sync_universe)
 
-    back = sub.add_parser("backfill", help="按窗口回填历史语料（默认五年），断点可续跑")
+    back = sub.add_parser("backfill", help="按窗口回填历史语料，断点可续跑")
     back.add_argument("--source", default="all", help="逗号分隔，默认 all（不含 em-news）")
-    back.add_argument("--years", type=int, default=config.BACKFILL_YEARS)
+    back.add_argument("--years", type=int, default=config.BACKFILL_YEARS,
+                      help=f"覆盖最近 N 年（默认 {config.BACKFILL_YEARS}，ASHARE_BACKFILL_YEARS）")
     back.add_argument("--since", help="起始日 YYYY-MM-DD（默认 N 年前）")
     back.add_argument("--until", help="结束日 YYYY-MM-DD（默认今天）")
     back.add_argument("--window-days", type=int, default=config.BACKFILL_WINDOW_DAYS,
